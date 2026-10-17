@@ -526,6 +526,22 @@ mod tests {
     }
 
     #[test]
+    fn replay_with_aborted_csi_keeps_streaming() {
+        // Replayed (filtered) bytes containing `ESC [ ESC` used to panic the
+        // pump, silently detaching the view.
+        let h = harness(1024);
+        h.out.ingest(b"x\x1b[\x1b[6ny\n", 1);
+        let (sink, rx) = channel_sink();
+        h.out.attach(sink).unwrap();
+        let frames = collect_until(&rx, |f| data_of(f).ends_with(b"y\n"));
+        assert_eq!(data_of(&frames), b"x\x1b[y\n");
+        h.out.ingest(b"live\n", 0);
+        let frames = collect_until(&rx, |f| data_of(f).ends_with(b"live\n"));
+        assert!(data_of(&frames).ends_with(b"live\n"));
+        assert!(h.out.is_attached());
+    }
+
+    #[test]
     fn coalesces_small_writes() {
         let h = harness(1 << 20);
         let (sink, rx) = channel_sink();
