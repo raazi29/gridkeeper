@@ -45,6 +45,7 @@ pub fn run() {
             commands::session::session_attach,
             commands::session::session_detach,
             commands::session::session_write,
+            commands::session::session_write_binary,
             commands::session::session_resize,
             commands::session::session_ack,
             commands::session::session_stop,
@@ -66,6 +67,7 @@ pub fn run() {
             commands::services::diagnostics_snapshot,
             commands::services::diagnostics_export,
             commands::services::log_frontend,
+            commands::app::app_info,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

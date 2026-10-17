@@ -1,5 +1,6 @@
 import { useEffect } from "react";
 import { restoreSessions } from "./actions/sessions";
+import { setupBench } from "./bench";
 import { Shell } from "./components/Shell";
 import { errorMessage, ipc, onSessionState } from "./lib/ipc";
 import { flushPersistence, startPersistence, useApp } from "./store/appStore";
@@ -16,6 +17,14 @@ async function boot() {
     s.setRuntime(info);
     if (info.state.state === "exited") s.updateSessionMeta(info.id, { lastExitCode: info.state.code });
   });
+  const info = await ipc.appInfo().catch(() => null);
+  if (info?.bench) {
+    // Benchmark mode: in-memory workspace only; never persisted.
+    app.hydrate({ ...(await ipc.stateLoad().catch(() => useApp.getState().persisted)), workspaces: [], sessions: [] });
+    ipc.agentsDetect().then((a) => useApp.getState().setAgents(a)).catch(() => {});
+    setupBench(info);
+    return;
+  }
   try {
     const state = await ipc.stateLoad();
     app.hydrate(state);

@@ -17,6 +17,13 @@ import type {
 } from "./types";
 import { EVT_SESSION_STATE } from "./types";
 
+export interface AppInfo {
+  version: string;
+  windowsBuild: number | null;
+  bench: string | null;
+  benchScriptsDir: string | null;
+}
+
 export const ipc = {
   sessionStart: (spec: SessionSpec) => invoke<SessionInfo>("session_start", { spec }),
   /** Output arrives on `channel` as ArrayBuffer frames (see FRAME_* in types). */
@@ -24,6 +31,8 @@ export const ipc = {
     invoke<SessionInfo>("session_attach", { id, channel }),
   sessionDetach: (id: SessionId) => invoke<void>("session_detach", { id }),
   sessionWrite: (id: SessionId, data: string) => invoke<void>("session_write", { id, data }),
+  /** Raw bytes (xterm onBinary). */
+  sessionWriteBinary: (id: SessionId, data: number[]) => invoke<void>("session_write_binary", { id, data }),
   sessionResize: (id: SessionId, cols: number, rows: number) =>
     invoke<void>("session_resize", { id, cols, rows }),
   sessionAck: (id: SessionId, bytes: number) => invoke<void>("session_ack", { id, bytes }),
@@ -51,6 +60,7 @@ export const ipc = {
 
   diagnosticsSnapshot: () => invoke<Diagnostics>("diagnostics_snapshot"),
   diagnosticsExport: (frontend: unknown) => invoke<string>("diagnostics_export", { frontend }),
+  appInfo: () => invoke<AppInfo>("app_info"),
   log: (level: "info" | "warn" | "error", message: string) =>
     invoke<void>("log_frontend", { level, message }).catch(() => {}),
 };

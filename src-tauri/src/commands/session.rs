@@ -44,6 +44,12 @@ pub async fn session_write(ctx: State<'_, AppCtx>, id: SessionId, data: String) 
     ctx.sessions.write(&id, data.into_bytes())
 }
 
+/// Raw bytes input (xterm `onBinary`, e.g. X10 mouse reports with bytes > 127 that must not be UTF-8 encoded).
+#[tauri::command]
+pub async fn session_write_binary(ctx: State<'_, AppCtx>, id: SessionId, data: Vec<u8>) -> AppResult<()> {
+    ctx.sessions.write(&id, data)
+}
+
 #[tauri::command]
 pub async fn session_resize(ctx: State<'_, AppCtx>, id: SessionId, cols: u16, rows: u16) -> AppResult<()> {
     ctx.sessions.resize(&id, cols, rows)

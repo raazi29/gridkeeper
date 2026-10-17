@@ -109,6 +109,14 @@ interface Entry {
 }
 
 const entries = new Map<SessionId, Entry>();
+/** Real Windows build (from the backend) for xterm's ConPTY heuristics; 26300 until app_info resolves. */
+let windowsBuild = 26300;
+ipc
+  .appInfo()
+  .then((i) => {
+    if (i.windowsBuild) windowsBuild = i.windowsBuild;
+  })
+  .catch(() => {});
 const pendingDetach = new Map<SessionId, Promise<unknown>>();
 const statusListeners = new Set<(s: RendererStatus) => void>();
 let parking: HTMLDivElement | null = null;
@@ -579,6 +587,15 @@ function writeNotice(e: Entry, text: string) {
 
 // ---- input ----------------------------------------------------------------------------------
 
+/** xterm onBinary: each char code is one raw byte (must not be UTF-8 encoded). */
+function sendBinary(e: Entry, data: string) {
+  if (e.disposed || !data) return;
+  const info = useApp.getState().runtime[e.id];
+  if (info && !isLive(info)) return;
+  const bytes = Array.from(data, (c) => c.charCodeAt(0) & 0xff);
+  e.writeChain = e.writeChain.then(() => ipc.sessionWriteBinary(e.id, bytes).catch(() => {}));
+}
+
 function sendInput(e: Entry, data: string) {
   if (e.disposed || !data) return;
   const info = useApp.getState().runtime[e.id];
@@ -751,7 +768,7 @@ function createEntry(id: SessionId): Entry {
     cursorBlink: false,
     cursorStyle: "block",
     cursorInactiveStyle: "outline",
-    windowsPty: { backend: "conpty", buildNumber: 26300 },
+    windowsPty: { backend: "conpty", buildNumber: windowsBuild },
     macOptionIsMeta: false,
     rightClickSelectsWord: false,
     theme: terminalTheme,
@@ -821,7 +838,7 @@ function createEntry(id: SessionId): Entry {
     }),
   );
 
-  const subs = [term.onData((d) => sendInput(e, d)), term.onBinary((d) => sendInput(e, d))];
+  const subs = [term.onData((d) => sendInput(e, d)), term.onBinary((d) => sendBinary(e, d))];
   e.cleanups.push(() => subs.forEach((d) => d.dispose()));
   installKeyHandler(e);
 
