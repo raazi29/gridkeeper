@@ -176,7 +176,8 @@ compare with [PERFORMANCE.md](PERFORMANCE.md) (idle 6 sessions: host 0.06 %, Web
 **Release:**
 
 ```powershell
-# bump version in package.json, src-tauri/Cargo.toml and src-tauri/tauri.conf.json
+# bump version in package.json, src-tauri/Cargo.toml and src-tauri/tauri.conf.json,
+# and the static release badge + installer name in README.md
 npm run tauri build
 gh release create v0.1.1 "src-tauri\target\release\bundle\nsis\Gridkeeper_0.1.1_x64-setup.exe" `
   -R raazi29/gridkeeper --title "Gridkeeper v0.1.1" --notes-file notes.md
@@ -197,8 +198,7 @@ gh release create v0.1.1 "src-tauri\target\release\bundle\nsis\Gridkeeper_0.1.1_
 - **Mixed CRLF/LF.** `core.autocrlf=false`. Keep each file's existing endings (Git Bash `sed -i` silently converts
   CRLF to LF, so use `perl -pi` or the Edit tool). For whole-file merge conflicts caused by endings:
   `scripts/dev/eol-merge.sh <branch>` during the conflicted merge.
-- **Headless Edge/WebView2 here reports `prefers-reduced-motion: reduce`** (Windows animations are off on this
-  machine). Pass `--force-prefers-no-reduced-motion` when screenshotting animations.
+- **Headless Edge on this machine reports `prefers-reduced-motion: reduce`.** Pass `--force-prefers-no-reduced-motion` when screenshotting animations.
 - e2e scripts hard-code `D:\AlteraAI` as the working folder.
 - Windows notifications show the right name and icon only from the installed app; dev builds appear under PowerShell.
 
