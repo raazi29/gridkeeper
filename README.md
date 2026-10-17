@@ -1,8 +1,36 @@
-# Gridkeeper
+<p align="center">
+  <img src="docs/assets/hero-banner.png" alt="Gridkeeper — every agent in one grid" width="100%" />
+</p>
 
-Gridkeeper is a GPU-accelerated multi-agent terminal workspace for Windows. It runs many Claude Code sessions (several accounts at once), Codex sessions and PowerShell terminals side by side in one window. Each session is a real ConPTY process tree, and its output is rendered by xterm.js with WebGL.
+<p align="center">
+  <b>Every agent in one grid.</b> A GPU-accelerated, Windows-native workspace for running many AI coding agents —
+  Claude Code (several accounts at once), Codex, Hermes, OpenCode, Aider and plain shells — side by side,
+  with a keeper that tells you which one needs you.
+</p>
 
-It is built with Tauri 2.12 (Rust backend, `portable-pty`/ConPTY, Windows Job Objects) and React 19 + TypeScript + xterm.js 6 in the system WebView2. It replaces "Terax" for this workflow.
+<p align="center">
+  <img src="docs/assets/showcase/gridkeeper-demo.gif" alt="Gridkeeper demo: live agent grid, themes, Mission Control, Fleet, command palette" width="100%" />
+  <br/><sub>Recorded from the real app (31 s). Full-quality video: <a href="docs/assets/showcase/gridkeeper-demo.mp4">gridkeeper-demo.mp4</a></sub>
+</p>
+
+| Live agent grid | Mission Control |
+|---|---|
+| ![Grid of live sessions with roles](docs/assets/showcase/01-grid.png) | ![Mission Control: lead, lanes, sign-off, session log](docs/assets/showcase/04-mission-control.png) |
+| **Fleet — every session at a glance** | **Command palette (Ice Planet light theme)** |
+| ![Fleet overview](docs/assets/showcase/05-fleet.png) | ![Command palette](docs/assets/showcase/03-ice-planet.png) |
+
+## Install
+
+Download `Gridkeeper_0.1.0_x64-setup.exe` (≈5.7 MB, per-user install, no admin needed) from the Releases page, or build it
+yourself (see [Build and run](#build-and-run)). Windows 10 1809+ / Windows 11. The WebView2 runtime is preinstalled on
+Windows 11; the installer bootstraps it elsewhere.
+
+On first launch Gridkeeper finds your existing Claude Code / Codex / Hermes logins automatically
+(e.g. `~/.claude`, `~/.claude-*`, `~/.codex`) — nothing to configure.
+
+Gridkeeper is a GPU-accelerated multi-agent terminal workspace for Windows. Each session is a real ConPTY process tree,
+and its output is rendered by xterm.js with WebGL. It is built with Tauri 2.12 (Rust backend, `portable-pty`/ConPTY,
+Windows Job Objects) and React 19 + TypeScript + xterm.js 6 in the system WebView2.
 
 Documentation:
 
@@ -10,6 +38,7 @@ Documentation:
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md): process model, data flow, state, security
 - [docs/TECHNICAL_DECISIONS.md](docs/TECHNICAL_DECISIONS.md): ADRs
 - [docs/PERFORMANCE.md](docs/PERFORMANCE.md): measured CPU/RAM/GPU on the target machine
+- [docs/assets/logo/README.md](docs/assets/logo/README.md): brand and icon guide
 
 ## Why Gridkeeper
 

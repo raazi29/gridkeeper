@@ -120,6 +120,14 @@ await sleep(1200);
 recording = false;
 await loop;
 await js(theme, prevTheme ?? "deep-space");
+// Leave the user's app as it was: remove the Showcase workspace and its sessions.
+await c.evaluate(`(async () => {
+  const G = window.__gridkeeper; const { useApp } = G.store;
+  for (const w of useApp.getState().persisted.workspaces.filter((w) => w.name === "Showcase")) {
+    for (const id of w.groups.flatMap((g) => g.sessionIds)) await G.sessions.closeSession(id);
+    useApp.getState().deleteWorkspace(w.id);
+  }
+})()`);
 await ws.send("Emulation.clearDeviceMetricsOverride", {});
 c.close();
 
