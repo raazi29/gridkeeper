@@ -4,6 +4,7 @@ import { memo, useState } from "react";
 import { useShallow } from "zustand/react/shallow";
 import { activateGroup, deleteGroupFlow, runCommand } from "../actions/commands";
 import { isLive, selectActiveGroup, selectActiveWorkspace, useApp, type AppStore } from "../store/appStore";
+import { GroupUnreadBadge } from "./AttentionBits";
 import { useShortcut, withShortcut } from "./hooks";
 import { IconMaximize, IconPlus } from "./icons";
 import { useContextMenu } from "./ui/Menu";
@@ -137,6 +138,7 @@ const GroupTab = memo(function GroupTab({
       ) : (
         <span className="group-tab-name">{name}</span>
       )}
+      <GroupUnreadBadge groupId={groupId} />
       <span className="group-tab-count">{count}</span>
     </div>
   );

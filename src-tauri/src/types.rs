@@ -115,6 +115,9 @@ pub struct SessionSpec {
     /// Agent conversation id to pin for a NEW conversation (claude --session-id <uuid>).
     #[serde(default)]
     pub agent_session_id: Option<String>,
+    /// Catalog tool id for generic sessions (see adapters::catalog), e.g. "hermes".
+    #[serde(default)]
+    pub preset: Option<String>,
     pub cols: u16,
     pub rows: u16,
 }
@@ -161,6 +164,47 @@ pub struct SessionInfo {
 
 /// Emitted with payload `SessionInfo` whenever a session's state changes.
 pub const EVT_SESSION_STATE: &str = "session-state";
+
+/// Emitted with payload `SessionAttention` when a session asks for attention
+/// (BEL / OSC 9 / OSC 777 / OSC 99), reports a status (OSC 7501), or its
+/// output activity starts / stops (heuristic).
+pub const EVT_SESSION_ATTENTION: &str = "session-attention";
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum AttentionKind {
+    /// Bare BEL (rate-limited).
+    Bell,
+    /// Desktop-notification escape (OSC 9 / 777 / 99), rate-limited.
+    Notify,
+    /// OSC 7501 program status; `status` = state (idle|working|done|blocked|error|clear|…).
+    Status,
+    /// Output went quiet after an active run. `status = "done"` when the run
+    /// lasted >= 3 s (and was not start-up output); otherwise absent.
+    Idle,
+    /// Output started arriving steadily.
+    Active,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SessionAttention {
+    pub id: SessionId,
+    pub kind: AttentionKind,
+    /// Notification title (control characters stripped, <= 200 chars).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub title: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub body: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub status: Option<String>,
+    /// OSC 7501 `kind` for blocked states: permission | question | auth.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reason: Option<String>,
+    /// Idle events: how long the active run lasted.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub active_ms: Option<u64>,
+}
 
 /// Binary frame types on the per-session output `Channel` (first byte of each message).
 pub mod frame {
@@ -215,6 +259,14 @@ pub struct AgentAvailability {
     pub path: Option<String>,
     pub version: Option<String>,
     pub error: Option<String>,
+    /// Catalog tool id (kind = Generic), e.g. "hermes". `None` for built-in kinds.
+    #[serde(default)]
+    pub preset: Option<String>,
+    /// Display name for catalog tools.
+    #[serde(default)]
+    pub label: Option<String>,
+    #[serde(default)]
+    pub supports_resume: bool,
 }
 
 // ---------------------------------------------------------------------------
@@ -340,6 +392,26 @@ pub struct Settings {
     pub reduce_motion: bool,
     /// "compact" | "comfortable". A string, not an enum, so an unknown value never fails loading the state file.
     pub ui_density: String,
+    pub notifications: NotificationSettings,
+}
+
+/// Desktop / in-app attention notifications (decided in the frontend).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct NotificationSettings {
+    pub enabled: bool,
+    /// Notify when a session goes quiet after working ("finished").
+    pub on_idle: bool,
+    /// Notify on BEL / notification escapes / "waiting for you" status.
+    pub on_bell: bool,
+    /// Short in-app sound with each alert.
+    pub sound: bool,
+}
+
+impl Default for NotificationSettings {
+    fn default() -> Self {
+        Self { enabled: true, on_idle: true, on_bell: true, sound: false }
+    }
 }
 
 impl Default for Settings {
@@ -361,6 +433,7 @@ impl Default for Settings {
             theme: "deep-space".into(),
             reduce_motion: false,
             ui_density: "compact".into(),
+            notifications: NotificationSettings::default(),
         }
     }
 }
@@ -434,6 +507,9 @@ pub struct SessionMeta {
     /// Pinned agent conversation id (Claude --session-id), used to resume precisely.
     #[serde(default)]
     pub agent_session_id: Option<String>,
+    /// Catalog tool id for generic sessions, e.g. "hermes".
+    #[serde(default)]
+    pub preset: Option<String>,
     #[serde(default)]
     pub worktree: Option<WorktreeRef>,
     #[serde(default)]

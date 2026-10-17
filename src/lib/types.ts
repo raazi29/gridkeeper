@@ -27,6 +27,8 @@ export interface SessionSpec {
   resume?: ResumeMode;
   /** Pin a NEW conversation id (claude --session-id). */
   agentSessionId?: string | null;
+  /** Catalog tool id for generic sessions, e.g. "hermes". */
+  preset?: string | null;
   cols: number;
   rows: number;
 }
@@ -53,6 +55,24 @@ export interface SessionInfo {
 }
 
 export const EVT_SESSION_STATE = "session-state";
+
+/** Attention signal from Rust (see src-tauri/src/pty/attention.rs). */
+export const EVT_SESSION_ATTENTION = "session-attention";
+export type AttentionKind = "bell" | "notify" | "status" | "idle" | "active";
+
+export interface SessionAttention {
+  id: SessionId;
+  kind: AttentionKind;
+  /** Notification title (control chars stripped, <= 200 chars). */
+  title?: string;
+  body?: string;
+  /** status: OSC 7501 state (idle|working|done|blocked|error|clear|…); idle: "done" when the run counts as finished. */
+  status?: string;
+  /** OSC 7501 blocked kind: permission | question | auth. */
+  reason?: string;
+  /** idle: duration of the active run that just ended. */
+  activeMs?: number;
+}
 
 /** First byte of every binary message on a session output channel. */
 export const FRAME_DATA = 0;
@@ -84,6 +104,10 @@ export interface AgentAvailability {
   path: string | null;
   version: string | null;
   error: string | null;
+  /** Catalog tool id (kind = "generic"), e.g. "hermes"; null for built-in kinds. */
+  preset: string | null;
+  label: string | null;
+  supportsResume: boolean;
 }
 
 export interface WorktreeInfo {
@@ -156,6 +180,17 @@ export interface Settings {
   /** Disable UI animation and effects (also honoured when the OS asks for reduced motion). */
   reduceMotion: boolean;
   uiDensity: UiDensity;
+  notifications: NotificationSettings;
+}
+
+export interface NotificationSettings {
+  enabled: boolean;
+  /** Notify when a session goes quiet after working ("finished"). */
+  onIdle: boolean;
+  /** Notify on bell / notification escapes / "waiting for you" status. */
+  onBell: boolean;
+  /** Short in-app sound with each alert. */
+  sound: boolean;
 }
 
 export interface Layout {
@@ -197,6 +232,8 @@ export interface SessionMeta {
   autoStart: boolean;
   resumeOnRestore: ResumeMode;
   agentSessionId: string | null;
+  /** Catalog tool id for generic sessions. */
+  preset?: string | null;
   worktree: WorktreeRef | null;
   createdAt: string | null;
   lastExitCode: number | null;
@@ -232,4 +269,5 @@ export const DEFAULT_SETTINGS: Settings = {
   theme: "deep-space",
   reduceMotion: false,
   uiDensity: "compact",
+  notifications: { enabled: true, onIdle: true, onBell: true, sound: false },
 };

@@ -9,6 +9,7 @@
 //! changes and cwd. The PTY layer applies `env_remove` then `env_set` on top
 //! of the app's own environment.
 
+pub mod catalog;
 mod claude;
 mod codex;
 pub mod discovery;
@@ -203,10 +204,22 @@ pub fn display_command(program: &Path, args: &[String]) -> String {
 pub fn resolve_launch(spec: &SessionSpec, profiles: &ProfileStore, settings: &Settings) -> AppResult<LaunchPlan> {
     let cwd = validate_spec(spec)?;
     let adapter = adapter_for(spec.agent);
-    if spec.agent == AgentKind::Generic && spec.command.as_deref().map(str::trim).unwrap_or("").is_empty() {
+    let has_command = !spec.command.as_deref().map(str::trim).unwrap_or("").is_empty();
+    let preset = match spec.preset.as_deref().filter(|p| !p.is_empty()) {
+        Some(id) if spec.agent == AgentKind::Generic => Some(
+            catalog::entry(id).ok_or_else(|| AppError::Invalid(format!("Unknown agent preset '{id}'")))?,
+        ),
+        _ => None,
+    };
+    if spec.agent == AgentKind::Generic && !has_command && preset.is_none() {
         return Err(AppError::Invalid("A command is required for a generic session".into()));
     }
-    let exe = resolve_executable(spec.agent, settings, spec.command.as_deref())?;
+    let exe = match preset {
+        // Catalog tool: an explicit command (custom path) wins, else PATH discovery.
+        Some(entry) if !has_command => catalog::discover(entry)
+            .ok_or_else(|| AppError::MissingExecutable(format!("{} is not installed or not on PATH", entry.name)))?,
+        _ => resolve_executable(spec.agent, settings, spec.command.as_deref())?,
+    };
 
     let mut plan = PlanBuilder::default();
     plan.set_env("TERM", "xterm-256color")
@@ -223,7 +236,10 @@ pub fn resolve_launch(spec: &SessionSpec, profiles: &ProfileStore, settings: &Se
     }
 
     let ctx = LaunchContext { spec, profiles, settings };
-    adapter.configure(&ctx, &exe, &mut plan)?;
+    match preset {
+        Some(entry) => plan.args.extend(catalog::launch_args(entry, &spec.resume)?),
+        None => adapter.configure(&ctx, &exe, &mut plan)?,
+    }
     plan.args.extend(spec.args.iter().cloned());
 
     // User environment last: it may intentionally override anything above,
@@ -263,12 +279,12 @@ fn detect_one(adapter: &dyn AgentAdapter, settings: &Settings) -> AgentAvailabil
         Err(e) => {
             // Generic has no executable of its own; that is not an error.
             let error = if kind == AgentKind::Generic { None } else { Some(e.to_string()) };
-            return AgentAvailability { kind, path: None, version: None, error };
+            return AgentAvailability { error, ..base(kind) };
         }
     };
     let path = Some(exe.path.to_string_lossy().into_owned());
     let Some(vargs) = adapter.version_args(&exe) else {
-        return AgentAvailability { kind, path, version: None, error: None };
+        return AgentAvailability { path, ..base(kind) };
     };
     let (program, mut args) = exe.program_and_prefix();
     args.extend(vargs);
@@ -281,9 +297,47 @@ fn detect_one(adapter: &dyn AgentAdapter, settings: &Settings) -> AgentAvailabil
             let version = process::first_line(&out.stdout).or_else(|| process::first_line(&out.stderr));
             let error = (!out.status.success() && version.is_none())
                 .then(|| format!("`--version` exited with {}", out.status));
-            AgentAvailability { kind, path, version: version.map(|v| crate::redact::redact(&v)), error }
+            AgentAvailability { path, version: version.map(|v| crate::redact::redact(&v)), error, ..base(kind) }
         }
-        Err(e) => AgentAvailability { kind, path, version: None, error: Some(e.to_string()) },
+        Err(e) => AgentAvailability { path, error: Some(e.to_string()), ..base(kind) },
+    }
+}
+
+fn base(kind: AgentKind) -> AgentAvailability {
+    AgentAvailability {
+        kind,
+        path: None,
+        version: None,
+        error: None,
+        preset: None,
+        label: None,
+        supports_resume: adapter_for(kind).capabilities().supports_resume,
+    }
+}
+
+/// Probe one catalog tool already found on PATH. Broken npm shims fail here (their package is gone).
+fn detect_catalog(entry: &catalog::CatalogEntry, exe: Executable) -> AgentAvailability {
+    let path = Some(exe.path.to_string_lossy().into_owned());
+    let (program, mut args) = exe.program_and_prefix();
+    args.push("--version".into());
+    let mut cmd = process::hidden_command(&program);
+    cmd.args(&args);
+    let (version, error) = match process::run_with_timeout(cmd, VERSION_TIMEOUT) {
+        Ok(out) => {
+            let v = process::first_line(&out.stdout).filter(|_| out.status.success());
+            let err = v.is_none().then(|| format!("not working (version check exited with {})", out.status));
+            (v.map(|v| crate::redact::redact(&v)), err)
+        }
+        Err(e) => (None, Some(e.to_string())),
+    };
+    AgentAvailability {
+        kind: AgentKind::Generic,
+        path,
+        version,
+        error,
+        preset: Some(entry.id.to_string()),
+        label: Some(entry.name.to_string()),
+        supports_resume: entry.continue_args.is_some() || entry.session_flag.is_some(),
     }
 }
 
@@ -297,17 +351,20 @@ pub fn detect(settings: &Settings) -> Vec<AgentAvailability> {
                 (a.kind(), s.spawn(move || detect_one(a, settings)))
             })
             .collect();
-        handles
+        // Only tools actually on PATH are probed and listed (no clutter for uninstalled ones).
+        let tools: Vec<_> = catalog::CATALOG
+            .iter()
+            .filter_map(|e| catalog::discover(e).map(|exe| (e, exe)))
+            .map(|(e, exe)| s.spawn(move || detect_catalog(e, exe)))
+            .collect();
+        let mut out: Vec<AgentAvailability> = handles
             .into_iter()
             .map(|(kind, h)| {
-                h.join().unwrap_or_else(|_| AgentAvailability {
-                    kind,
-                    path: None,
-                    version: None,
-                    error: Some("detection panicked".into()),
-                })
+                h.join().unwrap_or_else(|_| AgentAvailability { error: Some("detection panicked".into()), ..base(kind) })
             })
-            .collect()
+            .collect();
+        out.extend(tools.into_iter().filter_map(|h| h.join().ok()));
+        out
     })
 }
 

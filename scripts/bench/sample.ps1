@@ -16,7 +16,8 @@ param(
   [double]$Interval = 1.0,
   [string]$Label = "sample",
   [string]$OutDir = "bench-results",
-  [string]$ProcessName = "altera"
+  [string]$ProcessName = "altera",
+  [int]$RootPid = 0
 )
 
 $ErrorActionPreference = "Stop"
@@ -53,7 +54,8 @@ function Get-Category([string]$name, [int]$procId, [int]$rootPid) {
   }
 }
 
-$host_ = Get-Process -Name $ProcessName -ErrorAction SilentlyContinue | Sort-Object StartTime | Select-Object -First 1
+if ($RootPid) { $host_ = Get-Process -Id $RootPid -ErrorAction SilentlyContinue }
+else { $host_ = Get-Process -Name $ProcessName -ErrorAction SilentlyContinue | Sort-Object StartTime | Select-Object -First 1 }
 if (-not $host_) { throw "Process '$ProcessName' is not running." }
 $rootPid = $host_.Id
 
@@ -76,10 +78,10 @@ while ((Get-Date) -lt $end) {
   $prevTime = $now
   $tree = Get-Tree $rootPid
   $cat = @{
-    host    = @{ cpu = 0.0; mem = 0; n = 0; gpu = 0.0; gpumem = 0 }
-    webview = @{ cpu = 0.0; mem = 0; n = 0; gpu = 0.0; gpumem = 0 }
-    console = @{ cpu = 0.0; mem = 0; n = 0; gpu = 0.0; gpumem = 0 }
-    agents  = @{ cpu = 0.0; mem = 0; n = 0; gpu = 0.0; gpumem = 0 }
+    host    = @{ cpu = 0.0; mem = 0; priv = 0; n = 0; gpu = 0.0; gpumem = 0 }
+    webview = @{ cpu = 0.0; mem = 0; priv = 0; n = 0; gpu = 0.0; gpumem = 0 }
+    console = @{ cpu = 0.0; mem = 0; priv = 0; n = 0; gpu = 0.0; gpumem = 0 }
+    agents  = @{ cpu = 0.0; mem = 0; priv = 0; n = 0; gpu = 0.0; gpumem = 0 }
   }
   $pidCat = @{}
   foreach ($kv in $tree.GetEnumerator()) {
@@ -93,6 +95,7 @@ while ((Get-Date) -lt $end) {
     }
     $prevCpu[$kv.Key] = $ms
     $cat[$c].mem += $p.WorkingSet64
+    $cat[$c].priv += $p.PrivateMemorySize64
     $cat[$c].n += 1
   }
   if ($gpuAvailable) {
@@ -116,7 +119,7 @@ while ((Get-Date) -lt $end) {
   foreach ($k in $cat.Keys) {
     [void]$rows.Add([pscustomobject]@{
         time = $now.ToString("HH:mm:ss.fff"); category = $k; processes = $cat[$k].n
-        cpu_pct = [math]::Round($cat[$k].cpu, 2); mem_mb = [math]::Round($cat[$k].mem / 1MB, 1)
+        cpu_pct = [math]::Round($cat[$k].cpu, 2); mem_mb = [math]::Round($cat[$k].mem / 1MB, 1); priv_mb = [math]::Round($cat[$k].priv / 1MB, 1)
         gpu_engine_pct = [math]::Round($cat[$k].gpu, 2); gpu_dedicated_mb = [math]::Round($cat[$k].gpumem / 1MB, 1)
       })
   }
@@ -135,6 +138,7 @@ $summary = $rows | Group-Object category | ForEach-Object {
     cpu_max = [math]::Round(($g | Measure-Object cpu_pct -Maximum).Maximum, 2)
     mem_avg_mb = [math]::Round(($g | Measure-Object mem_mb -Average).Average, 1)
     mem_max_mb = [math]::Round(($g | Measure-Object mem_mb -Maximum).Maximum, 1)
+    priv_avg_mb = [math]::Round(($g | Measure-Object priv_mb -Average).Average, 1)
     gpu_avg = [math]::Round(($g | Measure-Object gpu_engine_pct -Average).Average, 2)
     gpu_max = [math]::Round(($g | Measure-Object gpu_engine_pct -Maximum).Maximum, 2)
     gpumem_max_mb = [math]::Round(($g | Measure-Object gpu_dedicated_mb -Maximum).Maximum, 1)

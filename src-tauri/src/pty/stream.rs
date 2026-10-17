@@ -221,6 +221,16 @@ impl Output {
         self.st.lock().ring.contents()
     }
 
+    /// Copy of (roughly) the newest `max` bytes, starting at a line boundary
+    /// when there is one, so plain-text export does not begin mid-sequence.
+    pub fn tail(&self, max: usize) -> Vec<u8> {
+        let st = self.st.lock();
+        let from = st.ring.replay_start_within(max);
+        let mut out = Vec::with_capacity(max.min(st.ring.len()));
+        st.ring.for_each_slice(from, st.ring.end(), |s| out.extend_from_slice(s));
+        out
+    }
+
     /// Answer (and mark as filtered) every CPR in bytes that were destined for
     /// live delivery but will not be delivered live after all.
     fn settle_undelivered(&self, st: &mut OutState) {
@@ -523,6 +533,22 @@ mod tests {
         let frames = collect_until(&rx, |f| data_of(f).len() >= 8);
         assert_eq!(data_of(&frames), b"live\x1b[6n");
         assert_eq!(h.cprs.load(Ordering::SeqCst), 1, "attached view answers live requests");
+    }
+
+    #[test]
+    fn replay_with_aborted_csi_keeps_streaming() {
+        // Replayed (filtered) bytes containing `ESC [ ESC` used to panic the
+        // pump, silently detaching the view.
+        let h = harness(1024);
+        h.out.ingest(b"x\x1b[\x1b[6ny\n", 1);
+        let (sink, rx) = channel_sink();
+        h.out.attach(sink).unwrap();
+        let frames = collect_until(&rx, |f| data_of(f).ends_with(b"y\n"));
+        assert_eq!(data_of(&frames), b"x\x1b[y\n");
+        h.out.ingest(b"live\n", 0);
+        let frames = collect_until(&rx, |f| data_of(f).ends_with(b"live\n"));
+        assert!(data_of(&frames).ends_with(b"live\n"));
+        assert!(h.out.is_attached());
     }
 
     #[test]

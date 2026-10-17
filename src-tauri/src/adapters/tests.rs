@@ -46,6 +46,7 @@ fn spec(agent: AgentKind, cwd: &str) -> SessionSpec {
         env: vec![],
         resume: ResumeMode::None,
         agent_session_id: None,
+        preset: None,
         cols: 80,
         rows: 24,
     }
@@ -278,13 +279,16 @@ fn detect_reports_every_kind() {
     let mut settings = Settings::default();
     settings.agent_paths.claude = Some(r"C:\definitely\missing\claude.exe".into());
     let found = detect(&settings);
-    assert_eq!(found.len(), ADAPTERS.len());
+    // Built-in kinds first (one each), then any catalog tools found on this PC.
+    let builtin: Vec<_> = found.iter().filter(|a| a.preset.is_none()).collect();
+    assert_eq!(builtin.len(), ADAPTERS.len());
+    assert!(found.iter().filter(|a| a.preset.is_some()).all(|a| a.kind == AgentKind::Generic && a.label.is_some()));
     let claude = found.iter().find(|a| a.kind == AgentKind::Claude).unwrap();
     assert!(claude.path.is_none() && claude.error.is_some());
     let ps = found.iter().find(|a| a.kind == AgentKind::Powershell).unwrap();
     assert!(ps.path.is_some(), "{ps:?}");
     assert!(ps.version.is_some(), "{ps:?}");
-    let generic = found.iter().find(|a| a.kind == AgentKind::Generic).unwrap();
+    let generic = found.iter().find(|a| a.kind == AgentKind::Generic && a.preset.is_none()).unwrap();
     assert!(generic.error.is_none());
 }
 

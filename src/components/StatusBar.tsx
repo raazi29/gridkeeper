@@ -3,6 +3,7 @@
 import { APP_NAME } from "../lib/brand";
 import { useApp, isLive, selectActiveGroup, selectActiveWorkspace } from "../store/appStore";
 import { useUi } from "../store/uiStore";
+import { CommsButton, FleetButton } from "./Comms";
 import { useDiagnosticsPoll, useRendererStatus, useShortcut } from "./hooks";
 import { formatCpu, formatMb, taskManagerCpu } from "./util/text";
 import { stateLabel } from "./util/session";
@@ -53,6 +54,9 @@ export function StatusBar() {
         </span>
       </div>
       <div className="sb-right">
+        <FleetButton />
+        <CommsButton />
+        <span className="sb-div" />
         {showDiag && <ResourceItems onClick={open} />}
         <RendererItem onClick={open} />
         {scPalette && (

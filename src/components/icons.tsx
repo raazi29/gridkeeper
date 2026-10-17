@@ -214,13 +214,19 @@ export const IconFocus = (p: P) => (
 );
 
 /**
- * Brand mark: a delta / "A" over a broken horizon line, an attitude indicator reduced to two strokes.
- * Ink follows the theme text colour; the horizon carries the theme's signal colour.
+ * Brand mark: a 2x2 grid of panes held inside HUD corner brackets: the keeper watching the grid.
+ * One cell is lit in the theme's signal colour (the pane that needs you); the rest follow the ink.
  */
 export const AppMark = ({ size = 16 }: { size?: number }) => (
   <svg width={size} height={size} viewBox="0 0 18 18" aria-hidden="true" focusable="false" fill="none" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M3.6 15 9 3.2 14.4 15" stroke="var(--text-0)" strokeWidth="1.7" />
-    <path d="M1.2 11.2h3.1M13.7 11.2h3.1M7.2 11.2h3.6" stroke="var(--accent)" strokeWidth="1.5" />
-    <circle cx="9" cy="3.2" r="1.15" fill="var(--accent)" />
+    <path
+      d="M1.6 5.2V2.6a1 1 0 0 1 1-1h2.6M12.8 1.6h2.6a1 1 0 0 1 1 1v2.6M16.4 12.8v2.6a1 1 0 0 1-1 1h-2.6M5.2 16.4H2.6a1 1 0 0 1-1-1v-2.6"
+      stroke="var(--text-0)"
+      strokeWidth="1.4"
+    />
+    <rect x="4.9" y="4.9" width="3.5" height="3.5" rx="0.9" fill="var(--text-0)" />
+    <rect x="9.6" y="4.9" width="3.5" height="3.5" rx="0.9" fill="var(--accent)" />
+    <rect x="4.9" y="9.6" width="3.5" height="3.5" rx="0.9" fill="var(--text-0)" opacity="0.55" />
+    <rect x="9.6" y="9.6" width="3.5" height="3.5" rx="0.9" fill="var(--text-0)" opacity="0.55" />
   </svg>
 );

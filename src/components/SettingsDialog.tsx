@@ -10,6 +10,7 @@ import { DEFAULT_SETTINGS } from "../lib/types";
 import { useApp } from "../store/appStore";
 import { setKeyRecording, useUi } from "../store/uiStore";
 import { useShortcutMap } from "./hooks";
+import { NotificationSettings } from "./NotificationSettings";
 import { IconFolder } from "./icons";
 import { Button } from "./ui/Button";
 import { Field, Input, NumberInput, Segmented, Toggle } from "./ui/Field";
@@ -19,13 +20,14 @@ import { TERMINAL_FONTS, preloadFont } from "../styles/fonts";
 import { themeScopeStyle } from "../theme/applyTheme";
 import { THEMES, getTheme, type Theme } from "../theme/themes";
 
-type Section = "appearance" | "terminal" | "agents" | "keys" | "interface";
+type Section = "appearance" | "terminal" | "agents" | "keys" | "interface" | "notifications";
 const SECTIONS: { id: Section; label: string }[] = [
   { id: "appearance", label: "Appearance" },
   { id: "terminal", label: "Terminal" },
   { id: "agents", label: "Agents" },
   { id: "keys", label: "Keybindings" },
   { id: "interface", label: "Interface" },
+  { id: "notifications", label: "Notifications" },
 ];
 
 function useSetting<K extends keyof Settings>(key: K): [Settings[K], (v: Settings[K]) => void] {
@@ -52,6 +54,7 @@ export function SettingsDialog({ onClose }: { onClose: () => void }) {
           {section === "agents" && <AgentsSection />}
           {section === "keys" && <KeysSection />}
           {section === "interface" && <InterfaceSection />}
+          {section === "notifications" && <NotificationSettings />}
         </div>
       </div>
     </Modal>

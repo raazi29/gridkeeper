@@ -21,7 +21,7 @@ pub struct AppCtx {
     pub sessions: Arc<SessionManager>,
     pub profiles: ProfileStore,
     pub store: StateStore,
-    pub diag: DiagSampler,
+    pub diag: Arc<DiagSampler>,
     _log_guard: Option<crate::logging::LogGuard>,
 }
 
@@ -41,7 +41,7 @@ impl AppCtx {
             sessions,
             profiles,
             store,
-            diag: DiagSampler::new(),
+            diag: Arc::new(DiagSampler::new()),
             _log_guard: log_guard,
         })
     }
