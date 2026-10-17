@@ -49,6 +49,8 @@ windows-sys = { version = "0.61", features = [
   "Win32_System_ProcessStatus",
   "Win32_System_Performance",
   "Win32_UI_WindowsAndMessaging",
+  "Win32_NetworkManagement_IpHelper",
+  "Win32_Networking_WinSock",
 ] }
 
 [dev-dependencies]

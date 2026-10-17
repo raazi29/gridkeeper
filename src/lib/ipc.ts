@@ -11,7 +11,11 @@ import type {
   PlannedHome,
   ClaudeProfile,
   Diagnostics,
+  FileDiff,
+  FrameProbe,
   GitInfo,
+  RepoChanges,
+  SessionPorts,
   PathInfo,
   PersistedState,
   ProfileStatus,
@@ -77,6 +81,18 @@ export const ipc = {
   gitInfo: (path: string) => invoke<GitInfo>("git_info", { path }),
   gitWorktreeAdd: (repo: string, path: string, branch: string, newBranch: boolean) =>
     invoke<WorktreeInfo>("git_worktree_add", { repo, path, branch, newBranch }),
+
+  // Read-only Changes panel.
+  gitChanges: (path: string) => invoke<RepoChanges>("git_changes", { path }),
+  gitDiff: (repo: string, file: string, staged: boolean, untracked: boolean) =>
+    invoke<FileDiff>("git_diff", { repo, file, staged, untracked }),
+  /** Listening TCP ports per running session. Call only while a view shows ports (or once per activity change). */
+  portsList: () => invoke<SessionPorts[]>("ports_list"),
+  browserProbe: (url: string) => invoke<FrameProbe>("browser_probe", { url }),
+  /** Opens (or navigates + focuses `label`) a pop-out browser window; returns its label. */
+  browserOpenWindow: (url: string, label: string | null) => invoke<string>("browser_open_window", { url, label }),
+  browserCloseWindow: (label: string) => invoke<boolean>("browser_close_window", { label }),
+  browserDevtools: (label: string) => invoke<void>("browser_devtools", { label }),
 
   diagnosticsSnapshot: () => invoke<Diagnostics>("diagnostics_snapshot"),
   diagnosticsExport: (frontend: unknown) => invoke<string>("diagnostics_export", { frontend }),

@@ -59,6 +59,8 @@ export const DEFAULT_BINDINGS: Record<string, string> = {
   "terminal.zoomIn": "ctrl+shift+=",
   "terminal.zoomOut": "ctrl+shift+-",
   "terminal.zoomReset": "ctrl+shift+0",
+  "view.changes": "ctrl+shift+h",
+  "browser.open": "ctrl+shift+l",
 };
 
 const CODE_KEYS: Record<string, string> = {

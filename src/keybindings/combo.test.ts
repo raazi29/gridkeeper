@@ -119,6 +119,18 @@ describe("resolveBindings", () => {
   });
 });
 
+describe("built-in tools bindings", () => {
+  it("binds view.changes and browser.open to allowed, unique combos", () => {
+    expect(DEFAULT_BINDINGS["view.changes"]).toBe("ctrl+shift+h");
+    expect(DEFAULT_BINDINGS["browser.open"]).toBe("ctrl+shift+l");
+    for (const c of ["ctrl+shift+h", "ctrl+shift+l"]) expect(forbiddenReason(c)).toBeNull();
+    expect(resolveBindings({}).get("ctrl+shift+h")).toBe("view.changes");
+    expect(resolveBindings({}).get("ctrl+shift+l")).toBe("browser.open");
+    const combos = Object.values(DEFAULT_BINDINGS);
+    expect(new Set(combos).size).toBe(combos.length);
+  });
+});
+
 describe("Mission Control binding", () => {
   it("binds view.mission to an allowed, unique combo", () => {
     expect(DEFAULT_BINDINGS["view.mission"]).toBe("ctrl+shift+u");

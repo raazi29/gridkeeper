@@ -207,11 +207,17 @@ function safeUrl(uri: string): string | null {
   }
 }
 
-function openLink(ev: MouseEvent, uri: string) {
+function openLink(ev: MouseEvent, uri: string, sessionId?: SessionId) {
   // Ctrl+click like Windows Terminal / VS Code, so clicks meant for selection never open a browser.
+  // Ctrl+Shift+click opens the link in a Gridkeeper browser pane next to this terminal instead.
   if (!ev.ctrlKey) return;
   const url = safeUrl(uri);
-  if (url) openUrl(url).catch((err) => log("warn", `openUrl failed: ${String(err)}`));
+  if (!url) return;
+  if (ev.shiftKey) {
+    void import("../actions/browser").then((m) => m.openBrowserPane({ url, afterId: sessionId }));
+    return;
+  }
+  openUrl(url).catch((err) => log("warn", `openUrl failed: ${String(err)}`));
 }
 
 async function copyText(text: string) {
@@ -830,7 +836,7 @@ function createEntry(id: SessionId): Entry {
     rightClickSelectsWord: false,
     theme: getTerminalTheme(s),
     smoothScrollDuration: 0,
-    linkHandler: { activate: (ev, uri) => openLink(ev, uri), allowNonHttpProtocols: false },
+    linkHandler: { activate: (ev, uri) => openLink(ev, uri, id), allowNonHttpProtocols: false },
   });
   const fit = new FitAddon();
   const search = new SearchAddon({ highlightLimit: 1000 });
@@ -889,8 +895,8 @@ function createEntry(id: SessionId): Entry {
   };
 
   term.loadAddon(
-    new WebLinksAddon((ev, uri) => openLink(ev, uri), {
-      hover: () => (el.title = "Ctrl+click to open link"),
+    new WebLinksAddon((ev, uri) => openLink(ev, uri, id), {
+      hover: () => (el.title = "Ctrl+click: open in browser · Ctrl+Shift+click: open in a Gridkeeper browser pane"),
       leave: () => (el.title = ""),
     }),
   );

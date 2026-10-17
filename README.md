@@ -94,6 +94,9 @@ dependency (WSL-only on Windows).
 - **Per-pane zoom:** Ctrl+Shift+= / Ctrl+Shift+- / Ctrl+Shift+0 change one pane's font size; the PTY is resized to match.
 - **Paste guard:** pasting more than 20 lines or 64 KiB into a program that has not enabled bracketed paste asks first (Settings › Terminal; programs like Claude Code and Codex are never asked).
 - **Command palette** over commands, sessions in all workspaces, and workspaces.
+- **Browser panes:** preview dev servers, docs and PRs in the grid next to the terminals (*+ New › Browser* / *Open URL…*, `Ctrl+Shift+L`, or `Ctrl+Shift+click` a link in a terminal). Address bar with back / forward / reload, open in the system browser, pop-out window; the pane name can follow the page title. Pages run in a sandboxed frame with no access to Gridkeeper; sites that refuse embedding (e.g. GitHub) and local `file:` pages open in a pop-out Gridkeeper window. Pages keep their state across layout changes, maximize and group switches.
+- **Ports:** dev servers your sessions start are detected from the Windows TCP table (listening sockets inside each session's process tree). A `:5173` chip on the pane header opens or focuses a browser pane on it; the Inspector, the browser start page and *Open URL…* list them too. Checked only while one of those views is open or when a session's activity changes — never on a constant timer.
+- **Changes (`Ctrl+Shift+H`, read-only):** a drawer with branch, ahead/behind and changed files for the workspace folder and every session worktree, plus a coloured unified diff (staged / unstaged / new files, capped at 2 MB). It never stages, commits, checks out or resets.
 - **Persistence:** a versioned, atomically written workspace file with a backup. A damaged file is preserved, never silently overwritten.
 - **No telemetry.**
 
@@ -182,7 +185,7 @@ You see and confirm the exact `git worktree add` command before anything is crea
 
 ### Inspector, diagnostics, palette
 
-- **Inspector** (`Ctrl+Shift+I`): details and actions for the focused session, plus its restore options.
+- **Inspector** (`Ctrl+Shift+I`): details and actions for the focused session, its listening ports, plus its restore options. For a browser pane: address, server status, embedding verdict and pop-out.
 - **Diagnostics** (``Ctrl+Shift+` ``): a per-process resource table (host / WebView2 / sessions), the GPU renderer string, WebGL/DOM counts and context losses. **Export** writes a redacted JSON bundle.
 - **Status bar:** the breadcrumb, running count, app vs agent CPU/RAM (polled every 2 s while the window is visible; can be turned off) and renderer status.
 - **Command palette** (`Ctrl+Shift+P`): fuzzy search over all commands, all sessions and all workspaces.
@@ -248,12 +251,15 @@ Defaults (`src/keybindings/combo.ts`). Change them in Settings → Keybindings; 
 | ``Ctrl+Shift+` `` | Toggle diagnostics |
 | `Ctrl+,` | Settings |
 | `Ctrl+Shift+G` | New group |
+| `Ctrl+Shift+L` | Browser: open URL in a pane… |
+| `Ctrl+Shift+H` | Changes: git status and diffs (read-only) |
 
 These commands have no default shortcut and run from the palette (they can be bound):
 
 - Session: restart (resume), restart (fresh conversation), stop, force stop, copy output, clear terminal
 - Layout: grid / columns / rows
 - Switch workspace…, go to session…, Claude account profiles
+- Browser: new pane (start page), reload, pop out, open in system browser; Ports: refresh
 
 **Inside a terminal** (fixed, not configurable):
 
@@ -263,7 +269,8 @@ These commands have no default shortcut and run from the palette (they can be bo
 | `Ctrl+Shift+C` | Copy the selection |
 | `Ctrl+V` / `Ctrl+Shift+V` | Paste (bracketed paste when the program enabled it) |
 | Right-click | Copy the selection, or paste. Goes to the program when it uses the mouse (hold Shift to override) |
-| `Ctrl+click` | Open an http(s) link |
+| `Ctrl+click` | Open an http(s) link in the system browser |
+| `Ctrl+Shift+click` | Open an http(s) link in a Gridkeeper browser pane next to the terminal |
 
 **Policy:** Gridkeeper never binds keys that terminals and agents need. Settings refuses these:
 
@@ -364,4 +371,6 @@ The ConPTY tests spawn real `pwsh`/`cmd` processes. Run them from PowerShell.
 - **Hide view frees the scrollback:** Show replays only the backend buffer (default 2 MiB per session).
 - **Diagnostics leave out the ConPTY host process** (`conhost.exe`). It belongs to neither the host, WebView2 nor a session tree in the in-app numbers. `sample.ps1` reports it separately.
 - **npm `.cmd` shims** run through `cmd.exe /d /c`, so arguments with cmd metacharacters are rejected. Prefer native `.exe` installs.
+- **Browser panes are iframes** (ADR-019): back / forward cover addresses opened through Gridkeeper, not link clicks inside the page; the pane name follows the page's static `<title>` only; `target=_blank` links do nothing inside a pane; app shortcuts don't fire while the keyboard focus is inside a page; DevTools exist only for pop-out windows in debug builds. Opening an http(s) address fetches it once with `curl.exe` to check whether it may be embedded; an HTTPS dev server with a self-signed certificate probes as "TLS error" (use *Show anyway*).
+- **Port detection** sees TCP listeners only (not UDP), and only inside a session's process tree — a server started detached from the session (e.g. a Windows service or `start` into another console tree) is not attributed.
 - **Job assignment race:** a process spawned in the first microseconds after launch, before Job assignment, could escape cleanup (portable-pty doesn't create processes suspended). Not observed in practice.

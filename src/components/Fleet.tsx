@@ -8,6 +8,7 @@ import { create } from "zustand";
 import { useShallow } from "zustand/react/shallow";
 import { jumpToSession } from "../actions/commands";
 import { ipc } from "../lib/ipc";
+import { processSessionIds } from "../lib/browserPanes";
 import type { SessionId } from "../lib/types";
 import { AgentGlyph } from "../layout/icons";
 import { isLive, useApp } from "../store/appStore";
@@ -41,8 +42,14 @@ export function FleetOverlay() {
   useDiagnosticsPoll(true);
 
   // Structure: workspaces -> session ids (changes only with layout edits).
+  // Process tiles only: browser panes have no process, output or CPU.
   const sections = useApp(
-    useShallow((s) => s.persisted.workspaces.map((w) => `${w.id}\u0000${w.name}\u0000${w.groups.flatMap((g) => g.sessionIds).join(",")}`)),
+    useShallow((s) => {
+      const metas = new Map(s.persisted.sessions.map((m) => [m.id, m]));
+      return s.persisted.workspaces.map(
+        (w) => `${w.id}\u0000${w.name}\u0000${processSessionIds(w.groups.flatMap((g) => g.sessionIds), metas).join(",")}`,
+      );
+    }),
   );
   const runtime = useApp((s) => s.runtime);
   const attn = useAttention((s) => s.sessions);

@@ -74,6 +74,83 @@ pub fn run_with_timeout(mut cmd: Command, timeout: Duration) -> io::Result<Outpu
     Ok(Output { status, stdout, stderr })
 }
 
+/// Output of [`run_capped`]: stdout is at most `max_stdout` bytes.
+pub struct CappedOutput {
+    /// `None` when the child was killed because stdout exceeded the cap.
+    pub status: Option<std::process::ExitStatus>,
+    pub stdout: Vec<u8>,
+    pub stderr: Vec<u8>,
+    /// stdout went over the cap; the child was killed and `stdout` holds the first `max_stdout` bytes.
+    pub truncated: bool,
+}
+
+/// Collects at most `cap` bytes of `pipe`; sets `over` once more data arrives.
+fn drain_capped<R: Read + Send + 'static>(
+    pipe: Option<R>,
+    cap: usize,
+    over: std::sync::Arc<std::sync::atomic::AtomicBool>,
+) -> mpsc::Receiver<Vec<u8>> {
+    let (tx, rx) = mpsc::channel();
+    std::thread::spawn(move || {
+        let mut buf = Vec::new();
+        if let Some(mut pipe) = pipe {
+            let mut chunk = [0u8; 16 * 1024];
+            loop {
+                match pipe.read(&mut chunk) {
+                    Ok(0) | Err(_) => break,
+                    Ok(n) => {
+                        let room = cap.saturating_sub(buf.len());
+                        buf.extend_from_slice(&chunk[..n.min(room)]);
+                        if n > room {
+                            over.store(true, std::sync::atomic::Ordering::SeqCst);
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+        let _ = tx.send(buf);
+    });
+    rx
+}
+
+/// Like [`run_with_timeout`], but never buffers more than `max_stdout` bytes of stdout (and 64 KiB
+/// of stderr): once stdout goes over the cap the child is killed and the result is marked truncated.
+pub fn run_capped(mut cmd: Command, timeout: Duration, max_stdout: usize) -> io::Result<CappedOutput> {
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::Arc;
+    cmd.stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::piped());
+    let mut child = cmd.spawn()?;
+    let over = Arc::new(AtomicBool::new(false));
+    let out_rx = drain_capped(child.stdout.take(), max_stdout, Arc::clone(&over));
+    let err_rx = drain_capped(child.stderr.take(), 64 * 1024, Arc::new(AtomicBool::new(false)));
+
+    let deadline = Instant::now() + timeout;
+    let status = loop {
+        if over.load(Ordering::SeqCst) {
+            let _ = child.kill();
+            let _ = child.wait();
+            break None;
+        }
+        if let Some(status) = child.try_wait()? {
+            break Some(status);
+        }
+        if Instant::now() >= deadline {
+            let _ = child.kill();
+            let _ = child.wait();
+            return Err(io::Error::new(
+                io::ErrorKind::TimedOut,
+                format!("process did not finish within {} s", timeout.as_secs()),
+            ));
+        }
+        std::thread::sleep(Duration::from_millis(15));
+    };
+    let grace = Duration::from_secs(2);
+    let stdout = out_rx.recv_timeout(grace).unwrap_or_default();
+    let stderr = err_rx.recv_timeout(grace).unwrap_or_default();
+    Ok(CappedOutput { status, stdout, stderr, truncated: over.load(Ordering::SeqCst) })
+}
+
 /// First non-empty, trimmed line of a byte buffer (lossy UTF-8), max 200 chars.
 pub fn first_line(bytes: &[u8]) -> Option<String> {
     let text = String::from_utf8_lossy(bytes);
@@ -111,6 +188,22 @@ mod tests {
     fn missing_program_is_error() {
         let cmd = hidden_command("definitely-not-a-real-program-gridkeeper.exe");
         assert!(run_with_timeout(cmd, Duration::from_secs(1)).is_err());
+    }
+
+    #[test]
+    fn capped_output_is_cut_and_marked() {
+        let mut cmd = hidden_command("cmd.exe");
+        cmd.args(["/d", "/c", "for /l %i in (1,1,2000) do @echo 0123456789abcdef"]);
+        let out = run_capped(cmd, Duration::from_secs(20), 1000).expect("cmd runs");
+        assert!(out.truncated);
+        assert_eq!(out.stdout.len(), 1000);
+
+        let mut cmd = hidden_command("cmd.exe");
+        cmd.args(["/d", "/c", "echo small"]);
+        let out = run_capped(cmd, Duration::from_secs(10), 1000).expect("cmd runs");
+        assert!(!out.truncated);
+        assert!(out.status.is_some_and(|s| s.success()));
+        assert_eq!(first_line(&out.stdout).as_deref(), Some("small"));
     }
 
     #[test]

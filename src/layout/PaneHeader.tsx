@@ -27,6 +27,20 @@ import { roleMenuItems } from "../components/mission/roleMenu";
 import { MutedGlyph } from "../components/MutedGlyph";
 import { toggleSessionMute, useSessionMuted } from "../actions/notifyPrefs";
 import { isSignedIn } from "../lib/accounts";
+import { goHome, openExternal, openPort, popOut, reload } from "../actions/browser";
+import { ownOrigin, useBrowserNav, viewOf, type BrowserView } from "../browser/nav";
+import { portChipLabel } from "../lib/browserPanes";
+import { usePorts } from "../store/ports";
+import { copyText } from "../components/util/pick";
+import { IconGlobe } from "./icons";
+
+function browserStatus(view: BrowserView, loading: boolean): { cls: string; label: string } {
+  if (view === "start") return { cls: "idle", label: "Start page" };
+  if (view === "refused" || view === "unreachable" || view === "blocked" || view === "invalid")
+    return { cls: "error", label: view === "unreachable" ? "Not reachable" : "Cannot show this page here" };
+  if (loading) return { cls: "pending", label: "Loading" };
+  return { cls: "running", label: view === "file" ? "Local file" : "Loaded" };
+}
 
 export interface PaneHeaderProps {
   sessionId: SessionId;
@@ -242,15 +256,53 @@ export const PaneHeader = memo(function PaneHeader({ sessionId, groupId, index, 
   const closeMenu = useCallback(() => setMenuAnchor(null), []);
   const [roleAnchor, setRoleAnchor] = useState<HTMLElement | null>(null);
   const closeRoleMenu = useCallback(() => setRoleAnchor(null), []);
+  const [portsAnchor, setPortsAnchor] = useState<HTMLElement | null>(null);
+  const closePortsMenu = useCallback(() => setPortsAnchor(null), []);
+  const ports = usePorts((s) => s.bySession[sessionId]);
+  const browserState = useBrowserNav(
+    useShallow((s) => {
+      const n = s.panes[sessionId];
+      return { view: viewOf(n, ownOrigin()), loading: !!n?.loading, url: n?.url ?? null };
+    }),
+  );
 
   if (!meta) return <div className="pane-header" />;
+  const isBrowser = meta.kind === "browser";
 
-  const status = statusInfo(rt);
+  const status = isBrowser ? browserStatus(browserState.view, browserState.loading) : statusInfo(rt);
   const cwdBase = basename(meta.cwd);
   const branch = meta.worktree ? (meta.worktree.branch ?? basename(meta.worktree.path)) : null;
   const profileWarn = !!profile && !isSignedIn(profile);
 
-  const menuItems: MenuItem[] = [
+  const moveItems: MenuItem[] = [
+    {
+      label: "Move left",
+      separatorBefore: true,
+      disabled: index <= 0,
+      onSelect: () => useApp.getState().moveSession(groupId, index, index - 1),
+    },
+    {
+      label: "Move right",
+      disabled: index >= count - 1,
+      onSelect: () => useApp.getState().moveSession(groupId, index, index + 1),
+    },
+  ];
+  const browserItems: MenuItem[] = [
+    { label: "Rename", onSelect: () => setEditing(true) },
+    {
+      label: meta.titleAsName ? "✓ Name follows page title" : "Name follows page title",
+      onSelect: () => useApp.getState().updateSessionMeta(sessionId, { titleAsName: !meta.titleAsName }),
+    },
+    { label: "Reload", separatorBefore: true, disabled: !browserState.url, onSelect: () => reload(sessionId) },
+    { label: "Open in pop-out window", disabled: !browserState.url, onSelect: () => void popOut(sessionId) },
+    { label: "Open in system browser", disabled: !browserState.url?.startsWith("http"), onSelect: () => openExternal(browserState.url) },
+    { label: "Copy address", disabled: !browserState.url, onSelect: () => void copyText(browserState.url ?? "", "Address copied") },
+    { label: "Start page", disabled: !browserState.url, onSelect: () => goHome(sessionId) },
+    ...moveItems,
+    { label: "Close", separatorBefore: true, danger: true, onSelect: () => void closeSession(sessionId) },
+  ];
+
+  const menuItems: MenuItem[] = isBrowser ? browserItems : [
     { label: "Rename", onSelect: () => setEditing(true) },
     { label: "Copy output", onSelect: () => void copyOutput(sessionId) },
     { label: "Clear", onSelect: () => void clearSession(sessionId) },
@@ -266,19 +318,14 @@ export const PaneHeader = memo(function PaneHeader({ sessionId, groupId, index, 
         void restartSession(sessionId, { mode: "none" });
       },
     },
-    {
-      label: "Move left",
-      separatorBefore: true,
-      disabled: index <= 0,
-      onSelect: () => useApp.getState().moveSession(groupId, index, index - 1),
-    },
-    {
-      label: "Move right",
-      disabled: index >= count - 1,
-      onSelect: () => useApp.getState().moveSession(groupId, index, index + 1),
-    },
+    ...moveItems,
     { label: "Close", separatorBefore: true, danger: true, onSelect: () => void onClose() },
   ];
+  const portItems: MenuItem[] = (ports ?? []).map((p) => ({
+    label: `Open :${p.port} in a browser pane`,
+    onSelect: () => openPort(sessionId, p.port),
+  }));
+  const portLabel = isBrowser ? null : portChipLabel(ports);
 
   const onDragStart = (e: DragEvent<HTMLDivElement>) => {
     if (editing) {
@@ -311,10 +358,10 @@ export const PaneHeader = memo(function PaneHeader({ sessionId, groupId, index, 
     >
       <div className="pane-title-area">
         <span className={`pane-dot pane-dot--${status.cls}`} title={status.label} aria-label={status.label} />
-        <AttentionLamp sessionId={sessionId} />
-        {muted && <MutedGlyph title="Notifications muted for this session (alerts still reach Comms)" />}
-        <span className="pane-glyph" title={meta.agent}>
-          <AgentGlyph agent={meta.agent} />
+        {!isBrowser && <AttentionLamp sessionId={sessionId} />}
+        {muted && !isBrowser && <MutedGlyph title="Notifications muted for this session (alerts still reach Comms)" />}
+        <span className="pane-glyph" title={isBrowser ? "Browser pane" : meta.agent}>
+          {isBrowser ? <IconGlobe /> : <AgentGlyph agent={meta.agent} />}
         </span>
         {editing ? (
           <input
@@ -346,8 +393,21 @@ export const PaneHeader = memo(function PaneHeader({ sessionId, groupId, index, 
             {meta.name}
           </span>
         )}
-        <RoleTag role={meta.role} />
-        {(meta.agent === "claude" || profile) && (
+        {!isBrowser && <RoleTag role={meta.role} />}
+        {portLabel && (
+          <button
+            type="button"
+            className="pane-chip pane-chip--port"
+            title={`Listening: ${(ports ?? []).map((p) => `:${p.port}`).join(", ")}\nClick to open in a browser pane`}
+            onClick={(e) => {
+              if (ports && ports.length > 1) setPortsAnchor(portsAnchor ? null : e.currentTarget);
+              else if (ports?.[0]) openPort(sessionId, ports[0].port);
+            }}
+          >
+            {portLabel}
+          </button>
+        )}
+        {!isBrowser && (meta.agent === "claude" || profile) && (
           <span
             className={`pane-chip pane-chip--account${profileWarn ? " pane-chip--warn" : ""}`}
             title={
@@ -366,9 +426,11 @@ export const PaneHeader = memo(function PaneHeader({ sessionId, groupId, index, 
             {branch}
           </span>
         )}
-        <span className="pane-cwd" title={meta.cwd}>
-          {cwdBase}
-        </span>
+        {!isBrowser && (
+          <span className="pane-cwd" title={meta.cwd}>
+            {cwdBase}
+          </span>
+        )}
       </div>
       <div className="pane-actions">
         <QuickLaunchButton variant="icon" groupId={groupId} />
@@ -381,18 +443,22 @@ export const PaneHeader = memo(function PaneHeader({ sessionId, groupId, index, 
         >
           {maximized ? <IconRestore /> : <IconMaximize />}
         </button>
-        <button type="button" className="pane-icon-btn" title="Restart" aria-label="Restart" onClick={() => void onRestart()}>
-          <IconRestart />
-        </button>
-        <button
-          type="button"
-          className="pane-icon-btn"
-          title={live ? "Stop (Shift+click to force)" : "Start"}
-          aria-label={live ? "Stop" : "Start"}
-          onClick={(e) => void onStopOrStart(e)}
-        >
-          {live ? <IconStop /> : <IconPlay />}
-        </button>
+        {!isBrowser && (
+          <>
+            <button type="button" className="pane-icon-btn" title="Restart" aria-label="Restart" onClick={() => void onRestart()}>
+              <IconRestart />
+            </button>
+            <button
+              type="button"
+              className="pane-icon-btn"
+              title={live ? "Stop (Shift+click to force)" : "Start"}
+              aria-label={live ? "Stop" : "Start"}
+              onClick={(e) => void onStopOrStart(e)}
+            >
+              {live ? <IconStop /> : <IconPlay />}
+            </button>
+          </>
+        )}
         <button
           type="button"
           className={`pane-icon-btn${menuAnchor ? " is-active" : ""}`}
@@ -416,6 +482,7 @@ export const PaneHeader = memo(function PaneHeader({ sessionId, groupId, index, 
       </div>
       {menuAnchor && <PaneMenu anchor={menuAnchor} items={menuItems} onClose={closeMenu} />}
       {roleAnchor && <PaneMenu anchor={roleAnchor} items={roleMenuItems(sessionId, meta.role ?? null)} onClose={closeRoleMenu} />}
+      {portsAnchor && <PaneMenu anchor={portsAnchor} items={portItems} onClose={closePortsMenu} />}
     </div>
   );
 });

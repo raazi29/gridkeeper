@@ -22,6 +22,7 @@ These are short architecture decision records (ADRs). Each one gives the context
 | 016 | [Diagnostics via Toolhelp instead of sysinfo per-process](#adr-016-diagnostics-via-toolhelp-instead-of-sysinfo-per-process) |
 | 017 | [panic = "unwind" in release](#adr-017-panic--unwind-in-release) |
 | 018 | [No telemetry](#adr-018-no-telemetry) |
+| 019 | [Browser panes: sandboxed iframes in a persistent layer + pop-out windows, no child webviews](#adr-019-browser-panes-sandboxed-iframes-in-a-persistent-layer--pop-out-windows-no-child-webviews) |
 
 ---
 
@@ -338,9 +339,37 @@ These are short architecture decision records (ADRs). Each one gives the context
 **Context.** The app hosts private source code and AI conversations for a single developer.
 
 **Decision.**
-- No analytics, crash reporting or update pings. The app makes no network requests of its own.
+- No analytics, crash reporting or update pings. The app makes no network requests of its own. The single, user-initiated exception is the browser-pane probe (ADR-019): opening an http(s) address in a pane fetches that same address once with `curl.exe` to check whether it may be framed.
 - Logs and diagnostics bundles stay local under `%APPDATA%\app.gridkeeper.desktop`, are redacted, and are shared only if the user sends them.
 
 **Alternatives.** Opt-in telemetry or crash reporting would add a network surface and a privacy policy for little benefit to a single-user tool.
 
 **Consequences.** Problems are diagnosed from user-exported bundles (`Diagnostics → Export`) and log files. There is no field data on crashes.
+
+## ADR-019: Browser panes: sandboxed iframes in a persistent layer + pop-out windows, no child webviews
+
+**Context.** Agents start dev servers, write docs and open PRs; users want to look at the result next to the terminals. A browser pane must live in the grid like a terminal, survive layout changes, and must never give web content access to Gridkeeper's IPC (which can write into every session). Overlays (menus, palette, dialogs, toasts, Fleet, Mission Control) are DOM.
+
+**Decision.**
+- **In-pane pages are `<iframe>`s** in the main webview, sandboxed with `allow-scripts allow-same-origin allow-forms allow-modals allow-downloads allow-pointer-lock` (no `allow-top-navigation*`, no `allow-popups`), CSP `frame-src http: https:`.
+- **One persistent layer** (`browser/BrowserLayer.tsx`) holds every iframe and positions it over the pane's host box; the iframe never moves in the DOM, so reordering, maximize, layout presets and group switches do not reload the page (re-inserting an iframe reloads it).
+- **Embeddability probe** (`browser::probe`): `curl.exe` (in System32 since Windows 10 1803; no new crate) fetches the address once and reports CSP `frame-ancestors` / `X-Frame-Options`, reachability and the static `<title>`. A blocked cross-origin frame still fires `load`, so the frame alone cannot tell "refused" from "loaded".
+- **Fallback: a pop-out `WebviewWindow`** (`browser-*` label) for sites that refuse framing and for `file:` URLs, plus "open in system browser" (opener).
+- **Capabilities target the `main` webview by label** (`"webviews": ["main"]`).
+
+**Security analysis** (verified in the tauri 2.12.4 / wry 0.57 sources) [V]:
+- Tauri's IPC bootstrap, including the invoke key every IPC request must carry, is registered `for_main_frame_only: true` (`manager/webview.rs`); none of our plugins add all-frames scripts. A framed page — cross-origin, and sandboxed — never sees `__TAURI_INTERNALS__` or the key.
+- `allow-scripts` + `allow-same-origin` is dangerous only for a frame that shares the parent's origin (it could remove its own sandbox). `frameMode` refuses the app's origins (`window.location.origin`, which is `http://localhost:1420` in dev and `http://tauri.localhost` in release, plus `tauri|ipc|asset.localhost`) before anything is framed; everything else keeps its own origin (e.g. `http://localhost:5173`) and cannot reach the parent document. `allow-same-origin` is kept because dev apps need their own localStorage, cookies and service workers.
+- Pop-out windows *do* get the IPC script (every Tauri webview does). They are protected by two independent checks: Tauri rejects custom commands from a non-local origin unless a `remote` capability matches (`webview/mod.rs`: "remote content can never reach custom commands"), and plugin commands need a capability whose `windows` / `webviews` patterns match — none matches `browser-*` (`ipc/authority.rs resolve_access`). The only way around the first check is a URL Tauri treats as *local* — the dev URL origin or a `<protocol>.localhost` host — so `on_navigation` refuses exactly those (`navigation_allowed`), as does `open_window`. `on_new_window` always denies (http(s) links go to the system browser) so no bare WebView2 popup appears.
+- Navigation is limited to http / https / file (+ `about:blank` in pop-outs); URLs are validated in Rust and TypeScript, ≤ 2048 chars, no credentials.
+
+**Alternatives.**
+- **Tauri child webviews** (`unstable` feature, `Window::add_child`, `browser_set_bounds` from a ResizeObserver): renders every site, real back / forward / title / DevTools. Rejected for now: native webviews paint *above* the DOM, so every menu, dialog, palette, toast and overlay would need a hide-all-webviews protocol or a screenshot placeholder; DPI/position syncing and focus handling could not be verified on this machine at the time; the feature is explicitly unstable. Kept as the upgrade path: the capability is already label-scoped, and the host-box registry is the geometry source such a webview would follow.
+- **iframe only:** many external sites (GitHub, most SaaS) send `X-Frame-Options: DENY`; without a probe they would show a blank pane.
+- **WinHTTP / an HTTP crate for the probe:** more code and binary size for the same headers.
+
+**Consequences.**
+- Dev servers, docs sites and anything that allows framing open in the grid; overlays work; layout changes keep page state.
+- A cross-origin frame hides its URL, history and title: back / forward cover addresses opened through Gridkeeper (not in-page link clicks), reload re-requests the last address we opened, and the page title comes from the probe's static `<title>` (SPA titles set by script are not seen). `target=_blank` links do nothing inside a pane. App shortcuts do not fire while keyboard focus is inside a page.
+- One extra request per opened http(s) address (ADR-018 updated accordingly).
+- DevTools only for pop-out windows in debug builds (the release build has no `devtools` feature, so the main window never exposes them).

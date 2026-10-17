@@ -294,6 +294,21 @@ pub fn sanitize(mut state: PersistedState) -> (PersistedState, Vec<String>) {
             m.worktree = None;
         }
         m.role = m.role.as_deref().and_then(normalize_role);
+        match m.kind {
+            PaneKind::Browser => {
+                // No process behind a browser pane: never auto-start; keep only safe URLs.
+                m.auto_start = false;
+                let before = m.url.is_some();
+                m.url = m.url.as_deref().and_then(crate::browser::validate_url);
+                if before && m.url.is_none() {
+                    notes.push("dropped an invalid browser pane URL".into());
+                }
+            }
+            PaneKind::Terminal => {
+                m.url = None;
+                m.title_as_name = false;
+            }
+        }
     }
     let known: HashSet<String> = state.sessions.iter().map(|m| m.id.clone()).collect();
 
@@ -474,6 +489,9 @@ mod tests {
             name: format!("s-{id}"),
             agent: AgentKind::Powershell,
             cwd: r"C:\work".into(),
+            kind: PaneKind::Terminal,
+            url: None,
+            title_as_name: false,
             profile_id: None,
             command: None,
             args: vec![],
@@ -674,6 +692,41 @@ mod tests {
         // Older files without the field still load.
         let v: SessionMeta = serde_json::from_value(json!({"id":"x","name":"x","agent":"claude","cwd":"C:\\"})).unwrap();
         assert_eq!(v.role, None);
+    }
+
+    #[test]
+    fn sanitize_validates_browser_panes() {
+        // Older files without kind / url load as terminals.
+        let v: SessionMeta = serde_json::from_value(json!({"id":"x","name":"x","agent":"powershell","cwd":"C:\\"})).unwrap();
+        assert_eq!(v.kind, PaneKind::Terminal);
+        assert_eq!(v.url, None);
+        let v: SessionMeta =
+            serde_json::from_value(json!({"id":"x","name":"x","agent":"generic","cwd":"","kind":"browser","url":"http://localhost:5173"}))
+                .unwrap();
+        assert_eq!(v.kind, PaneKind::Browser);
+
+        let mut st = sample();
+        st.sessions[0].kind = PaneKind::Browser;
+        st.sessions[0].url = Some("javascript:alert(1)".into());
+        st.sessions[0].auto_start = true;
+        st.sessions[1].kind = PaneKind::Browser;
+        st.sessions[1].url = Some("http://localhost:5173".into());
+        let (st2, notes) = sanitize(st.clone());
+        assert_eq!(st2.sessions[0].url, None);
+        assert!(!st2.sessions[0].auto_start, "browser panes never auto-start");
+        assert_eq!(st2.sessions[1].url.as_deref(), Some("http://localhost:5173/"));
+        assert!(notes.iter().any(|n| n.contains("browser")));
+
+        let mut st = sample();
+        st.sessions[0].url = Some("https://example.com".into()); // terminal: url dropped
+        st.sessions[1].kind = PaneKind::Browser;
+        st.sessions[1].url = Some(format!("https://example.com/{}", "a".repeat(3000)));
+        let (st, _) = sanitize(st);
+        assert_eq!(st.sessions[0].url, None);
+        assert_eq!(st.sessions[1].url, None, "longer than 2048 chars");
+        for ok in ["https://example.com/", "file:///C:/docs/a.html"] {
+            assert!(crate::browser::validate_url(ok).is_some());
+        }
     }
 
     #[test]
