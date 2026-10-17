@@ -13,13 +13,15 @@
 //!
 //! Verification (2026-10-17, this machine): CLAUDE_CONFIG_DIR — official docs + three isolated
 //! logins in use. CODEX_HOME — official docs; `codex login status` prints `Logged in using …` /
-//! `Not logged in` with exit code 0 / 1 and creates no files in an empty home. HERMES_HOME —
+//! `Not logged in` with exit code 0 / 1 (in a fresh home it may create its own PATH-alias helpers,
+//! never credentials). HERMES_HOME —
 //! official profile docs + `hermes_constants.py` (Windows default `%LOCALAPPDATA%\hermes`, named
 //! profiles under `<root>\profiles\<name>`). Other installed agent CLIs have no documented home
 //! variable (Kimi CLI 0.53 hard-codes `~/.kimi`) and are reported as "no account isolation".
 //!
-//! Default accounts: launching an agent's *default* account REMOVES its home variable, so the
-//! agent uses its documented platform default. A home variable inherited from the environment
+//! Default accounts: launching an agent's *default* account REMOVES its home variable (Claude,
+//! Codex), so the agent uses its documented platform default; for Hermes it is SET to the resolved
+//! default, as Hermes asks spawners to pass HERMES_HOME explicitly. A home variable inherited from the environment
 //! that points somewhere else is discovered as an account of its own ("from CODEX_HOME").
 //!
 //! Security: everything here is directory listing and file-EXISTENCE checks by name. No file
@@ -62,6 +64,17 @@ pub enum Siblings {
     DefaultSubdir(&'static str),
 }
 
+/// How the DEFAULT account's home variable is handled at launch.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DefaultEnv {
+    /// Remove it, so the agent uses its own default (Claude: also keeps `.claude.json` in the
+    /// user profile; Codex: `~/.codex` is created by Codex when missing).
+    Remove,
+    /// Set it to the resolved default home (Hermes asks spawners to pass HERMES_HOME explicitly,
+    /// otherwise a sticky non-default profile triggers its "HERMES_HOME fallback" warning).
+    SetResolved,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum StatusKind {
     ClaudeAuthStatus,
@@ -80,6 +93,7 @@ pub struct AccountSpec {
     /// Environment variable that selects the home directory.
     pub home_env: &'static str,
     pub default_home: DefaultHome,
+    pub default_env: DefaultEnv,
     pub siblings: Siblings,
     /// Groups of file/dir names; a directory is a usable home when ALL names of ANY group exist.
     pub markers: &'static [&'static [&'static str]],
@@ -107,6 +121,7 @@ pub static SPECS: &[AccountSpec] = &[
         label: "Claude Code",
         home_env: "CLAUDE_CONFIG_DIR",
         default_home: DefaultHome::UserHome(".claude"),
+        default_env: DefaultEnv::Remove,
         siblings: Siblings::HomePrefix(".claude-"),
         // A credentials file is conclusive; a bare settings.json is not (tool dirs like
         // .claude-mem have their own), so it must come with Claude's state file or transcripts.
@@ -126,6 +141,7 @@ pub static SPECS: &[AccountSpec] = &[
         label: "Codex",
         home_env: "CODEX_HOME",
         default_home: DefaultHome::UserHome(".codex"),
+        default_env: DefaultEnv::Remove,
         siblings: Siblings::HomePrefix(".codex-"),
         markers: &[&["auth.json"], &["config.toml"]],
         likely_auth_markers: &["auth.json"],
@@ -143,6 +159,7 @@ pub static SPECS: &[AccountSpec] = &[
         label: "Hermes Agent",
         home_env: "HERMES_HOME",
         default_home: DefaultHome::LocalAppData("hermes"),
+        default_env: DefaultEnv::SetResolved,
         siblings: Siblings::DefaultSubdir("profiles"),
         markers: &[&["config.yaml"], &["auth.json"], &[".env"]],
         likely_auth_markers: &["auth.json", ".env"],
@@ -419,7 +436,8 @@ pub fn resolve_account(store: &ProfileStore, spec: &AccountSpec, id: &str) -> Ap
     Ok(account)
 }
 
-/// Set (named account) or remove (default account) the home variable. A named home must exist
+/// Set the home variable (named account), or for the default account remove it / set it to the
+/// resolved default per `AccountSpec::default_env`. A named home must exist
 /// (Codex refuses a CODEX_HOME that does not). Returns the resolved home.
 pub fn apply_launch_env(spec: &AccountSpec, account: &Account, plan: &mut PlanBuilder) -> AppResult<Option<PathBuf>> {
     let dir = account.config_dir.as_deref().map(str::trim).filter(|d| !d.is_empty());
@@ -433,8 +451,16 @@ pub fn apply_launch_env(spec: &AccountSpec, account: &Account, plan: &mut PlanBu
             Some(p)
         }
         None => {
-            plan.remove_env(spec.home_env);
-            account.resolved_dir.as_ref().map(PathBuf::from)
+            let resolved = account.resolved_dir.as_ref().map(PathBuf::from);
+            match (spec.default_env, &resolved) {
+                (DefaultEnv::SetResolved, Some(r)) => {
+                    plan.set_env(spec.home_env, r.to_string_lossy().into_owned());
+                }
+                _ => {
+                    plan.remove_env(spec.home_env);
+                }
+            }
+            resolved
         }
     };
     if strip_identity_at_launch(spec, dir.is_none()) {

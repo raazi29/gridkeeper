@@ -323,6 +323,13 @@ fn preset_account_sets_hermes_home() {
     );
     assert_eq!(plan.args, vec!["setup"]);
 
+    // Default Hermes account: HERMES_HOME set explicitly to the platform default (Hermes asks for it).
+    let default = f.profiles.create_in(hermes, "Default".into(), None, None).unwrap();
+    s.profile_id = Some(default.id.clone());
+    let plan = resolve_launch(&s, &f.profiles, &f.settings).unwrap();
+    assert_eq!(env(&plan, "HERMES_HOME").map(PathBuf::from), Some(f.home.join(r"AppData\Local\hermes")));
+    assert!(!removed(&plan, "HERMES_HOME"));
+
     // Tools without account isolation refuse an account id.
     s.preset = Some("kimi".into());
     match resolve_launch(&s, &f.profiles, &f.settings).unwrap_err() {

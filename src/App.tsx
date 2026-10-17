@@ -51,13 +51,14 @@ async function boot() {
   ipc.profilesList().then((p) => useApp.getState().setProfiles(p)).catch(() => {});
   void refreshAccounts();
   void loadAccountAgents();
-  // Account auto-detection (all agents) after agent detection; status checks skip accounts in use.
-  ipc
+  const detected = ipc
     .agentsDetect()
     .then((a) => useApp.getState().setAgents(a))
-    .catch(() => {})
-    .finally(() => void scanAccounts());
+    .catch(() => {});
   await restoreSessions();
+  // Account auto-detection (all agents) once agents are detected and restored sessions are
+  // launched: status checks skip accounts with a live session (Claude Code #91708).
+  void detected.finally(() => void scanAccounts());
 }
 
 export default function App() {
