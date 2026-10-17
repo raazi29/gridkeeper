@@ -25,6 +25,10 @@ Download `Gridkeeper_0.1.0_x64-setup.exe` (≈5.7 MB, per-user install, no admin
 yourself (see [Build and run](#build-and-run)). Windows 10 1809+ / Windows 11. The WebView2 runtime is preinstalled on
 Windows 11; the installer bootstraps it elsewhere.
 
+The installer is not code-signed yet, so Windows SmartScreen may show "Windows protected your PC" on first run —
+choose *More info → Run anyway*. Windows notifications show the proper app name and icon only from the installed app
+(in a dev build they appear under PowerShell).
+
 On first launch Gridkeeper finds your existing Claude Code / Codex / Hermes logins automatically
 (e.g. `~/.claude`, `~/.claude-*`, `~/.codex`) — nothing to configure.
 

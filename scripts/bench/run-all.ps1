@@ -34,10 +34,10 @@ New-Item -ItemType Directory -Force -Path $OutDir | Out-Null
 $all = @()
 foreach ($s in $scenarios) {
   Write-Host "=== $($s.label) ===" -ForegroundColor Cyan
-  Get-Process -Name $procName -ErrorAction SilentlyContinue | Where-Object { $_.Path -eq $Exe } | Stop-Process -Force
+  # Only ever stop instances this script started (never a user's running app).
   $env:GRIDKEEPER_BENCH = $s.bench
   # Separate WebView2 profile: a normal instance may already hold the default one with other browser flags.
-  $env:WEBVIEW2_USER_DATA_FOLDER = Join-Path $env:TEMP "gridkeeper-bench-webview"
+  $env:WEBVIEW2_USER_DATA_FOLDER = Join-Path $env:TEMP "gridkeeper-bench-webview-$($s.label)"
   $p = Start-Process -FilePath $Exe -PassThru
   Remove-Item Env:GRIDKEEPER_BENCH, Env:WEBVIEW2_USER_DATA_FOLDER
   Start-Sleep -Seconds $Warmup

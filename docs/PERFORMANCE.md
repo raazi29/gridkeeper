@@ -19,6 +19,22 @@ All numbers below were **measured on the target machine** with a **release build
 
 Disk: 22.7 GB free on C:, 207 GB on D:. Build artefacts: installer `*_x64-setup.exe` **5.2 MB**, app binary **13.8 MB**.
 
+## Final build results (2026-10-17, commit c04b899, all features)
+
+Re-measured on the finished app (notifications/attention monitor, GPU telemetry, accounts, Mission Control, browser panes,
+ports, themes) with the same scripts. **These supersede the earlier tables below**, which were taken before most features
+existed and are kept for comparison.
+
+| Scenario | Host CPU | Host private | WebView2 CPU | WebView2 private | GPU engine | GPU mem |
+|---|---|---|---|---|---|---|
+| Idle, 1 session | 0.10 % | 17 MB | 0.13 % | 288 MB | 0.27 % | 72 MB |
+| Idle, 6 sessions | 0.06 % | 19 MB | 0.42 % | 329 MB | 0.42 % | 86 MB |
+| 6 × 2,000 lines/s (WebGL) | 1.07 % | 33 MB | 6.42 % | 419 MB | 27 % avg / 32 % peak | 67 MB |
+
+Takeaways: idle cost is still a fraction of one percent of the machine; the finished feature set added roughly
+30–45 MB of WebView2 memory; under heavy output the GPU now carries ~27 % of rendering work while WebView2 CPU dropped
+to ~6.4 % (vs 12.5 % in the earlier build). The in-app status bar and Diagnostics show the same GPU counters live.
+
 ## Methodology
 
 - `GRIDKEEPER_BENCH` bench mode creates an in-memory workspace of N PowerShell sessions (user data untouched),
