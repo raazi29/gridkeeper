@@ -9,3 +9,4 @@ src-tauri/gen/schemas/
 .idea/
 *.log
 .DS_Store
+.claude/
