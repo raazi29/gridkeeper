@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { restoreSessions } from "./actions/sessions";
+import { maybeAutoRetry, restoreSessions } from "./actions/sessions";
 import { setupBench } from "./bench";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { Shell } from "./components/Shell";
@@ -18,7 +18,10 @@ async function boot() {
   await onSessionState((info) => {
     const s = useApp.getState();
     s.setRuntime(info);
-    if (info.state.state === "exited") s.updateSessionMeta(info.id, { lastExitCode: info.state.code });
+    if (info.state.state === "exited") {
+      s.updateSessionMeta(info.id, { lastExitCode: info.state.code });
+      maybeAutoRetry(info);
+    }
   });
   const info = await ipc.appInfo().catch(() => null);
   if (info?.bench) {

@@ -2,9 +2,9 @@
 
 import { writeText } from "@tauri-apps/plugin-clipboard-manager";
 import { errorMessage, ipc } from "../lib/ipc";
-import type { AgentKind, ResumeMode, SessionId, SessionMeta, SessionSpec, WorktreeRef } from "../lib/types";
+import type { AgentKind, ResumeMode, SessionId, SessionInfo, SessionMeta, SessionSpec, WorktreeRef } from "../lib/types";
 import { isLive, shouldApplyStartResult, uid, useApp } from "../store/appStore";
-import { clearTerminal, getTerminalSize } from "../terminal/registry";
+import { clearTerminal, getTerminalSize, writeLocalNotice } from "../terminal/registry";
 import { notify } from "./notify";
 
 const AGENT_LABEL: Record<AgentKind, string> = {
@@ -81,10 +81,44 @@ async function launchSlot(agent: AgentKind) {
   if (at > now) await new Promise((r) => setTimeout(r, at - now));
 }
 
-export async function startSession(id: SessionId, resume: ResumeMode = { mode: "none" }): Promise<boolean> {
+// ---- one automatic retry for agents that fail during startup ---------------------------------
+// Agent CLIs occasionally die in their first seconds for reasons outside our control (observed: Codex 0.162
+// "account/read failed during TUI bootstrap ... timed out" when several start at once). Such a run is retried
+// once, after a pause, with the same resume mode. A user-requested stop never triggers it.
+const STARTUP_FAIL_WINDOW_MS = 20_000;
+const lastResume = new Map<SessionId, ResumeMode>();
+const retried = new Set<SessionId>();
+const userStopped = new Set<SessionId>();
+
+/** Called for every session-state event (App.tsx). */
+export function maybeAutoRetry(info: SessionInfo) {
+  if (info.state.state !== "exited" || info.state.code === 0 || info.state.code === null) return;
+  const meta = useApp.getState().persisted.sessions.find((m) => m.id === info.id);
+  // Agents only: Claude, Codex and catalog agent CLIs (not shells or arbitrary custom commands).
+  if (!(info.agent === "claude" || info.agent === "codex" || (info.agent === "generic" && meta?.preset))) return;
+  if (userStopped.delete(info.id)) return;
+  if (!info.startedAt || !info.endedAt) return;
+  const upMs = Date.parse(info.endedAt) - Date.parse(info.startedAt);
+  if (!(upMs >= 0 && upMs < STARTUP_FAIL_WINDOW_MS) || retried.has(info.id)) return;
+  retried.add(info.id);
+  writeLocalNotice(info.id, `[startup failed after ${Math.round(upMs / 1000)} s — retrying once in 3 s]`);
+  window.setTimeout(() => {
+    const cur = useApp.getState().runtime[info.id];
+    if (cur && !isLive(cur) && useApp.getState().persisted.sessions.some((m) => m.id === info.id))
+      void startSession(info.id, lastResume.get(info.id) ?? { mode: "none" }, { keepRetryBudget: true });
+  }, 3000);
+}
+
+export async function startSession(
+  id: SessionId,
+  resume: ResumeMode = { mode: "none" },
+  opts: { keepRetryBudget?: boolean } = {},
+): Promise<boolean> {
   const meta0 = useApp.getState().persisted.sessions.find((m) => m.id === id);
   if (!meta0) return false;
   if (isLive(useApp.getState().runtime[id])) return true;
+  lastResume.set(id, resume);
+  if (!opts.keepRetryBudget) retried.delete(id);
   await launchSlot(meta0.agent);
   const st = useApp.getState();
   const meta = st.persisted.sessions.find((m) => m.id === id);
@@ -150,6 +184,7 @@ export async function startSession(id: SessionId, resume: ResumeMode = { mode: "
 }
 
 export async function stopSession(id: SessionId, force = false) {
+  userStopped.add(id);
   try {
     await ipc.sessionStop(id, force);
   } catch (e) {
