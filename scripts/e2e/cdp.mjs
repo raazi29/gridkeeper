@@ -1,5 +1,5 @@
-// Minimal Chrome DevTools Protocol driver for the running Altera WebView2 (no dependencies; Node >= 22).
-// Launch Altera with:  WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=--remote-debugging-port=9222
+// Minimal Chrome DevTools Protocol driver for the running Gridkeeper WebView2 (no dependencies; Node >= 22).
+// Launch Gridkeeper with:  WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=--remote-debugging-port=9222
 // Usage:
 //   node scripts/e2e/cdp.mjs eval "<js expression>"        -> prints JSON result (awaits promises)
 //   node scripts/e2e/cdp.mjs shot out.png                   -> screenshot of the window

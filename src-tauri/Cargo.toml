@@ -1,13 +1,13 @@
 [package]
-name = "altera"
+name = "gridkeeper"
 version = "0.1.0"
-description = "Altera — GPU-accelerated multi-agent terminal workspace"
-authors = ["Altera"]
+description = "Gridkeeper — GPU-accelerated multi-agent terminal workspace"
+authors = ["Gridkeeper"]
 edition = "2024"
 
 [lib]
 # The `_lib` suffix avoids a bin/lib name clash on Windows (rust-lang/cargo#8519).
-name = "altera_lib"
+name = "gridkeeper_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]

@@ -1,4 +1,4 @@
-# Altera — Architecture
+# Gridkeeper — Architecture
 
 This document describes what the code does today. File paths are relative to the repo root. Constants are quoted by name so they can be found with a grep.
 
@@ -38,7 +38,7 @@ flowchart LR
     Store -. coarse runtime state .-> Reg
   end
 
-  subgraph Host["altera.exe (Tauri 2 host, Rust)"]
+  subgraph Host["gridkeeper.exe (Tauri 2 host, Rust)"]
     Cmds["commands/<br/>session.rs, services.rs, app.rs"]
     SM["pty::SessionManager / SessionCore"]
     Ad["adapters/<br/>powershell, claude, codex, generic"]
@@ -91,7 +91,7 @@ flowchart LR
 ## 2. Process model
 
 ```
-altera.exe  (Tauri host: Rust backend, main/UI thread, tokio runtime)
+gridkeeper.exe  (Tauri host: Rust backend, main/UI thread, tokio runtime)
 ├── msedgewebview2.exe  ×N   (WebView2: browser, renderer, GPU, utility processes; managed by WebView2)
 ├── conhost.exe              (one per session: system ConPTY host created by CreatePseudoConsole)
 └── <session root>           (pwsh.exe / claude.exe / codex.exe / cmd.exe /d /c <shim> / ...)
@@ -103,7 +103,7 @@ altera.exe  (Tauri host: Rust backend, main/UI thread, tokio runtime)
 - **WebView2** runs its usual multi-process architecture. All UI and all terminals share one page, which means one renderer process and one GPU process.
 - **Per session:**
   - one pseudoconsole (`conhost.exe` with the system ConPTY);
-  - the session's root process, assigned right after spawn to its own Job Object created with `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE` and no breakaway flags (`pty/job.rs`). Every descendant stays in the job, so terminating the job (or closing its last handle, including when Altera exits or crashes) kills exactly that session's tree.
+  - the session's root process, assigned right after spawn to its own Job Object created with `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE` and no breakaway flags (`pty/job.rs`). Every descendant stays in the job, so terminating the job (or closing its last handle, including when Gridkeeper exits or crashes) kills exactly that session's tree.
 - **Processes do not outlive the app.** On `RunEvent::Exit`, `AppCtx::shutdown` → `SessionManager::shutdown_all(1500 ms)`. If the host dies abruptly, the kernel closes the job handles and `KILL_ON_JOB_CLOSE` terminates the trees. Verified on the target machine: no orphaned agent processes after an app restart.
 - **Known gap:** portable-pty doesn't spawn with `CREATE_SUSPENDED`. A child that spawns another process before `AssignProcessToJobObject` runs could escape the job. This hasn't been observed with shells or agent CLIs.
 - **Short-lived helper processes** (`--version` probes, `claude auth status --json`, `git`) use `CREATE_NO_WINDOW`. They run with closed stdin and a hard timeout (`adapters/process.rs`: `run_with_timeout`).
@@ -280,7 +280,7 @@ The frontend writes a dim `[process exited with code N]` notice and turns off an
 | **Dispose** | `disposeTerminal` runs when the view is hidden or the session's metadata leaves the store (pane closed, group or workspace deleted). It detaches the channel (the detach is awaited before any re-attach), disposes the addons and the terminal, and removes the element. |
 | **Settings** | Scrollback and cursor blink apply immediately. Font changes apply only to shown terminals, because metrics can only be measured while visible. Parked terminals are marked dirty and pick the change up when shown. |
 
-Debug hooks: `window.__alteraTerminals.list()/text(id)` and `window.__alteraForceContextLoss(id?)`. The e2e scripts use them.
+Debug hooks: `window.__gridkeeperTerminals.list()/text(id)` and `window.__gridkeeperForceContextLoss(id?)`. The e2e scripts use them.
 
 ---
 
@@ -326,12 +326,12 @@ A profile is a name, an optional `CLAUDE_CONFIG_DIR` and a badge colour, stored 
 - **Seeding:** on first run, `profiles.json` is seeded with Default plus every `~/.claude-*` sibling that looks like a Claude config dir. That means it has `.credentials.json`, or `settings.json` together with `.claude.json` or `projects/`. These are existence checks by filename only.
 - **Validation:** names must be unique. A directory must be absolute and not used by another profile, and only one profile can be Claude's default location. A non-existent directory is created empty. Existing directories are never modified. **Delete removes only the entry**; the directory is never touched.
 - **Identity isolation:** two layers of environment stripping.
-  1. For **every** session (`adapters::inherited_agent_session_vars`): variables that belong to a *parent* Claude Code session are removed: `CLAUDECODE`, `CLAUDE_PID`, `CLAUDE_EFFORT`, `CLAUDE_CODE_ENTRYPOINT`, `CLAUDE_CODE_EXECPATH`, `CLAUDE_CODE_SSE_PORT`, `CLAUDE_CODE_CHILD_SESSION`, and everything prefixed `CLAUDE_CODE_SESSION_` or `CLAUDE_CODE_MESSAGING_`. `CLAUDE_CONFIG_DIR` is deliberately excluded here. Without this, launching Altera from inside Claude Code made nested `claude` report "Transcript saving is off".
+  1. For **every** session (`adapters::inherited_agent_session_vars`): variables that belong to a *parent* Claude Code session are removed: `CLAUDECODE`, `CLAUDE_PID`, `CLAUDE_EFFORT`, `CLAUDE_CODE_ENTRYPOINT`, `CLAUDE_CODE_EXECPATH`, `CLAUDE_CODE_SSE_PORT`, `CLAUDE_CODE_CHILD_SESSION`, and everything prefixed `CLAUDE_CODE_SESSION_` or `CLAUDE_CODE_MESSAGING_`. `CLAUDE_CONFIG_DIR` is deliberately excluded here. Without this, launching Gridkeeper from inside Claude Code made nested `claude` report "Transcript saving is off".
   2. For **Claude** sessions (`CLAUDE_IDENTITY_ENV`): `ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN`, `CLAUDE_CODE_OAUTH_TOKEN` and `ANTHROPIC_PROFILE` are removed. They outrank the per-config-dir login, so leaving them in would make every profile the same identity.
 
   A user can deliberately re-add any variable through the session's `env`, which is applied last. Secret-looking keys are not persisted, though (§11).
 - **Auth check** (`profile_check` → `check_status`) runs `claude auth status --json` with the profile's environment. It uses `%TEMP%` as the cwd, so no project settings are picked up, and runs only for existing directories, because the command creates files otherwise. It parses `loggedIn`, `authMethod` and `email`. The e-mail goes to the UI only and is never logged or persisted. Credential files are never read: the cheap status only checks that `.credentials.json` *exists*.
-- **Signing in** happens inside Claude Code itself (start a session with the profile and run `/login`). Altera never copies or writes credentials.
+- **Signing in** happens inside Claude Code itself (start a session with the profile and run `/login`). Gridkeeper never copies or writes credentials.
 - **Concurrency warning:** the New Session dialog warns when a live session already uses the profile, or when several sessions are being created with it. Concurrent OAuth refreshes in one profile can force a re-login (Claude Code #91708).
 
 Verified on the target machine: Default, account1 and account2 each showed their own account and model in concurrent sessions, and `claude auth status --json` reported all three logged in (`authMethod: claude.ai`).
@@ -354,7 +354,7 @@ pub static ADAPTERS: &[&dyn AgentAdapter] = &[&PowerShellAdapter, &ClaudeAdapter
 ```
 
 `resolve_launch` builds the plan in this order:
-1. Base environment: `TERM=xterm-256color`, `COLORTERM=truecolor`, `TERM_PROGRAM=Altera`, `TERM_PROGRAM_VERSION`. Remove `WT_SESSION` and `WT_PROFILE_ID`.
+1. Base environment: `TERM=xterm-256color`, `COLORTERM=truecolor`, `TERM_PROGRAM=Gridkeeper`, `TERM_PROGRAM_VERSION`. Remove `WT_SESSION` and `WT_PROFILE_ID`.
 2. Strip the inherited parent-agent variables (§9).
 3. Run the adapter's `configure` (resume flags, profile env).
 4. Append the user's args.
@@ -384,9 +384,9 @@ Conversation ids passed to agents must be 8–64 characters of hex digits and da
 
 ## 11. Persistence
 
-`workspaces.json` (`persistence.rs`) and `profiles.json` (`profiles.rs`) live under `%APPDATA%\ai.altera.workspace`.
+`workspaces.json` (`persistence.rs`) and `profiles.json` (`profiles.rs`) live under `%APPDATA%\app.gridkeeper.desktop`.
 
-- **Versioned:** `STATE_VERSION = 1`. `migrate()` upgrades a missing/0 version to v1 (same shape), and future steps slot in as `if from_version < N`. A file with a **newer** version is loaded best-effort, and the store becomes **read-only**: `state_save` returns an error explaining the file came from a newer Altera, so data this build doesn't understand is never overwritten. An unreadable file (locked, permissions) also makes the store read-only.
+- **Versioned:** `STATE_VERSION = 1`. `migrate()` upgrades a missing/0 version to v1 (same shape), and future steps slot in as `if from_version < N`. A file with a **newer** version is loaded best-effort, and the store becomes **read-only**: `state_save` returns an error explaining the file came from a newer Gridkeeper, so data this build doesn't understand is never overwritten. An unreadable file (locked, permissions) also makes the store read-only.
 - **Lenient load:** if strict deserialization fails, valid entries are kept individually and invalid ones are dropped. When that happens, a copy of the original is preserved first as `workspaces.corrupt-<timestamp>.json`. A file that isn't valid JSON, or has the wrong top-level shape, is *renamed* to that name, and the app starts with defaults. Nothing is silently deleted.
 - **Sanitize (on load and save):**
   - deduplicates ids;
@@ -432,7 +432,7 @@ Conversation ids passed to agents must be 8–64 characters of hex digits and da
 
 | Bucket | Processes |
 |---|---|
-| `host` | `altera.exe` only (`std::process::id()`). |
+| `host` | `gridkeeper.exe` only (`std::process::id()`). |
 | `webview` | Descendants of the host whose image name is `msedgewebview2.exe`. |
 | `sessions[]` / `sessionsTotal` | For each live session, the tree rooted at its root pid. The total counts each pid once. |
 
@@ -440,8 +440,8 @@ Conversation ids passed to agents must be 8–64 characters of hex digits and da
 - **CPU%** = CPU-time delta / wall-time delta between snapshots, as a percent of one logical core summed over processes (the UI divides by logical cores for Task Manager-style numbers). A process seen for the first time reports 0. PID reuse is guarded by creation time.
 - **Memory** = working set.
 - **Polling** happens every 2 s, shared by the status bar, inspector and diagnostics panel, and only while one of them wants it **and** the window is visible.
-- **Attribution gap:** the system ConPTY host (`conhost.exe`) is created by `CreatePseudoConsole` in the context of `altera.exe`. It is not a descendant of the session root and not in the session's Job, so the in-app snapshot leaves it out of all three buckets. `scripts/bench/sample.ps1` counts it separately as "console". This follows from reading the code and the ConPTY process model, and has not been measured.
-- **Export** (`diagnostics_export`) writes `diagnostics/altera-diagnostics-<timestamp>.json`. It contains:
+- **Attribution gap:** the system ConPTY host (`conhost.exe`) is created by `CreatePseudoConsole` in the context of `gridkeeper.exe`. It is not a descendant of the session root and not in the session's Job, so the in-app snapshot leaves it out of all three buckets. `scripts/bench/sample.ps1` counts it separately as "console". This follows from reading the code and the ConPTY process model, and has not been measured.
+- **Export** (`diagnostics_export`) writes `diagnostics/gridkeeper-diagnostics-<timestamp>.json`. It contains:
   - app and OS info, CPU, memory;
   - the snapshot and agent detection results;
   - profile *names and existence flags only*;
@@ -456,7 +456,7 @@ Conversation ids passed to agents must be 8–64 characters of hex digits and da
 
 ## 14. Logging
 
-- JSON lines go to `%APPDATA%\ai.altera.workspace\logs\altera.YYYY-MM-DD.log`. Files rotate daily, and at most 7 are kept (`MAX_LOG_FILES`).
-- The default level is `info`. `ALTERA_LOG` takes standard `EnvFilter` syntax, for example `ALTERA_LOG=debug,altera_lib::pty=trace`.
+- JSON lines go to `%APPDATA%\app.gridkeeper.desktop\logs\gridkeeper.YYYY-MM-DD.log`. Files rotate daily, and at most 7 are kept (`MAX_LOG_FILES`).
+- The default level is `info`. `GRIDKEEPER_LOG` takes standard `EnvFilter` syntax, for example `GRIDKEEPER_LOG=debug,gridkeeper_lib::pty=trace`.
 - Debug builds also log human-readable, redacted lines to stdout.
 - Frontend messages arrive through `log_frontend` (redacted, target `frontend`).

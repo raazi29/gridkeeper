@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "Altera",
+  "productName": "Gridkeeper",
   "version": "0.1.0",
-  "identifier": "ai.altera.workspace",
+  "identifier": "app.gridkeeper.desktop",
   "build": {
     "beforeDevCommand": "npm run dev",
     "devUrl": "http://localhost:1420",
@@ -13,7 +13,7 @@
     "windows": [
       {
         "label": "main",
-        "title": "Altera",
+        "title": "Gridkeeper",
         "width": 1440,
         "height": 900,
         "minWidth": 720,

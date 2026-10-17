@@ -224,11 +224,11 @@ pub fn resolve_launch(spec: &SessionSpec, profiles: &ProfileStore, settings: &Se
     let mut plan = PlanBuilder::default();
     plan.set_env("TERM", "xterm-256color")
         .set_env("COLORTERM", "truecolor")
-        .set_env("TERM_PROGRAM", "Altera")
+        .set_env("TERM_PROGRAM", "Gridkeeper")
         .set_env("TERM_PROGRAM_VERSION", env!("CARGO_PKG_VERSION"))
         .remove_env("WT_SESSION")
         .remove_env("WT_PROFILE_ID");
-    // If Altera itself was launched from inside a Claude Code session, that session's internal
+    // If Gridkeeper itself was launched from inside a Claude Code session, that session's internal
     // variables (session id, messaging socket/TOKEN, entrypoint...) would leak into every child and
     // make a nested `claude` believe it is a sub-session (e.g. "Transcript saving is off").
     for key in inherited_agent_session_vars(std::env::vars().map(|(k, _)| k)) {

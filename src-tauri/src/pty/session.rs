@@ -52,7 +52,7 @@ const DRAIN_MAX: Duration = Duration::from_millis(1500);
 const ORPHAN_GRACE: Duration = Duration::from_secs(2);
 /// How long the waiter waits for the reader to hit EOF after closing ConPTY.
 const READER_EOF_WAIT: Duration = Duration::from_secs(3);
-/// Exit code used when Altera terminates a session's processes.
+/// Exit code used when Gridkeeper terminates a session's processes.
 const KILL_EXIT_CODE: u32 = 1;
 /// Reply to `ESC[6n` when no view is attached.
 const CPR_REPLY: &[u8] = b"\x1b[1;1R";
@@ -498,7 +498,7 @@ impl Session {
             let mut cpr = CprScanner::new();
             let mut att = AttentionScanner::new();
             let status_reply = win32_input_encode(STATUS_PROBE_REPLY);
-            let reply_status_probe = std::env::var_os("ALTERA_OSC7501_REPLY").is_some_and(|v| v == "1");
+            let reply_status_probe = std::env::var_os("GRIDKEEPER_OSC7501_REPLY").is_some_and(|v| v == "1");
             loop {
                 match reader.read(&mut buf) {
                     Ok(0) => break,
@@ -509,7 +509,7 @@ impl Session {
                         // answer the DA1 that follows it. OFF by default: the reply has to be injected
                         // as synthetic key events into the child's input, and the system ConPTY answers
                         // DA1 itself first anyway, so the protocol rarely activates. Opt in with
-                        // ALTERA_OSC7501_REPLY=1 to experiment. Passive detection works regardless.
+                        // GRIDKEEPER_OSC7501_REPLY=1 to experiment. Passive detection works regardless.
                         if reply_status_probe {
                             for _ in signals.iter().filter(|s| matches!(s, Signal::StatusProbe)) {
                                 input.send_internal(&status_reply);

@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-  Terminal output generator for stress tests. Run inside an Altera session.
+  Terminal output generator for stress tests. Run inside a Gridkeeper session.
   -Mode lines   : N numbered lines with SGR colours (default)
   -Mode sustained: continuous output at roughly -Rate lines/sec for -Seconds
   -Mode unicode : CJK, emoji, combining marks, RTL, box drawing

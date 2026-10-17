@@ -1,4 +1,4 @@
-# Altera — Technical Decisions
+# Gridkeeper — Technical Decisions
 
 These are short architecture decision records (ADRs). Each one gives the context, the decision, the alternatives considered and the consequences, and points to the code that implements it. Evidence tags follow [RESEARCH.md](RESEARCH.md): [V] verified source, [H] hypothesis, [M] measured on the target machine.
 
@@ -71,7 +71,7 @@ These are short architecture decision records (ADRs). Each one gives the context
 - **Raw `CreatePseudoConsole`:** more code for the same result.
 
 **Consequences.**
-- portable-pty always passes `PSEUDOCONSOLE_INHERIT_CURSOR`, so the host must answer `ESC[6n`. Altera answers from Rust when no view will (ADR-005).
+- portable-pty always passes `PSEUDOCONSOLE_INHERIT_CURSOR`, so the host must answer `ESC[6n`. Gridkeeper answers from Rust when no view will (ADR-005).
 - `kill()` only terminates the direct child, so tree cleanup is done with Job Objects (ADR-009).
 - `ClosePseudoConsole` may block before Windows 11 24H2, so it is called from the waiter thread after output goes quiet, never from the reader.
 - Sideloading later costs nothing: portable-pty already prefers a `conpty.dll` placed next to the exe [V].
@@ -122,7 +122,7 @@ These are short architecture decision records (ADRs). Each one gives the context
 
 ## ADR-006: WebGL context budget with DOM fallback
 
-**Context.** Chromium allows 16 live WebGL contexts per renderer process and silently kills the oldest beyond that [V]. Altera may show more than 16 terminals across groups.
+**Context.** Chromium allows 16 live WebGL contexts per renderer process and silently kills the oldest beyond that [V]. Gridkeeper may show more than 16 terminals across groups.
 
 **Decision.**
 - `MAX_WEBGL = 12` (`src/terminal/webglBudget.ts`). Only shown terminals compete for slots.
@@ -198,7 +198,7 @@ These are short architecture decision records (ADRs). Each one gives the context
 
 ## ADR-010: Claude profiles via CLAUDE_CONFIG_DIR + identity env stripping
 
-**Context.** The user runs several Claude accounts at once. Claude Code officially supports one config directory per account via `CLAUDE_CONFIG_DIR` [V]. Environment credentials (`ANTHROPIC_AUTH_TOKEN`, `ANTHROPIC_API_KEY`, `CLAUDE_CODE_OAUTH_TOKEN`, `ANTHROPIC_PROFILE`) outrank the per-directory login [V]. When Altera itself was launched from a Claude Code session, the parent's session variables leaked into children and broke transcript saving [M].
+**Context.** The user runs several Claude accounts at once. Claude Code officially supports one config directory per account via `CLAUDE_CONFIG_DIR` [V]. Environment credentials (`ANTHROPIC_AUTH_TOKEN`, `ANTHROPIC_API_KEY`, `CLAUDE_CODE_OAUTH_TOKEN`, `ANTHROPIC_PROFILE`) outrank the per-directory login [V]. When Gridkeeper itself was launched from a Claude Code session, the parent's session variables leaked into children and broke transcript saving [M].
 
 **Decision.**
 - A profile is a name plus an optional directory (`profiles.rs`). The Default profile **removes** `CLAUDE_CONFIG_DIR`; other profiles set it.
@@ -208,7 +208,7 @@ These are short architecture decision records (ADRs). Each one gives the context
 
 **Alternatives.**
 - **Copying or swapping credential files:** dangerous and violates the no-credential-access rule.
-- **API keys per profile:** secrets in Altera's config.
+- **API keys per profile:** secrets in Gridkeeper's config.
 - **Separate Windows user accounts:** heavy.
 
 **Consequences.**
@@ -339,7 +339,7 @@ These are short architecture decision records (ADRs). Each one gives the context
 
 **Decision.**
 - No analytics, crash reporting or update pings. The app makes no network requests of its own.
-- Logs and diagnostics bundles stay local under `%APPDATA%\ai.altera.workspace`, are redacted, and are shared only if the user sends them.
+- Logs and diagnostics bundles stay local under `%APPDATA%\app.gridkeeper.desktop`, are redacted, and are shared only if the user sends them.
 
 **Alternatives.** Opt-in telemetry or crash reporting would add a network surface and a privacy policy for little benefit to a single-user tool.
 

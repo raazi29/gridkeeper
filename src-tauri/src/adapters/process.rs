@@ -109,7 +109,7 @@ mod tests {
 
     #[test]
     fn missing_program_is_error() {
-        let cmd = hidden_command("definitely-not-a-real-program-altera.exe");
+        let cmd = hidden_command("definitely-not-a-real-program-gridkeeper.exe");
         assert!(run_with_timeout(cmd, Duration::from_secs(1)).is_err());
     }
 

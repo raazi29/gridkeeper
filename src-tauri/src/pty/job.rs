@@ -4,7 +4,7 @@
 //! `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE` and *without* any breakaway flags, so
 //! all descendants (agent CLIs, MCP servers, `Start-Process -NoNewWindow`
 //! children, ...) stay in the job. Terminating the job — or simply closing the
-//! last handle, including when Altera itself exits or crashes — kills exactly
+//! last handle, including when Gridkeeper itself exits or crashes — kills exactly
 //! that session's process tree and nothing else.
 //!
 //! Known limitation: portable-pty does not spawn with `CREATE_SUSPENDED`, so a
@@ -125,7 +125,7 @@ mod imp {
 mod imp {
     use std::io;
 
-    /// Non-Windows placeholder so the crate type-checks elsewhere; Altera only
+    /// Non-Windows placeholder so the crate type-checks elsewhere; Gridkeeper only
     /// ships on Windows.
     pub struct Job;
 

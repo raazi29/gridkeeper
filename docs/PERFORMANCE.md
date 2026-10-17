@@ -21,11 +21,11 @@ Disk: 22.7 GB free on C:, 207 GB on D:. Build artefacts: installer `*_x64-setup.
 
 ## Methodology
 
-- `ALTERA_BENCH` bench mode creates an in-memory workspace of N PowerShell sessions (user data untouched),
+- `GRIDKEEPER_BENCH` bench mode creates an in-memory workspace of N PowerShell sessions (user data untouched),
   optionally running `scripts/bench/flood.ps1` (`sustained`: N lines/s per session; `lines`: a fixed burst).
 - Each scenario: launch → 20 s warm-up → 30–40 s of 1 Hz samples → graceful close (WM_CLOSE).
 - Processes are attributed by walking the app's process tree:
-  - **host** — the Rust/Tauri process (`altera.exe`): PTY readers, flow control, IPC, persistence.
+  - **host** — the Rust/Tauri process (`gridkeeper.exe`): PTY readers, flow control, IPC, persistence.
   - **webview** — `msedgewebview2.exe` descendants: UI, xterm.js parsing, rendering, compositing.
   - **console** — `OpenConsole.exe`/`conhost.exe` (ConPTY hosts, one per session).
   - **agents** — everything else (pwsh, claude, codex, node, git…). **Not the app's cost.**

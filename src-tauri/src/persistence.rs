@@ -109,7 +109,7 @@ pub fn preserve_corrupt(path: &Path, keep_original: bool) -> Option<PathBuf> {
 #[derive(Debug)]
 pub struct Migrated {
     pub state: PersistedState,
-    /// The file came from a newer Altera; do not overwrite it.
+    /// The file came from a newer Gridkeeper; do not overwrite it.
     pub read_only: bool,
     /// Some entries could not be deserialized and were dropped.
     pub lossy: bool,
@@ -392,11 +392,11 @@ impl StateStore {
             tracing::warn!(
                 file_version = migrated.from_version,
                 supported = STATE_VERSION,
-                "workspace state written by a newer Altera; loaded read-only"
+                "workspace state written by a newer Gridkeeper; loaded read-only"
             );
             format!(
-                "The workspace file was written by a newer version of Altera (format v{}, this build supports v{}). \
-                 Changes are not saved to avoid overwriting it; update Altera.",
+                "The workspace file was written by a newer version of Gridkeeper (format v{}, this build supports v{}). \
+                 Changes are not saved to avoid overwriting it; update Gridkeeper.",
                 migrated.from_version, STATE_VERSION
             )
         });
