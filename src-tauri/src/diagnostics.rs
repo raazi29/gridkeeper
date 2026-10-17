@@ -1,30 +1,150 @@
 //! Resource diagnostics: attribute CPU/RAM to the host process, its WebView2
 //! processes and each session's process tree; export a redacted bundle.
 //!
-//! Sampling cost: one Toolhelp snapshot of all processes with no per-process
-//! queries (parents/names only), then CPU+memory refresh for just the
-//! processes we report on. CPU% is computed by sysinfo between successive
-//! refreshes at least 200 ms apart; a newly seen process reports ~0 CPU for
-//! its first two samples (sysinfo establishes the baseline on the second).
+//! Sampling cost (measured, ~400 processes, release build): one Toolhelp
+//! process snapshot (~6-7 ms; pid / parent pid / exe name) plus
+//! `OpenProcess` + `GetProcessTimes` + `GetProcessMemoryInfo` for only the
+//! processes we report on. sysinfo's per-process refresh would need a second
+//! full Toolhelp walk (doubling the cost), so sysinfo is used only for
+//! system-wide memory, CPU count and CPU brand.
+//!
+//! CPU% = process CPU-time delta / wall-clock delta between successive
+//! snapshots (percent of ONE logical core, summed over processes). A process
+//! seen for the first time reports 0 CPU.
 
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::io::{Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
+use std::time::Instant;
 
 use once_cell::sync::Lazy;
 use parking_lot::Mutex;
 use regex::Regex;
 use serde_json::{json, Value};
-use sysinfo::{CpuRefreshKind, MemoryRefreshKind, Pid, ProcessRefreshKind, ProcessesToUpdate, System};
+use sysinfo::{CpuRefreshKind, MemoryRefreshKind, System};
 
 use crate::state::AppCtx;
 use crate::types::*;
 
-const WEBVIEW_EXE: &str = "msedgewebview2.exe";
 const LOG_TAIL_LINES: usize = 300;
+
+/// Minimal Win32 process enumeration / query.
+#[cfg(windows)]
+mod win {
+    use windows_sys::Win32::Foundation::{CloseHandle, FILETIME, INVALID_HANDLE_VALUE};
+    use windows_sys::Win32::System::Diagnostics::ToolHelp::{
+        CreateToolhelp32Snapshot, PROCESSENTRY32W, Process32FirstW, Process32NextW, TH32CS_SNAPPROCESS,
+    };
+    use windows_sys::Win32::System::ProcessStatus::{K32GetProcessMemoryInfo, PROCESS_MEMORY_COUNTERS};
+    use windows_sys::Win32::System::Threading::{GetProcessTimes, OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION};
+
+    pub struct Entry {
+        pub pid: u32,
+        pub ppid: u32,
+        pub is_webview: bool,
+    }
+
+    #[derive(Clone, Copy)]
+    pub struct Times {
+        /// FILETIME of process creation (100 ns units).
+        pub creation: u64,
+        /// Kernel + user CPU time (100 ns units).
+        pub cpu: u64,
+        /// Working set (RSS), bytes.
+        pub working_set: u64,
+    }
+
+    fn eq_ascii_ci(wide: &[u16], ascii: &str) -> bool {
+        let len = wide.iter().position(|&c| c == 0).unwrap_or(wide.len());
+        len == ascii.len()
+            && wide[..len].iter().zip(ascii.bytes()).all(|(&w, a)| w < 128 && (w as u8).eq_ignore_ascii_case(&a))
+    }
+
+    pub fn processes() -> Vec<Entry> {
+        let mut out = Vec::with_capacity(512);
+        // SAFETY: standard Toolhelp enumeration; `dwSize` is initialized as the
+        // API requires and the snapshot handle is closed before returning.
+        unsafe {
+            let snap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+            if snap == INVALID_HANDLE_VALUE || snap.is_null() {
+                return out;
+            }
+            let mut entry: PROCESSENTRY32W = std::mem::zeroed();
+            entry.dwSize = std::mem::size_of::<PROCESSENTRY32W>() as u32;
+            let mut ok = Process32FirstW(snap, &mut entry);
+            while ok != 0 {
+                out.push(Entry {
+                    pid: entry.th32ProcessID,
+                    ppid: entry.th32ParentProcessID,
+                    is_webview: eq_ascii_ci(&entry.szExeFile, "msedgewebview2.exe"),
+                });
+                ok = Process32NextW(snap, &mut entry);
+            }
+            CloseHandle(snap);
+        }
+        out
+    }
+
+    fn ft(f: &FILETIME) -> u64 {
+        ((f.dwHighDateTime as u64) << 32) | f.dwLowDateTime as u64
+    }
+
+    pub fn query(pid: u32) -> Option<Times> {
+        // SAFETY: plain Win32 calls on a handle we own and close; out-params are
+        // zero-initialized structs of the documented size.
+        unsafe {
+            let h = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid);
+            if h.is_null() {
+                return None;
+            }
+            let mut c: FILETIME = std::mem::zeroed();
+            let mut e: FILETIME = std::mem::zeroed();
+            let mut k: FILETIME = std::mem::zeroed();
+            let mut u: FILETIME = std::mem::zeroed();
+            let times_ok = GetProcessTimes(h, &mut c, &mut e, &mut k, &mut u) != 0;
+            let mut mem: PROCESS_MEMORY_COUNTERS = std::mem::zeroed();
+            mem.cb = std::mem::size_of::<PROCESS_MEMORY_COUNTERS>() as u32;
+            let mem_ok = K32GetProcessMemoryInfo(h, &mut mem, mem.cb) != 0;
+            CloseHandle(h);
+            if !times_ok {
+                return None;
+            }
+            Some(Times {
+                creation: ft(&c),
+                cpu: ft(&k) + ft(&u),
+                working_set: if mem_ok { mem.WorkingSetSize as u64 } else { 0 },
+            })
+        }
+    }
+}
+
+#[cfg(not(windows))]
+mod win {
+    pub struct Entry {
+        pub pid: u32,
+        pub ppid: u32,
+        pub is_webview: bool,
+    }
+    #[derive(Clone, Copy)]
+    pub struct Times {
+        pub creation: u64,
+        pub cpu: u64,
+        pub working_set: u64,
+    }
+    pub fn processes() -> Vec<Entry> {
+        Vec::new()
+    }
+    pub fn query(_pid: u32) -> Option<Times> {
+        None
+    }
+}
+
+/// Previous CPU reading per pid: (creation time, cpu time, when).
+type CpuHistory = HashMap<u32, (u64, u64, Instant)>;
 
 pub struct DiagSampler {
     sys: Mutex<System>,
+    history: Mutex<CpuHistory>,
 }
 
 impl Default for DiagSampler {
@@ -33,21 +153,22 @@ impl Default for DiagSampler {
     }
 }
 
+/// Per-snapshot lazy cache of process queries.
 #[derive(Default)]
-struct Acc(ProcStats);
+struct Probe {
+    cache: HashMap<u32, Option<win::Times>>,
+}
 
-impl Acc {
-    fn add(&mut self, p: &sysinfo::Process) {
-        self.0.cpu_percent += p.cpu_usage();
-        self.0.memory_bytes += p.memory();
-        self.0.process_count += 1;
+impl Probe {
+    fn get(&mut self, pid: u32) -> Option<win::Times> {
+        *self.cache.entry(pid).or_insert_with(|| win::query(pid))
     }
 }
 
-/// Descendants of `root` (inclusive), guarding against PID reuse and cycles.
-fn tree(sys: &System, children: &HashMap<Pid, Vec<Pid>>, root: Pid) -> Vec<Pid> {
+/// `root` and its descendants, guarding against PID reuse and cycles.
+fn tree(children: &HashMap<u32, Vec<u32>>, alive: &HashSet<u32>, probe: &mut Probe, root: u32) -> Vec<u32> {
     let mut out = Vec::new();
-    if sys.process(root).is_none() {
+    if !alive.contains(&root) {
         return out;
     }
     let mut seen = HashSet::new();
@@ -57,95 +178,116 @@ fn tree(sys: &System, children: &HashMap<Pid, Vec<Pid>>, root: Pid) -> Vec<Pid> 
             continue;
         }
         out.push(pid);
-        let parent_start = sys.process(pid).map(|p| p.start_time()).unwrap_or(0);
-        for child in children.get(&pid).into_iter().flatten() {
-            // A child cannot start before its parent; otherwise the parent PID was reused.
-            let child_start = sys.process(*child).map(|p| p.start_time()).unwrap_or(0);
-            if child_start == 0 || parent_start == 0 || child_start >= parent_start {
-                queue.push_back(*child);
+        let Some(kids) = children.get(&pid) else { continue };
+        let parent_created = probe.get(pid).map(|t| t.creation);
+        for &child in kids {
+            // A child cannot be created before its parent; otherwise the parent
+            // PID was reused and this is not really a descendant.
+            let child_created = probe.get(child).map(|t| t.creation);
+            match (parent_created, child_created) {
+                (Some(p), Some(c)) if c < p => {}
+                _ => queue.push_back(child),
             }
         }
     }
     out
 }
 
+/// Turns raw readings into stats, tracking CPU deltas across snapshots.
+struct Accumulator<'a> {
+    now: Instant,
+    alive: &'a HashSet<u32>,
+    previous: &'a CpuHistory,
+    next: CpuHistory,
+    probe: Probe,
+}
+
+impl Accumulator<'_> {
+    fn sum(&mut self, pids: &[u32]) -> ProcStats {
+        let mut s = ProcStats::default();
+        for &pid in pids {
+            match self.probe.get(pid) {
+                Some(t) => {
+                    let cpu = match self.previous.get(&pid) {
+                        Some(&(created, prev_cpu, at)) if created == t.creation => {
+                            let wall = self.now.duration_since(at).as_secs_f64();
+                            if wall > 0.0 { (t.cpu.saturating_sub(prev_cpu) as f64 / 1e7 / wall * 100.0) as f32 } else { 0.0 }
+                        }
+                        _ => 0.0,
+                    };
+                    self.next.insert(pid, (t.creation, t.cpu, self.now));
+                    s.cpu_percent += cpu;
+                    s.memory_bytes += t.working_set;
+                    s.process_count += 1;
+                }
+                // Exists but not queryable (e.g. elevated): count it, no numbers.
+                None if self.alive.contains(&pid) => s.process_count += 1,
+                None => {}
+            }
+        }
+        s
+    }
+}
+
 impl DiagSampler {
     pub fn new() -> Self {
         let mut sys = System::new();
-        // CPU% per process is scaled by the CPU count, so the list must exist.
         sys.refresh_cpu_list(CpuRefreshKind::nothing());
         sys.refresh_memory_specifics(MemoryRefreshKind::nothing().with_ram());
-        Self { sys: Mutex::new(sys) }
+        Self { sys: Mutex::new(sys), history: Mutex::new(HashMap::new()) }
     }
 
     pub fn snapshot(&self, roots: &[(SessionId, u32)]) -> Diagnostics {
-        let mut sys = self.sys.lock();
-        // Pass 1: process list, parents and names only.
-        sys.refresh_processes_specifics(ProcessesToUpdate::All, true, ProcessRefreshKind::nothing());
-
-        let mut children: HashMap<Pid, Vec<Pid>> = HashMap::new();
-        for (pid, p) in sys.processes() {
-            if let Some(parent) = p.parent() {
-                children.entry(parent).or_default().push(*pid);
+        // One sampler at a time: CPU deltas need a consistent history.
+        let mut history = self.history.lock();
+        let now = Instant::now();
+        let entries = win::processes();
+        let mut children: HashMap<u32, Vec<u32>> = HashMap::new();
+        let mut alive: HashSet<u32> = HashSet::with_capacity(entries.len());
+        let mut webview_named: HashSet<u32> = HashSet::new();
+        for e in &entries {
+            alive.insert(e.pid);
+            if e.is_webview {
+                webview_named.insert(e.pid);
+            }
+            if e.ppid != 0 && e.ppid != e.pid {
+                children.entry(e.ppid).or_default().push(e.pid);
             }
         }
 
-        let host = Pid::from_u32(std::process::id());
-        let webview: Vec<Pid> = tree(&sys, &children, host)
+        let mut probe = Probe::default();
+        let host = std::process::id();
+        let webview: Vec<u32> = tree(&children, &alive, &mut probe, host)
             .into_iter()
-            .filter(|pid| {
-                *pid != host
-                    && sys
-                        .process(*pid)
-                        .is_some_and(|p| p.name().to_string_lossy().eq_ignore_ascii_case(WEBVIEW_EXE))
-            })
+            .filter(|pid| *pid != host && webview_named.contains(pid))
             .collect();
-        let session_trees: Vec<(SessionId, Vec<Pid>)> = roots
+        let session_trees: Vec<(SessionId, Vec<u32>)> = roots
             .iter()
-            .map(|(id, root)| (id.clone(), tree(&sys, &children, Pid::from_u32(*root))))
+            .map(|(id, root)| (id.clone(), tree(&children, &alive, &mut probe, *root)))
             .collect();
 
-        // Pass 2: CPU + memory for the processes we report on.
-        let mut wanted: Vec<Pid> = vec![host];
-        wanted.extend(&webview);
-        for (_, pids) in &session_trees {
-            wanted.extend(pids);
-        }
-        wanted.sort_unstable();
-        wanted.dedup();
-        sys.refresh_processes_specifics(
-            ProcessesToUpdate::Some(&wanted),
-            true,
-            ProcessRefreshKind::nothing().with_cpu().with_memory(),
-        );
-        sys.refresh_memory_specifics(MemoryRefreshKind::nothing().with_ram());
-
-        let stats = |pids: &[Pid]| {
-            let mut acc = Acc::default();
-            for pid in pids {
-                if let Some(p) = sys.process(*pid) {
-                    acc.add(p);
-                }
-            }
-            acc.0
-        };
-
-        let host_stats = stats(&[host]);
-        let webview_stats = stats(&webview);
+        let mut acc = Accumulator { now, alive: &alive, previous: &history, next: HashMap::new(), probe };
+        let host_stats = acc.sum(&[host]);
+        let webview_stats = acc.sum(&webview);
         let mut total = ProcStats::default();
-        let mut counted: HashSet<Pid> = HashSet::new();
+        let mut counted: HashSet<u32> = HashSet::new();
         let mut sessions = Vec::with_capacity(session_trees.len());
         for (id, pids) in &session_trees {
-            let s = stats(pids);
+            let s = acc.sum(pids);
             // Aggregate without double counting overlapping trees.
-            let unique: Vec<Pid> = pids.iter().copied().filter(|p| counted.insert(*p)).collect();
-            let u = stats(&unique);
+            let unique: Vec<u32> = pids.iter().copied().filter(|p| counted.insert(*p)).collect();
+            let u = acc.sum(&unique);
             total.cpu_percent += u.cpu_percent;
             total.memory_bytes += u.memory_bytes;
             total.process_count += u.process_count;
             sessions.push(SessionStats { id: id.clone(), stats: s });
         }
+        // History keeps only processes reported this time (bounded size).
+        *history = acc.next;
+        drop(history);
 
+        let mut sys = self.sys.lock();
+        sys.refresh_memory_specifics(MemoryRefreshKind::nothing().with_ram());
         let logical_cores = match sys.cpus().len() {
             0 => std::thread::available_parallelism().map(|n| n.get()).unwrap_or(1),
             n => n,
@@ -353,10 +495,7 @@ mod tests {
         std::thread::sleep(Duration::from_millis(300));
         let roots = vec![("s1".to_string(), child.id())];
         let first = sampler.snapshot(&roots);
-        // sysinfo needs two refreshes >= 200 ms apart to establish a CPU baseline
-        // for a newly seen process; the third snapshot measures a real interval.
-        std::thread::sleep(Duration::from_millis(250));
-        sampler.snapshot(&roots);
+        assert_eq!(first.host.cpu_percent, 0.0, "no baseline on first sight");
         // Burn a little CPU so the next sample has something to measure.
         let t = Instant::now();
         let mut x = 0u64;
