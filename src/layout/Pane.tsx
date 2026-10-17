@@ -165,7 +165,36 @@ export const Pane = memo(function Pane({ sessionId, groupId, index, count, visib
           </button>
         </div>
       )}
+      {!hidden && <SilentHint sessionId={sessionId} />}
       {dropTarget && <div className="pane-drop-indicator" />}
+    </div>
+  );
+});
+
+const SILENT_MS = 12000;
+
+/** Watchdog hint: a running session that has produced no output at all for a while is probably stuck. */
+const SilentHint = memo(function SilentHint({ sessionId }: { sessionId: SessionId }) {
+  const silentSince = useApp((s) => {
+    const r = s.runtime[sessionId];
+    return r && r.state.state === "running" && r.bytesOut === 0 ? (r.startedAt ?? null) : null;
+  });
+  const [show, setShow] = useState(false);
+  useEffect(() => {
+    setShow(false);
+    if (!silentSince) return;
+    const wait = Math.max(0, SILENT_MS - (Date.now() - Date.parse(silentSince)));
+    const t = window.setTimeout(() => setShow(true), wait);
+    return () => window.clearTimeout(t);
+  }, [silentSince]);
+  if (!show || !silentSince) return null;
+  return (
+    <div className="pane-exitbar">
+      <span className="pane-exitbar-label">No output for {Math.round(SILENT_MS / 1000)} s — the program may be stuck</span>
+      <span className="pane-exitbar-sep">·</span>
+      <button type="button" className="pane-link" onClick={() => void restartSession(sessionId, { mode: "none" })}>
+        Restart
+      </button>
     </div>
   );
 });

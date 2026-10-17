@@ -287,3 +287,17 @@ fn detect_reports_every_kind() {
     let generic = found.iter().find(|a| a.kind == AgentKind::Generic).unwrap();
     assert!(generic.error.is_none());
 }
+
+#[test]
+fn strips_parent_agent_session_vars() {
+    let names = ["CLAUDECODE", "CLAUDE_CODE_SESSION_ID", "CLAUDE_CODE_MESSAGING_TOKEN", "CLAUDE_CODE_ENTRYPOINT", "CLAUDE_CONFIG_DIR", "PATH", "CLAUDE_CODE_ALT_SCREEN_FULL_REPAINT"]
+        .iter()
+        .map(|s| s.to_string());
+    let got = super::inherited_agent_session_vars(names);
+    assert!(got.contains(&"CLAUDECODE".to_string()));
+    assert!(got.contains(&"CLAUDE_CODE_MESSAGING_TOKEN".to_string()));
+    assert!(got.contains(&"CLAUDE_CODE_SESSION_ID".to_string()));
+    assert!(!got.contains(&"CLAUDE_CONFIG_DIR".to_string()));
+    assert!(!got.contains(&"PATH".to_string()));
+    assert!(!got.contains(&"CLAUDE_CODE_ALT_SCREEN_FULL_REPAINT".to_string()));
+}

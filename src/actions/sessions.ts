@@ -61,7 +61,26 @@ export function newSession(o: NewSessionOptions): SessionId {
  * Start (or restart after exit) the process for a session.
  * `resume`: none = fresh conversation; continue = resume pinned conversation (Claude) / most recent (Codex).
  */
+// Launches of the same agent kind are spaced out: several agent CLIs starting in the same instant
+// contend on shared per-user state (update checks, daemons, config files). Observed once with Codex 0.162
+// (one of six simultaneous launches never produced output). Different kinds still start in parallel.
+const LAUNCH_GAP_MS: Record<AgentKind, number> = { powershell: 0, claude: 350, codex: 600, generic: 0 };
+const nextLaunchAt: Partial<Record<AgentKind, number>> = {};
+
+async function launchSlot(agent: AgentKind) {
+  const gap = LAUNCH_GAP_MS[agent];
+  if (!gap) return;
+  const now = Date.now();
+  const at = Math.max(now, nextLaunchAt[agent] ?? 0);
+  nextLaunchAt[agent] = at + gap;
+  if (at > now) await new Promise((r) => setTimeout(r, at - now));
+}
+
 export async function startSession(id: SessionId, resume: ResumeMode = { mode: "none" }): Promise<boolean> {
+  const meta0 = useApp.getState().persisted.sessions.find((m) => m.id === id);
+  if (!meta0) return false;
+  if (isLive(useApp.getState().runtime[id])) return true;
+  await launchSlot(meta0.agent);
   const st = useApp.getState();
   const meta = st.persisted.sessions.find((m) => m.id === id);
   if (!meta) return false;

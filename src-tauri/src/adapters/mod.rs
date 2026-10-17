@@ -215,6 +215,12 @@ pub fn resolve_launch(spec: &SessionSpec, profiles: &ProfileStore, settings: &Se
         .set_env("TERM_PROGRAM_VERSION", env!("CARGO_PKG_VERSION"))
         .remove_env("WT_SESSION")
         .remove_env("WT_PROFILE_ID");
+    // If Altera itself was launched from inside a Claude Code session, that session's internal
+    // variables (session id, messaging socket/TOKEN, entrypoint...) would leak into every child and
+    // make a nested `claude` believe it is a sub-session (e.g. "Transcript saving is off").
+    for key in inherited_agent_session_vars(std::env::vars().map(|(k, _)| k)) {
+        plan.remove_env(key);
+    }
 
     let ctx = LaunchContext { spec, profiles, settings };
     adapter.configure(&ctx, &exe, &mut plan)?;
@@ -233,6 +239,19 @@ pub fn resolve_launch(spec: &SessionSpec, profiles: &ProfileStore, settings: &Se
     args.extend(plan.args);
     let display = display_command(&program, &args);
     Ok(LaunchPlan { program, args, env_set: plan.env_set, env_remove: plan.env_remove, cwd, display })
+}
+
+/// Names of inherited variables that belong to a *parent* agent session, not to the user's environment.
+/// `CLAUDE_CONFIG_DIR` is deliberately not included (handled per profile by the Claude adapter).
+pub fn inherited_agent_session_vars(names: impl Iterator<Item = String>) -> Vec<String> {
+    const EXACT: &[&str] = &["CLAUDECODE", "CLAUDE_PID", "CLAUDE_EFFORT", "CLAUDE_CODE_ENTRYPOINT", "CLAUDE_CODE_EXECPATH", "CLAUDE_CODE_SSE_PORT", "CLAUDE_CODE_CHILD_SESSION"];
+    const PREFIXES: &[&str] = &["CLAUDE_CODE_SESSION_", "CLAUDE_CODE_MESSAGING_"];
+    names
+        .filter(|k| {
+            let u = k.to_ascii_uppercase();
+            EXACT.contains(&u.as_str()) || PREFIXES.iter().any(|p| u.starts_with(p)) || u == "CLAUDE_CODE_SESSION_ID"
+        })
+        .collect()
 }
 
 const VERSION_TIMEOUT: Duration = Duration::from_secs(10);

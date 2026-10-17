@@ -462,6 +462,7 @@ impl Session {
         // Reader.
         let out = Arc::clone(&self.out);
         let label = self.label.clone();
+        let weak = Arc::downgrade(self);
         spawn_guarded(format!("pty-read-{}", self.label), move || {
             struct EofGuard(Arc<Output>);
             impl Drop for EofGuard {
@@ -478,7 +479,14 @@ impl Session {
                     Ok(n) => {
                         let chunk = &buf[..n];
                         let cprs = cpr.feed(chunk);
+                        let first = out.bytes_out() == 0;
                         out.ingest(chunk, cprs);
+                        if first {
+                            // One extra state event so the UI knows output has begun (no-output watchdog).
+                            if let Some(s) = weak.upgrade() {
+                                s.emit();
+                            }
+                        }
                     }
                     Err(e) if e.kind() == std::io::ErrorKind::Interrupted => continue,
                     Err(e) => {
