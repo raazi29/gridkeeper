@@ -1,5 +1,6 @@
 // Bottom status bar (24px): breadcrumb, running count, app vs agents resources, renderer status.
 
+import { APP_NAME } from "../lib/brand";
 import { useApp, isLive, selectActiveGroup, selectActiveWorkspace } from "../store/appStore";
 import { useUi } from "../store/uiStore";
 import { useDiagnosticsPoll, useRendererStatus, useShortcut } from "./hooks";
@@ -91,7 +92,7 @@ function ResourceItems({ onClick }: { onClick: () => void }) {
         type="button"
         className="sb-item sb-btn"
         onClick={onClick}
-        title={`Altera app = host process + WebView2 (${diag.host.processCount + diag.webview.processCount} processes)\nCPU as in Task Manager: share of all ${cores} logical cores`}
+        title={`${APP_NAME} app = host process + WebView2 (${diag.host.processCount + diag.webview.processCount} processes)\nCPU as in Task Manager: share of all ${cores} logical cores`}
       >
         App CPU {formatCpu(appCpu)} · RAM {formatMb(appMem)}
       </button>

@@ -5,6 +5,8 @@ import { ErrorBoundary } from "./components/ErrorBoundary";
 import { Shell } from "./components/Shell";
 import { errorMessage, ipc, onSessionState } from "./lib/ipc";
 import { flushPersistence, startPersistence, useApp } from "./store/appStore";
+import { preloadFont } from "./styles/fonts";
+import "./theme/applyTheme";
 
 let booted = false;
 
@@ -29,6 +31,7 @@ async function boot() {
   try {
     const state = await ipc.stateLoad();
     app.hydrate(state);
+    await preloadFont(useApp.getState().persisted.settings.fontFamily);
     if (state.workspaces.length === 0) {
       useApp.getState().createWorkspace("Workspace", null);
     }

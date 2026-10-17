@@ -1,37 +1,19 @@
-// Terminal theme derived from the design tokens (tokens.css). xterm needs literal colors, so the
-// values are mirrored here; keep them in sync with --bg-0 / --accent.
+// Terminal colours come from the active UI theme (src/theme/themes.ts), so the terminal and the chrome
+// around it always match. registry.ts applies these on creation and whenever settings.theme changes.
 
 import type { ITheme } from "@xterm/xterm";
+import type { Settings } from "../lib/types";
+import { searchDecorations, xtermTheme } from "../theme/themes";
 
-export const TERMINAL_BG = "#0b0b0e";
+/** xterm theme for the given settings (current theme id; unknown ids fall back to the default). */
+export function getTerminalTheme(s: Pick<Settings, "theme">): ITheme {
+  return xtermTheme(s.theme);
+}
 
-/** Refined dark theme: calm, readable ANSI colors on near-black (no neon). */
-export const terminalTheme: ITheme = {
-  background: TERMINAL_BG,
-  foreground: "#d9d9e3",
-  cursor: "#8b5cf6",
-  cursorAccent: TERMINAL_BG,
-  selectionBackground: "rgba(123, 97, 255, 0.35)",
-  selectionInactiveBackground: "rgba(123, 97, 255, 0.18)",
-  scrollbarSliderBackground: "rgba(255, 255, 255, 0.08)",
-  scrollbarSliderHoverBackground: "rgba(255, 255, 255, 0.14)",
-  scrollbarSliderActiveBackground: "rgba(255, 255, 255, 0.2)",
-  overviewRulerBorder: "transparent",
+/** Search-match decoration colours for the given settings. */
+export function getSearchDecorations(s: Pick<Settings, "theme">) {
+  return searchDecorations(s.theme);
+}
 
-  black: "#2a2a33",
-  red: "#e5646e",
-  green: "#7cc48a",
-  yellow: "#e2b86b",
-  blue: "#6fa8f5",
-  magenta: "#b48ef7",
-  cyan: "#5fc3c9",
-  white: "#c9c9d4",
-  brightBlack: "#686877",
-  brightRed: "#f4838b",
-  brightGreen: "#98d9a5",
-  brightYellow: "#efcb8a",
-  brightBlue: "#8fbdfa",
-  brightMagenta: "#c9a8fb",
-  brightCyan: "#82d6db",
-  brightWhite: "#ececf1",
-};
+/** Extra terminal font size while presentation mode is on. */
+export const PRESENTATION_FONT_BOOST = 3;

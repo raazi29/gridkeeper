@@ -335,6 +335,11 @@ pub struct Settings {
     pub status_bar_diagnostics: bool,
     /// command id -> shortcut string (e.g. "ctrl+shift+t"). Missing = default.
     pub keybindings: BTreeMap<String, String>,
+    /// UI theme id (frontend registry). Unknown ids fall back to the default theme in the UI.
+    pub theme: String,
+    pub reduce_motion: bool,
+    /// "compact" | "comfortable". A string, not an enum, so an unknown value never fails loading the state file.
+    pub ui_density: String,
 }
 
 impl Default for Settings {
@@ -353,6 +358,9 @@ impl Default for Settings {
             inspector_open: false,
             status_bar_diagnostics: true,
             keybindings: BTreeMap::new(),
+            theme: "deep-space".into(),
+            reduce_motion: false,
+            ui_density: "compact".into(),
         }
     }
 }

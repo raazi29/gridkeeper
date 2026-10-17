@@ -56,6 +56,12 @@ export interface UiStore {
   diagError: string | null;
   actionToasts: ActionToast[];
   lastSession: LastSessionPrefs;
+  /** Focus mode: sidebar, tabs and status bar hidden to maximise terminal area (this run only). */
+  focusMode: boolean;
+  /** Presentation mode: larger terminal font and UI scale (this run only). */
+  presentation: boolean;
+  /** CRT scanline overlay for themes that offer it (per-machine preference). */
+  scanlines: boolean;
 
   openDialog: (d: DialogState) => void;
   closeDialog: () => void;
@@ -65,9 +71,21 @@ export interface UiStore {
   rememberFocus: (groupId: string, sessionId: string) => void;
   setLastSession: (p: LastSessionPrefs) => void;
   dismissActionToast: (id: number) => void;
+  setFocusMode: (on: boolean) => void;
+  setPresentation: (on: boolean) => void;
+  setScanlines: (on: boolean) => void;
 }
 
 const LS_LAST = "altera.ui.lastSession";
+const LS_SCANLINES = "altera.ui.scanlines";
+
+function readScanlines(): boolean {
+  try {
+    return globalThis.localStorage?.getItem(LS_SCANLINES) !== "0";
+  } catch {
+    return true;
+  }
+}
 
 function readLast(): LastSessionPrefs {
   try {
@@ -96,6 +114,9 @@ export const useUi = create<UiStore>()((set) => ({
   diagError: null,
   actionToasts: [],
   lastSession: readLast(),
+  focusMode: false,
+  presentation: false,
+  scanlines: readScanlines(),
 
   openDialog: (dialog) => set({ dialog, palette: { open: false, mode: "all" } }),
   closeDialog: () => set({ dialog: null }),
@@ -113,6 +134,16 @@ export const useUi = create<UiStore>()((set) => ({
     set({ lastSession: p });
   },
   dismissActionToast: (id) => set((s) => ({ actionToasts: s.actionToasts.filter((t) => t.id !== id) })),
+  setFocusMode: (focusMode) => set({ focusMode }),
+  setPresentation: (presentation) => set({ presentation }),
+  setScanlines: (scanlines) => {
+    try {
+      globalThis.localStorage?.setItem(LS_SCANLINES, scanlines ? "1" : "0");
+    } catch {
+      /* ignore */
+    }
+    set({ scanlines });
+  },
 }));
 
 // ---- confirm() ---------------------------------------------------------------

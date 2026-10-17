@@ -206,9 +206,21 @@ export const IconKeyboard = (p: P) => (
 );
 
 /** The app mark: a precise, small glyph — two offset panes. */
+/** Focus mode: four corner brackets (frame the terminal, drop the chrome). */
+export const IconFocus = (p: P) => (
+  <Svg {...p}>
+    <path d="M2.5 6V3.5a1 1 0 0 1 1-1H6M10 2.5h2.5a1 1 0 0 1 1 1V6M13.5 10v2.5a1 1 0 0 1-1 1H10M6 13.5H3.5a1 1 0 0 1-1-1V10" />
+  </Svg>
+);
+
+/**
+ * Brand mark: a delta / "A" over a broken horizon line, an attitude indicator reduced to two strokes.
+ * Ink follows the theme text colour; the horizon carries the theme's signal colour.
+ */
 export const AppMark = ({ size = 16 }: { size?: number }) => (
-  <svg width={size} height={size} viewBox="0 0 16 16" aria-hidden="true" focusable="false">
-    <rect x="1.5" y="1.5" width="8.5" height="8.5" rx="2" fill="none" stroke="var(--accent)" strokeWidth="1.5" />
-    <rect x="6" y="6" width="8.5" height="8.5" rx="2" fill="var(--accent)" opacity="0.9" />
+  <svg width={size} height={size} viewBox="0 0 18 18" aria-hidden="true" focusable="false" fill="none" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M3.6 15 9 3.2 14.4 15" stroke="var(--text-0)" strokeWidth="1.7" />
+    <path d="M1.2 11.2h3.1M13.7 11.2h3.1M7.2 11.2h3.6" stroke="var(--accent)" strokeWidth="1.5" />
+    <circle cx="9" cy="3.2" r="1.15" fill="var(--accent)" />
   </svg>
 );
