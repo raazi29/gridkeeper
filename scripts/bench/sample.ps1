@@ -16,7 +16,8 @@ param(
   [double]$Interval = 1.0,
   [string]$Label = "sample",
   [string]$OutDir = "bench-results",
-  [string]$ProcessName = "altera"
+  [string]$ProcessName = "altera",
+  [int]$RootPid = 0
 )
 
 $ErrorActionPreference = "Stop"
@@ -53,7 +54,8 @@ function Get-Category([string]$name, [int]$procId, [int]$rootPid) {
   }
 }
 
-$host_ = Get-Process -Name $ProcessName -ErrorAction SilentlyContinue | Sort-Object StartTime | Select-Object -First 1
+if ($RootPid) { $host_ = Get-Process -Id $RootPid -ErrorAction SilentlyContinue }
+else { $host_ = Get-Process -Name $ProcessName -ErrorAction SilentlyContinue | Sort-Object StartTime | Select-Object -First 1 }
 if (-not $host_) { throw "Process '$ProcessName' is not running." }
 $rootPid = $host_.Id
 
