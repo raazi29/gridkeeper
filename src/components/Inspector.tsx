@@ -15,7 +15,9 @@ import { formatBytes, formatCpu, formatMb, formatTime, taskManagerCpu } from "./
 export function Inspector() {
   const id = useApp((s) => s.focusedSessionId);
   const close = () => useApp.getState().updateSettings({ inspectorOpen: false });
-  useDiagnosticsPoll(!!id);
+  const diagOn = useApp((s) => s.persisted.settings.statusBarDiagnostics);
+  // Shares the status-bar poll; never polls when the user turned resource usage off.
+  useDiagnosticsPoll(!!id && diagOn);
   return (
     <aside className="inspector" aria-label="Session inspector">
       <div className="inspector-head">
