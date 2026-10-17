@@ -391,7 +391,7 @@ pub const IDLE_AFTER: Duration = Duration::from_secs(4);
 /// A run at least this long is reported as "done" when it ends.
 pub const MIN_RUN_FOR_DONE: Duration = Duration::from_secs(3);
 /// Runs starting this soon after launch are start-up noise, never "done".
-pub const STARTUP_GRACE: Duration = Duration::from_secs(8);
+pub const STARTUP_GRACE: Duration = Duration::from_secs(20);
 /// Output this soon after user input / resize is treated as echo / repaint.
 pub const ECHO_WINDOW: Duration = Duration::from_millis(250);
 
