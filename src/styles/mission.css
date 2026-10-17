@@ -101,7 +101,16 @@
   border-bottom: 1px solid var(--border);
   background: var(--bg-1);
   min-height: 38px;
-  flex-wrap: wrap;
+  flex-wrap: nowrap; /* one row: the path ellipsizes instead of pushing the canvas down */
+  flex-shrink: 0;
+}
+.mc-head > :not(.mc-head-meta) {
+  flex-shrink: 0;
+}
+@media (max-width: 1280px) {
+  .mc-legend {
+    display: none;
+  }
 }
 .mc-title {
   display: inline-flex;
@@ -183,6 +192,20 @@
   border-color: var(--text-2);
   background: var(--bg-2);
 }
+.mc-btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+  background: transparent;
+  color: var(--text-1);
+  border-color: var(--mc-line);
+}
+.mc-btn-icon {
+  padding: 0 7px;
+  letter-spacing: 0;
+}
+.mc-spacer {
+  flex: 1;
+}
 .mc-btn.is-primary {
   border-color: color-mix(in srgb, var(--accent) 60%, transparent);
   color: var(--text-0);
@@ -192,13 +215,14 @@
 /* ---- canvas -------------------------------------------------------------------------------- */
 
 .mc-scroll {
-  flex: 1;
-  min-height: 120px;
+  flex: 1 1 0;
+  min-height: 0; /* the canvas is the part that scrolls; river, log and status keep their size */
   overflow: auto;
+  overscroll-behavior: contain;
 }
 .mc-canvas {
   position: relative;
-  padding: 16px 18px 18px;
+  padding: 16px 18px 10px;
   min-height: 100%;
 }
 .mc-links {
@@ -504,15 +528,29 @@
   color: var(--text-2);
 }
 
-/* sign-off */
+/* sign-off: docked to the bottom of the scrolling canvas, so it is always fully visible above the
+   activity river however many lanes / cards there are; it settles in place when scrolled to the end. */
+.mc-signoff-dock {
+  position: sticky;
+  bottom: 0;
+  z-index: 3;
+  padding: 12px 0 2px;
+  background: linear-gradient(to bottom, transparent, var(--bg-0) 12px);
+}
 .mc-signoff {
   width: min(760px, 100%);
   --rc: var(--ok);
+  padding-bottom: 8px;
 }
 .mc-signoff-list {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
+  max-height: 52px;
+  overflow-y: auto;
+}
+.mc-chip-go {
+  color: var(--accent);
 }
 .mc-chip {
   --rc: var(--role-custom);
@@ -547,6 +585,7 @@
 .mc-river {
   position: relative;
   height: 86px;
+  overflow: hidden;
   flex-shrink: 0;
   border-top: 1px solid var(--border);
   background: var(--bg-0);
@@ -801,4 +840,185 @@
   gap: 6px;
   align-items: center;
   margin-right: auto;
+}
+
+/* ---- cockpit: lane / lead actions, card toolbar, call to action -------------------------- */
+
+.mc-lane-actions,
+.mc-node-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-bottom: 8px;
+}
+.mc-node-actions .mc-lead-phases {
+  margin: 0;
+}
+.mc-empty-actions {
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 10px;
+}
+/* the app's quick-launch button, dressed as a Mission Control button */
+.mc .quick-launch {
+  height: 22px;
+  padding: 0 8px;
+  gap: 4px;
+  border: 1px solid color-mix(in srgb, var(--accent) 50%, var(--mc-line));
+  border-radius: var(--radius-s);
+  background: transparent;
+  color: var(--text-0);
+  font-family: var(--font-mono);
+  font-size: var(--mc-fs-micro);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.mc .quick-launch:hover {
+  background: var(--bg-2);
+}
+
+.mc-card-tail {
+  font-size: var(--mc-fs-micro);
+  color: var(--text-1);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+  opacity: 0.9;
+}
+.mc-card-tail.is-empty {
+  color: var(--text-2);
+  font-style: italic;
+}
+.mc-card-muted {
+  display: inline-flex;
+  color: var(--text-2);
+}
+.mc-card-rename {
+  flex: 1;
+  min-width: 0;
+  height: 18px;
+  padding: 0 4px;
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-s);
+  background: var(--bg-0);
+  color: var(--text-0);
+  font-family: var(--font-mono);
+  font-size: var(--mc-fs);
+  user-select: text;
+}
+.mc-card-tools {
+  position: absolute;
+  top: 3px;
+  right: 4px;
+  display: none;
+  gap: 2px;
+  padding: 1px;
+  border: 1px solid var(--mc-line);
+  border-radius: var(--radius-s);
+  background: var(--bg-2);
+  box-shadow: var(--elev-1, none);
+}
+.mc-card:hover .mc-card-tools,
+.mc-card:focus-visible .mc-card-tools,
+.mc-card:focus-within .mc-card-tools {
+  display: inline-flex;
+}
+.mc-card-tools button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 18px;
+  border: 0;
+  border-radius: var(--radius-s);
+  background: transparent;
+  color: var(--text-1);
+  cursor: pointer;
+}
+.mc-card-tools button:hover:not(:disabled) {
+  background: var(--bg-3);
+  color: var(--text-0);
+}
+.mc-card-tools button.is-danger:hover {
+  color: var(--err);
+}
+.mc-card-tools button:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+.mc-cta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+  height: 20px;
+  padding: 0 6px;
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-s);
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  color: var(--text-0);
+  font-family: var(--font-mono);
+  font-size: var(--mc-fs-micro);
+  cursor: pointer;
+}
+.mc-cta:hover {
+  background: color-mix(in srgb, var(--accent) 26%, transparent);
+}
+.mc-cta-msg {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: left;
+  color: var(--text-1);
+}
+.mc-cta-go {
+  flex-shrink: 0;
+  color: var(--accent);
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.mc-keys {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.mc-keys kbd {
+  font-family: var(--font-mono);
+  font-size: var(--mc-fs-micro);
+  color: var(--text-1);
+}
+
+/* short windows (e.g. 1536×794 at 125 %): give the canvas the room */
+@media (max-height: 860px) {
+  .mc-backdrop {
+    padding: 8px;
+  }
+  .mc-river {
+    height: 60px;
+  }
+  .mc-log {
+    height: 132px;
+  }
+  .mc-canvas {
+    padding-top: 12px;
+  }
+  .mc-row + .mc-row,
+  .mc-lanes + .mc-row,
+  .mc-row + .mc-lanes {
+    margin-top: 24px;
+  }
+}
+@media (max-height: 640px) {
+  .mc-river {
+    display: none;
+  }
+  .mc-log {
+    height: 104px;
+  }
 }

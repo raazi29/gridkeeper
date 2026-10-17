@@ -5,7 +5,7 @@ import { COMMANDS, THEME_COMMAND_PREFIX } from "../actions/commands";
 import { notify } from "../actions/notify";
 import { DEFAULT_BINDINGS, displayCombo, eventToCombo, forbiddenReason } from "../keybindings/combo";
 import { errorMessage, ipc } from "../lib/ipc";
-import type { AgentPaths, LayoutPreset, RendererPref, Settings, UiDensity } from "../lib/types";
+import type { AgentPaths, LayoutPreset, RendererPref, RightClickAction, Settings, UiDensity } from "../lib/types";
 import { DEFAULT_SETTINGS } from "../lib/types";
 import { useApp } from "../store/appStore";
 import { setKeyRecording, useUi } from "../store/uiStore";
@@ -140,6 +140,7 @@ function TerminalSection() {
   const [lineHeight, setLineHeight] = useSetting("lineHeight");
   const [blink, setBlink] = useSetting("cursorBlink");
   const [pasteWarning, setPasteWarning] = useSetting("pasteWarning");
+  const [rightClick, setRightClick] = useSetting("rightClickAction");
   const [renderer, setRenderer] = useSetting("renderer");
   const [layout, setLayout] = useSetting("defaultLayout");
   return (
@@ -197,6 +198,24 @@ function TerminalSection() {
           ]}
         />
       </Field>
+      <Field
+        label="Right-click"
+        hint={
+          rightClick === "paste"
+            ? "Copies the selection, or pastes when nothing is selected. Shift+right-click opens the menu."
+            : "Opens the terminal menu (copy, paste, find, zoom, split, restart…). Programs that use the mouse get plain right-clicks; Shift+right-click opens the menu there."
+        }
+      >
+        <Segmented<RightClickAction>
+          ariaLabel="Right-click action"
+          value={rightClick === "paste" ? "paste" : "menu"}
+          onChange={setRightClick}
+          options={[
+            { value: "menu", label: "Menu (default)" },
+            { value: "paste", label: "Paste (Windows Terminal style)" },
+          ]}
+        />
+      </Field>
       <Toggle checked={blink} onChange={setBlink} label="Cursor blink" />
       <Toggle
         checked={pasteWarning}
@@ -217,6 +236,7 @@ function TerminalSection() {
               lineHeight: DEFAULT_SETTINGS.lineHeight,
               cursorBlink: DEFAULT_SETTINGS.cursorBlink,
               renderer: DEFAULT_SETTINGS.renderer,
+              rightClickAction: DEFAULT_SETTINGS.rightClickAction,
             })
           }
         >

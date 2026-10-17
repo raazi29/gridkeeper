@@ -2,12 +2,13 @@
 
 import { memo, useState } from "react";
 import { useShallow } from "zustand/react/shallow";
-import { activateGroup, deleteGroupFlow, runCommand } from "../actions/commands";
+import { activateGroup, runCommand } from "../actions/commands";
 import { isLive, selectActiveGroup, selectActiveWorkspace, useApp, type AppStore } from "../store/appStore";
 import { GroupUnreadBadge } from "./AttentionBits";
 import { useShortcut, withShortcut } from "./hooks";
 import { IconMaximize, IconPlus } from "./icons";
 import { QuickLaunchButton } from "./QuickLaunch";
+import { buildGroupMenu } from "./menus/containerMenus";
 import { useContextMenu } from "./ui/Menu";
 
 function findGroup(s: AppStore, groupId: string) {
@@ -32,7 +33,7 @@ export function GroupTabs() {
   return (
     <div className="group-tabs" role="tablist" aria-label="Terminal groups">
       {groupIds.map((gid) => (
-        <GroupTab key={gid} workspaceId={wsId} groupId={gid} active={gid === activeGroupId} canDelete={groupIds.length > 1} openMenu={menu.open} />
+        <GroupTab key={gid} workspaceId={wsId} groupId={gid} active={gid === activeGroupId} openMenu={menu.open} />
       ))}
       <button type="button" className="tab-add" aria-label="New group" title={withShortcut("New group", scGroup)} onClick={() => runCommand("group.new")}>
         <IconPlus size={13} />
@@ -59,13 +60,11 @@ const GroupTab = memo(function GroupTab({
   workspaceId,
   groupId,
   active,
-  canDelete,
   openMenu,
 }: {
   workspaceId: string;
   groupId: string;
   active: boolean;
-  canDelete: boolean;
   openMenu: ReturnType<typeof useContextMenu>["open"];
 }) {
   const name = useApp((s) => findGroup(s, groupId)?.name ?? "");
@@ -85,11 +84,7 @@ const GroupTab = memo(function GroupTab({
   };
 
   const showMenu = (e: { clientX: number; clientY: number; preventDefault?: () => void }) =>
-    openMenu(e, [
-      { label: "Rename", onSelect: () => setEditing(true) },
-      "separator",
-      { label: "Delete group…", danger: true, disabled: !canDelete, onSelect: () => void deleteGroupFlow(groupId) },
-    ]);
+    openMenu(e, buildGroupMenu(groupId, { onRename: () => setEditing(true) }));
 
   return (
     <div

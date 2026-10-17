@@ -10,6 +10,8 @@ import { Pane } from "./Pane";
 import { chunkRows, equalSizes, layoutSignature, rowKey, rowsKey, validSizes } from "./gridGeometry";
 import { ErrorBoundary } from "../components/ErrorBoundary";
 import { QuickLaunchPanel } from "../components/QuickLaunch";
+import { openAppMenu } from "../components/ContextMenuHost";
+import { buildBackgroundMenu } from "../components/menus/containerMenus";
 import "./layout.css";
 
 export interface GroupGridProps {
@@ -209,7 +211,17 @@ export const GroupGrid = memo(function GroupGrid({ groupId, active }: GroupGridP
   const maxIndex = maximized ? sessionIds.indexOf(maximized) : -1;
 
   return (
-    <div className="group-grid" style={active ? undefined : { display: "none" }} data-group-id={groupId}>
+    <div
+      className="group-grid"
+      style={active ? undefined : { display: "none" }}
+      data-group-id={groupId}
+      onContextMenu={(e) => {
+        // Background / empty-group menu; panes (header, terminal, overlays) handle their own right-clicks.
+        if ((e.target as HTMLElement).closest(".pane, input, textarea, button")) return;
+        e.preventDefault();
+        openAppMenu(e.clientX, e.clientY, buildBackgroundMenu(groupId));
+      }}
+    >
       {sessionIds.length === 0 ? (
         <EmptyState />
       ) : maximized ? (

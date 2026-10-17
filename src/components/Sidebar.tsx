@@ -4,13 +4,13 @@ import { memo, useState } from "react";
 import { useShallow } from "zustand/react/shallow";
 import { deleteWorkspaceFlow, switchWorkspace } from "../actions/commands";
 import { notify } from "../actions/notify";
-import { isWorkspaceMuted, toggleWorkspaceMute } from "../actions/notifyPrefs";
 import { isLive, selectActiveWorkspace, useApp, type AppStore } from "../store/appStore";
 import { useUi } from "../store/uiStore";
 import { WorkspaceUnreadBadge } from "./AttentionBits";
 import { APP_NAME } from "../lib/brand";
 import { useShortcut, withShortcut } from "./hooks";
 import { AppMark, IconActivity, IconChevronLeft, IconChevronRight, IconPlus, IconSettings, IconUsers } from "./icons";
+import { workspaceExtraItems } from "./menus/containerMenus";
 import { useContextMenu } from "./ui/Menu";
 import { basename, initials } from "./util/text";
 import { pickFolder } from "./util/pick";
@@ -150,7 +150,8 @@ const WorkspaceRow = memo(function WorkspaceRow({
           }
         },
       },
-      { label: isWorkspaceMuted(id) ? "Unmute notifications" : "Mute notifications", hint: "alerts still reach Comms", onSelect: () => toggleWorkspaceMute(id) },
+      "separator",
+      ...workspaceExtraItems(id),
       "separator",
       { label: "Delete workspace…", danger: true, onSelect: () => void deleteWorkspaceFlow(id) },
     ]);

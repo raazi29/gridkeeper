@@ -1,32 +1,47 @@
-// Mission Control: a full-window team view of the ACTIVE workspace in a terminal / box-drawing style.
-// Lead node(s) on top, one lane per group (a group is a phase / team), a SIGN-OFF node listing sessions
-// that wait for review, connector lines, an activity river, the session log and a status line.
+// Mission Control: a full-window team view — and cockpit — of the ACTIVE workspace in a terminal /
+// box-drawing style. Lead node(s) on top, one lane per group (a group is a phase / team), a SIGN-OFF dock
+// listing sessions that wait for review, connector lines, an activity river, the session log and a status
+// line. Lanes have actions (add session, message, restart, stop, formation); cards have a hover toolbar,
+// the shared session context menu and keyboard actions (Enter / R / S / M / Del / F2 / Shift+F10).
 // Every number shown is real: process state, exit codes, attention state, PTY output bytes/s (sampled
 // once per second ONLY while this overlay is open), CPU/RAM from the shared diagnostics poll.
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { createPortal } from "react-dom";
 import { useShallow } from "zustand/react/shallow";
-import { jumpToSession } from "../../actions/commands";
+import { confirmCloseSession, jumpToSession } from "../../actions/commands";
+import { messageSessions, restartSessions, restartTargets, stopSessions } from "../../actions/groupActions";
+import { closeSession, startSession } from "../../actions/sessions";
+import { commandForEvent } from "../../keybindings";
 import { ipc } from "../../lib/ipc";
 import { BUILTIN_ROLES, roleInfo } from "../../lib/roles";
 import type { GitInfo, SessionId } from "../../lib/types";
-import { selectActiveWorkspace, useApp } from "../../store/appStore";
+import { AgentGlyph } from "../../layout/icons";
+import { isLive, selectActiveGroup, selectActiveWorkspace, useApp } from "../../store/appStore";
 import { useAttention } from "../../store/attention";
 import { useMission } from "../../store/mission";
 import { acquireRateSampler, formatRate, latestRate, useRates } from "../../store/rates";
-import { isTopModal, popModal, pushModal, useUi } from "../../store/uiStore";
+import { requestRename } from "../../store/renameRequest";
+import { confirmDialog, isTopModal, popModal, pushModal, useUi } from "../../store/uiStore";
 import { useDiagnosticsPoll } from "../hooks";
+import { buildGroupMenu } from "../menus/containerMenus";
+import { buildSessionMenu, confirmRestart, confirmStop } from "../menus/sessionMenu";
+import { QuickLaunchButton } from "../QuickLaunch";
+import { useContextMenu, type MenuItem } from "../ui/Menu";
 import { ActivityRiver } from "./ActivityRiver";
 import { deriveMission, LAMP_TEXT, laneProgress, phaseMark, sessionStatus, type LaneModel } from "./derive";
 import { Links, type LinkSpec } from "./Links";
 import { roleStyle } from "./RoleTag";
 import { SessionCard } from "./SessionCard";
 import { SessionLog } from "./SessionLog";
+import { useOutputTails } from "./useOutputTails";
 import "../../styles/attention.css";
 import "../../styles/mission.css";
 
 const SEP = "\u0000";
+
+type MenuEvent = { clientX: number; clientY: number; preventDefault?: () => void; stopPropagation?: () => void };
+type OpenMenu = (e: MenuEvent, items: MenuItem[]) => void;
 
 interface GroupRow {
   id: string;
@@ -34,13 +49,32 @@ interface GroupRow {
   sessionIds: SessionId[];
 }
 
+function sessionName(id: SessionId): string {
+  return useApp.getState().persisted.sessions.find((m) => m.id === id)?.name ?? "session";
+}
+
+/** Del on a card: always asks (a stopped session's definition is removed too). */
+async function confirmRemove(id: SessionId): Promise<void> {
+  if (isLive(useApp.getState().runtime[id])) return confirmCloseSession(id);
+  const ok = await confirmDialog({
+    title: `Close “${sessionName(id)}”?`,
+    message: "Removes the pane and its session definition. The process is not running.",
+    confirmLabel: "Close",
+    danger: true,
+  });
+  if (ok) await closeSession(id);
+}
+
 export function MissionControl() {
   const close = useCallback(() => useMission.getState().toggle(false), []);
   const panel = useRef<HTMLDivElement>(null);
   const modalId = useRef(0);
+  const menu = useContextMenu();
+  const openMenu = menu.open;
 
   const wsName = useApp((s) => selectActiveWorkspace(s)?.name ?? "");
   const projectDir = useApp((s) => selectActiveWorkspace(s)?.projectDir ?? null);
+  const activeGroupId = useApp((s) => selectActiveGroup(s)?.id);
   // Structure + roles as primitive strings: re-derives only on layout / role edits, not on output churn.
   const structure = useApp(
     useShallow((s) => {
@@ -58,9 +92,10 @@ export function MissionControl() {
   const still = stillSetting || prefersReduced;
   const sampledAt = useRates((s) => s.sampledAt);
 
-  // Output-rate sampling and the shared diagnostics poll run only while Mission Control is open.
+  // Output-rate sampling, the shared diagnostics poll and card output tails run only while open.
   useEffect(() => acquireRateSampler(), []);
   useDiagnosticsPoll(diagOn);
+  useOutputTails(panel);
 
   const { groups, roles } = useMemo(() => {
     const roles: Record<SessionId, string | null> = {};
@@ -133,6 +168,20 @@ export function MissionControl() {
       if (prev?.isConnected && !useUi.getState().dialog) requestAnimationFrame(() => prev.focus());
     };
   }, []);
+  // Focus can end up on <body> (an element under it unmounted, a menu action ran): Esc still closes,
+  // other keys bring focus back to the panel.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.defaultPrevented || !isTopModal(modalId.current) || panel.current?.contains(document.activeElement)) return;
+      if (document.activeElement && document.activeElement !== document.body) return;
+      if (e.key === "Escape") {
+        e.preventDefault();
+        close();
+      } else panel.current?.focus();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [close]);
   useEffect(() => {
     if (flat.length && (!selected || !flat.includes(selected))) setSelected(flat[0]);
   }, [flat, selected]);
@@ -150,23 +199,53 @@ export function MissionControl() {
     [close],
   );
 
+  const openCardMenu = useCallback(
+    (e: MenuEvent, id: SessionId) => openMenu(e, buildSessionMenu(id, { surface: "mission", onNavigate: close })),
+    [openMenu, close],
+  );
+
   const onKeyDown = (e: React.KeyboardEvent) => {
-    // Ignore keys from dialogs stacked above (formation dialog / confirms) and from form controls.
+    // Ignore keys from dialogs stacked above (formation dialog / confirms / menus) and from outside.
     if (!isTopModal(modalId.current) || !panel.current?.contains(e.target as Node)) return;
-    if (e.key === "Escape") {
+    if (e.key === "Escape" || commandForEvent(e.nativeEvent) === "view.mission") {
       e.preventDefault();
       e.stopPropagation();
       close();
       return;
     }
     const tag = (e.target as HTMLElement).tagName;
-    if (tag === "SELECT" || tag === "INPUT" || tag === "BUTTON") return;
+    if (tag === "SELECT" || tag === "INPUT" || tag === "TEXTAREA" || tag === "BUTTON") return;
     if (!flat.length) return;
     const i = selected ? flat.indexOf(selected) : -1;
-    if (e.key === "Enter" && selected) {
+    const plain = !e.ctrlKey && !e.altKey && !e.metaKey;
+    const live = !!selected && isLive(useApp.getState().runtime[selected]);
+    const act = (fn: () => void) => {
       e.preventDefault();
-      jump(selected);
-    } else if (e.key === "ArrowRight" || e.key === "ArrowLeft") {
+      fn();
+    };
+    if (e.key === "Enter" && selected) act(() => jump(selected));
+    else if ((e.key === "ContextMenu" || (e.shiftKey && e.key === "F10")) && selected) {
+      act(() => {
+        const r = panel.current?.querySelector<HTMLElement>(`[data-card="${CSS.escape(selected)}"]`)?.getBoundingClientRect();
+        openCardMenu({ clientX: (r?.left ?? 40) + 12, clientY: (r?.top ?? 40) + 22 }, selected);
+      });
+    } else if (plain && selected && (e.key === "r" || e.key === "R") && !e.shiftKey) {
+      act(() => {
+        if (useApp.getState().runtime[selected]) void confirmRestart(selected, sessionName(selected), { mode: "continue" }, live);
+      });
+    } else if (plain && selected && (e.key === "s" || e.key === "S") && !e.shiftKey) {
+      act(() => {
+        if (live) void confirmStop(selected, sessionName(selected));
+        else {
+          const m = useApp.getState().persisted.sessions.find((x) => x.id === selected);
+          const conv = m?.agent === "claude" || m?.agent === "codex";
+          void startSession(selected, conv && m ? m.resumeOnRestore : { mode: "none" });
+        }
+      });
+    } else if (plain && selected && (e.key === "m" || e.key === "M") && !e.shiftKey) act(() => messageSessions([selected], `“${sessionName(selected)}”`));
+    else if (plain && selected && e.key === "Delete") act(() => void confirmRemove(selected));
+    else if (plain && selected && e.key === "F2") act(() => requestRename(selected, "mission"));
+    else if (e.key === "ArrowRight" || e.key === "ArrowLeft") {
       e.preventDefault();
       setSelected(flat[e.key === "ArrowRight" ? Math.min(flat.length - 1, i + 1) : Math.max(0, i - 1)]);
     } else if (e.key === "ArrowDown" || e.key === "ArrowUp") {
@@ -196,6 +275,7 @@ export function MissionControl() {
 
   const now = sampledAt ?? Date.now();
   const total = model.counts.total;
+  const cardProps = { selected, onSelect: setSelected, onJump: jump, onMenu: openCardMenu, now };
 
   return createPortal(
     <div className="mc-backdrop" onMouseDown={(e) => e.target === e.currentTarget && close()}>
@@ -241,6 +321,15 @@ export function MissionControl() {
             agents [ <b>{model.counts.live}</b>/<b>{total}</b> ]
           </span>
           <span className="mc-head-actions">
+            <button
+              type="button"
+              className="mc-btn"
+              disabled={model.counts.live === 0}
+              title="Type one line to several running sessions (nothing is sent until you press Send)"
+              onClick={() => messageSessions(allIds, "this workspace")}
+            >
+              message all…
+            </button>
             <button type="button" className="mc-btn is-primary" onClick={() => useMission.getState().openFormation()}>
               launch formation…
             </button>
@@ -254,19 +343,19 @@ export function MissionControl() {
           <div className="mc-canvas">
             <Links links={links} version={`${structure.join("|")}|${linkKey}`} />
             {total === 0 ? (
-              <EmptyMission />
+              <EmptyMission groupId={activeGroupId} />
             ) : (
               <>
                 <div className="mc-row">
-                  <LeadNode leads={model.leads} lanes={model.lanes} allIds={allIds} selected={selected} onSelect={setSelected} onJump={jump} now={now} />
+                  <LeadNode leads={model.leads} lanes={model.lanes} allIds={allIds} {...cardProps} />
                 </div>
                 <div className="mc-lanes">
                   {model.lanes.map((l, i) => (
-                    <LaneNode key={l.groupId} lane={l} index={i + 1} selected={selected} onSelect={setSelected} onJump={jump} now={now} />
+                    <LaneNode key={l.groupId} lane={l} index={i + 1} openMenu={openMenu} {...cardProps} />
                   ))}
                 </div>
-                <div className="mc-row">
-                  <SignoffNode ids={model.signoff} onJump={jump} />
+                <div className="mc-row mc-signoff-dock">
+                  <SignoffNode ids={model.signoff} onJump={jump} onMenu={openCardMenu} />
                 </div>
               </>
             )}
@@ -293,9 +382,13 @@ export function MissionControl() {
             out [ <b>{formatRate(outTotal)}</b> ]
           </span>
           <span className="mc-spacer" />
-          <span>←↑↓→ select · enter jump · esc close</span>
+          <span className="mc-keys" title="Keyboard (selected card)">
+            <kbd>←↑↓→</kbd> select · <kbd>enter</kbd> jump · <kbd>r</kbd> restart · <kbd>s</kbd> stop/start · <kbd>m</kbd> message · <kbd>del</kbd> close ·{" "}
+            <kbd>F2</kbd> rename · <kbd>⇧F10</kbd> menu · <kbd>esc</kbd> close
+          </span>
         </footer>
       </div>
+      {menu.element}
     </div>,
     document.body,
   );
@@ -307,10 +400,12 @@ interface CardProps {
   selected: SessionId | null;
   onSelect: (id: SessionId) => void;
   onJump: (id: SessionId) => void;
+  onMenu: (e: MenuEvent, id: SessionId) => void;
   now: number;
 }
 
-function LeadNode({ leads, lanes, allIds, selected, onSelect, onJump, now }: CardProps & { leads: SessionId[]; lanes: LaneModel[]; allIds: SessionId[] }) {
+function LeadNode({ leads, lanes, allIds, selected, onSelect, onJump, onMenu, now }: CardProps & { leads: SessionId[]; lanes: LaneModel[]; allIds: SessionId[] }) {
+  const liveLeads = useApp((s) => leads.filter((id) => isLive(s.runtime[id])).length);
   const phases = lanes.length > 0 && (
     <div className="mc-lead-phases mc-micro" aria-label="Workflow phases">
       <span>workflow</span>
@@ -332,7 +427,7 @@ function LeadNode({ leads, lanes, allIds, selected, onSelect, onJump, now }: Car
       <div data-node="lead" className="mc-node mc-lead is-placeholder">
         <span className="mc-node-label">lead · orchestrator</span>
         {phases}
-        <div>no lead — assign a role</div>
+        <div>no lead yet — pick the session that coordinates the others</div>
         <AssignLead ids={allIds} />
       </div>
     );
@@ -340,50 +435,118 @@ function LeadNode({ leads, lanes, allIds, selected, onSelect, onJump, now }: Car
     <div data-node="lead" className="mc-node mc-lead is-solid">
       <span className="mc-node-label">lead · orchestrator</span>
       <span className="mc-node-label mc-node-label-right">{leads.length === 1 ? "1 lead" : `${leads.length} leads`}</span>
-      {phases}
+      <div className="mc-node-actions">
+        {phases}
+        <span className="mc-spacer" />
+        <button
+          type="button"
+          className="mc-btn"
+          disabled={liveLeads === 0}
+          title={liveLeads ? "Type a line to the lead (opens the composer; nothing is sent until you press Send)" : "The lead is not running"}
+          onClick={() => messageSessions(leads, "the lead")}
+        >
+          message lead…
+        </button>
+      </div>
       <div className="mc-cards">
         {leads.map((id) => (
-          <SessionCard key={id} id={id} selected={id === selected} onSelect={onSelect} onJump={onJump} now={now} />
+          <SessionCard key={id} id={id} selected={id === selected} onSelect={onSelect} onJump={onJump} onMenu={onMenu} now={now} />
         ))}
       </div>
     </div>
   );
 }
 
+/** "assign lead…": a menu of this workspace's sessions; picking one gives it the lead role. */
 function AssignLead({ ids }: { ids: SessionId[] }) {
-  const options = useApp(useShallow((s) => ids.map((id) => `${id}${SEP}${s.persisted.sessions.find((m) => m.id === id)?.name ?? id}`)));
+  const menu = useContextMenu();
+  const options = useApp(
+    useShallow((s) =>
+      ids.map((id) => {
+        const m = s.persisted.sessions.find((x) => x.id === id);
+        return `${id}${SEP}${m?.name ?? id}${SEP}${m?.agent ?? "powershell"}${SEP}${isLive(s.runtime[id]) ? "1" : ""}`;
+      }),
+    ),
+  );
   if (!options.length) return null;
+  const items: MenuItem[] = options.map((o) => {
+    const [id, name, agent, live] = o.split(SEP);
+    return {
+      label: name,
+      hint: live ? "running" : undefined,
+      icon: <AgentGlyph agent={agent as Parameters<typeof AgentGlyph>[0]["agent"]} size={11} />,
+      onSelect: () => useApp.getState().updateSessionMeta(id, { role: "lead" }),
+    };
+  });
   return (
-    <label className="mc-assign">
-      <span className="mc-micro">make lead</span>
-      <select
-        value=""
-        aria-label="Assign the lead role to a session"
-        onChange={(e) => e.target.value && useApp.getState().updateSessionMeta(e.target.value, { role: "lead" })}
+    <div className="mc-assign">
+      <button
+        type="button"
+        className="mc-btn is-primary"
+        aria-haspopup="menu"
+        aria-expanded={menu.isOpen}
+        onClick={(e) => menu.openAt(e.currentTarget, items)}
       >
-        <option value="">choose a session…</option>
-        {options.map((o) => {
-          const [id, name] = o.split(SEP);
-          return (
-            <option key={id} value={id}>
-              {name}
-            </option>
-          );
-        })}
-      </select>
-    </label>
+        assign lead… ▾
+      </button>
+      {menu.element}
+    </div>
   );
 }
 
-function LaneNode({ lane, index, selected, onSelect, onJump, now }: CardProps & { lane: LaneModel; index: number }) {
+function LaneNode({ lane, index, openMenu, selected, onSelect, onJump, onMenu, now }: CardProps & { lane: LaneModel; index: number; openMenu: OpenMenu }) {
   const progress = laneProgress(lane);
+  const what = `lane “${lane.name}”`;
+  const canRestart = useApp((s) => restartTargets(lane.ids, s.persisted.sessions, s.runtime).length > 0);
   const cls = ["mc-node", lane.live > 0 ? "is-solid" : "", lane.needs > 0 ? "is-needs" : "", lane.total >= 7 ? "is-wide" : ""].filter(Boolean).join(" ");
+  const laneMenu = (e: MenuEvent) => openMenu(e, buildGroupMenu(lane.groupId));
   return (
-    <div data-node={`lane:${lane.groupId}`} className={cls}>
+    <div
+      data-node={`lane:${lane.groupId}`}
+      className={cls}
+      onContextMenu={(e) => {
+        if ((e.target as HTMLElement).closest("[data-card], input, button")) return;
+        laneMenu(e);
+      }}
+    >
       <span className="mc-node-label">
         lane {index} · {lane.name}
       </span>
       <span className="mc-node-label mc-node-label-right">{lane.total === 1 ? "1 agent" : `${lane.total} agents`}</span>
+      <div className="mc-lane-actions" role="toolbar" aria-label={`${lane.name} actions`}>
+        <QuickLaunchButton groupId={lane.groupId} variant="ghost" label="Add session" />
+        {lane.total > 0 ? (
+          <>
+            <button type="button" className="mc-btn" disabled={lane.live === 0} title="Type one line to this lane's running sessions" onClick={() => messageSessions(lane.ids, what)}>
+              message lane…
+            </button>
+            <button type="button" className="mc-btn" disabled={!canRestart} title="Restart every session of this lane (asks first)" onClick={() => void restartSessions(lane.ids, what)}>
+              restart lane
+            </button>
+            <button type="button" className="mc-btn" disabled={lane.live === 0} title="Stop this lane's running sessions (asks first)" onClick={() => void stopSessions(lane.ids, what)}>
+              stop lane
+            </button>
+          </>
+        ) : (
+          <button type="button" className="mc-btn is-primary" onClick={() => useMission.getState().openFormation({ groupId: lane.groupId })}>
+            launch formation…
+          </button>
+        )}
+        <span className="mc-spacer" />
+        <button
+          type="button"
+          className="mc-btn mc-btn-icon"
+          aria-label={`More actions for ${lane.name}`}
+          aria-haspopup="menu"
+          title="More lane actions"
+          onClick={(e) => {
+            const r = e.currentTarget.getBoundingClientRect();
+            laneMenu({ clientX: r.left, clientY: r.bottom + 2 });
+          }}
+        >
+          ⋯
+        </button>
+      </div>
       {progress ? (
         <div className="mc-lane-head mc-micro">
           <span className="mc-progress" role="progressbar" aria-valuemin={0} aria-valuemax={lane.total} aria-valuenow={lane.done} aria-label={progress.label}>
@@ -397,18 +560,18 @@ function LaneNode({ lane, index, selected, onSelect, onJump, now }: CardProps & 
           </span>
         </div>
       ) : (
-        <div className="mc-empty">empty group — add sessions or launch a formation</div>
+        <div className="mc-empty">empty group — add a session or launch a formation into it</div>
       )}
       <div className="mc-cards">
         {lane.ids.map((id) => (
-          <SessionCard key={id} id={id} selected={id === selected} onSelect={onSelect} onJump={onJump} now={now} />
+          <SessionCard key={id} id={id} selected={id === selected} onSelect={onSelect} onJump={onJump} onMenu={onMenu} now={now} />
         ))}
       </div>
     </div>
   );
 }
 
-function SignoffNode({ ids, onJump }: { ids: SessionId[]; onJump: (id: SessionId) => void }) {
+function SignoffNode({ ids, onJump, onMenu }: { ids: SessionId[]; onJump: (id: SessionId) => void; onMenu: (e: MenuEvent, id: SessionId) => void }) {
   return (
     <div data-node="signoff" className={`mc-node mc-signoff${ids.length ? " is-solid" : ""}`}>
       <span className="mc-node-label">sign-off · ready for review</span>
@@ -418,7 +581,7 @@ function SignoffNode({ ids, onJump }: { ids: SessionId[]; onJump: (id: SessionId
       ) : (
         <div className="mc-signoff-list">
           {ids.map((id) => (
-            <SignoffChip key={id} id={id} onJump={onJump} />
+            <SignoffChip key={id} id={id} onJump={onJump} onMenu={onMenu} />
           ))}
         </div>
       )}
@@ -426,11 +589,13 @@ function SignoffNode({ ids, onJump }: { ids: SessionId[]; onJump: (id: SessionId
   );
 }
 
-function SignoffChip({ id, onJump }: { id: SessionId; onJump: (id: SessionId) => void }) {
-  const meta = useApp(useShallow((s) => {
-    const m = s.persisted.sessions.find((x) => x.id === id);
-    return m ? { name: m.name, role: m.role ?? null } : null;
-  }));
+function SignoffChip({ id, onJump, onMenu }: { id: SessionId; onJump: (id: SessionId) => void; onMenu: (e: MenuEvent, id: SessionId) => void }) {
+  const meta = useApp(
+    useShallow((s) => {
+      const m = s.persisted.sessions.find((x) => x.id === id);
+      return m ? { name: m.name, role: m.role ?? null } : null;
+    }),
+  );
   const rt = useApp((s) => s.runtime[id]);
   const a = useAttention((s) => s.sessions[id]);
   if (!meta) return null;
@@ -442,22 +607,25 @@ function SignoffChip({ id, onJump }: { id: SessionId; onJump: (id: SessionId) =>
       style={roleStyle(meta.role)}
       title={a?.lastMessage ?? LAMP_TEXT[st.lamp]}
       onClick={() => onJump(id)}
+      onContextMenu={(e) => onMenu(e, id)}
     >
       <span className="mc-chip-sq" />
       {meta.name}
       <span className="mc-bracket">[ {st.lamp === "waiting" ? "needs you" : "done"} ]</span>
+      {st.lamp === "waiting" && <span className="mc-chip-go">answer →</span>}
     </button>
   );
 }
 
-function EmptyMission() {
+function EmptyMission({ groupId }: { groupId: string | undefined }) {
   return (
     <div className="mc-row">
       <div data-node="lead" className="mc-node mc-lead is-placeholder">
         <span className="mc-node-label">mission</span>
         <div>No agents in this workspace yet.</div>
-        <div style={{ marginTop: 10 }}>
-          <button type="button" className="mc-btn is-primary" onClick={() => useMission.getState().openFormation()}>
+        <div className="mc-empty-actions">
+          {groupId && <QuickLaunchButton groupId={groupId} variant="ghost" label="Add session" />}
+          <button type="button" className="mc-btn is-primary" onClick={() => useMission.getState().openFormation({ groupId })}>
             launch formation…
           </button>
         </div>

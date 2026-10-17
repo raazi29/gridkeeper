@@ -1,6 +1,6 @@
 // Connector lines between Mission Control nodes, drawn from measured DOM positions. The SVG lives inside
-// the scrolling content, so scrolling never invalidates paths; a ResizeObserver (container + every node)
-// triggers re-measurement. Lines sit behind the nodes, so crossings are hidden.
+// the scrolling content; a ResizeObserver (container + every node) and scrolling (the sticky sign-off
+// dock moves) trigger re-measurement. Lines sit behind the nodes, so crossings are hidden.
 
 import { useLayoutEffect, useRef, useState } from "react";
 
@@ -56,8 +56,12 @@ export function Links({ links, version }: { links: LinkSpec[]; version: string }
     const ro = new ResizeObserver(schedule);
     ro.observe(root);
     for (const el of root.querySelectorAll<HTMLElement>("[data-node]")) ro.observe(el);
+    // The sign-off dock is position: sticky, so its box moves while the canvas scrolls.
+    const scroller = root.parentElement;
+    scroller?.addEventListener("scroll", schedule, { passive: true });
     measure();
     return () => {
+      scroller?.removeEventListener("scroll", schedule);
       ro.disconnect();
       if (frame) cancelAnimationFrame(frame);
     };

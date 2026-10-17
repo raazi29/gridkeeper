@@ -8,6 +8,7 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNo
 import { createPortal } from "react-dom";
 import { popModal, pushModal } from "../../store/uiStore";
 import { firstIndex, menuKey, type NavItem } from "./menuNav";
+import "../../styles/menus.css";
 
 export interface MenuAction {
   label: string;
@@ -83,8 +84,10 @@ export function Menu({ x, y, items, onClose }: { x: number; y: number; items: Me
   const button = (level: number, index: number) =>
     root.current?.querySelector<HTMLButtonElement>(`[data-level="${level}"] [data-index="${index}"]`) ?? null;
 
+  // Focus goes back to where it was (terminal, card, button) BEFORE the action runs, so actions that
+  // move focus themselves (rename input, find bar, dialogs, jump) still win.
   const activate = (it: MenuAction) => {
-    close(false);
+    close(true);
     it.onSelect?.();
   };
 
