@@ -284,9 +284,6 @@ export const PaneHeader = memo(function PaneHeader({ sessionId, groupId, index, 
       draggable={!editing}
       onDragStart={onDragStart}
       onDragEnd={endPaneDrag}
-      onClick={(e) => {
-        if (e.target === e.currentTarget || (e.target as HTMLElement).closest(".pane-title-area")) focusTerminal(sessionId);
-      }}
       onDoubleClick={(e) => {
         if (!(e.target as HTMLElement).closest("button, input")) toggleMaximize();
       }}

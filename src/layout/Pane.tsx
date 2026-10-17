@@ -1,7 +1,7 @@
 // One pane: header + terminal body + state overlays. Re-renders only when this session's metadata,
 // coarse runtime state, focus or hidden flag change — never on terminal output.
 
-import { memo, useCallback, useEffect, useState, type DragEvent, type ReactNode } from "react";
+import { memo, useCallback, useEffect, useState, type DragEvent, type MouseEvent, type ReactNode } from "react";
 import { closeSession, restartSession, showView, startSession } from "../actions/sessions";
 import type { SessionId } from "../lib/types";
 import { selectSessionMeta, useApp } from "../store/appStore";
@@ -33,9 +33,18 @@ export const Pane = memo(function Pane({ sessionId, groupId, index, count, visib
     if (hidden) disposeTerminal(sessionId);
   }, [hidden, sessionId]);
 
-  const focus = useCallback(() => {
-    if (useApp.getState().focusedSessionId !== sessionId) useApp.getState().setFocused(sessionId);
-  }, [sessionId]);
+  const focus = useCallback(
+    (e: MouseEvent) => {
+      if (useApp.getState().focusedSessionId !== sessionId) useApp.getState().setFocused(sessionId);
+      const t = e.target as HTMLElement;
+      // Keyboard focus to the terminal, except for controls and the terminal itself (xterm focuses itself).
+      if (t.closest("input, button, textarea, [role=menu], .xterm, .pane-name")) return;
+      requestAnimationFrame(() => {
+        if (document.activeElement?.tagName !== "INPUT") focusTerminal(sessionId);
+      });
+    },
+    [sessionId],
+  );
 
   const start = useCallback(
     (fresh: boolean) => {

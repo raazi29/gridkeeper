@@ -13,7 +13,10 @@
 //   - ipc.sessionAttach(id, Channel) on creation and on every (re)start (startedAt changed). Each attach
 //     bumps a generation counter; messages from stale channels are ignored.
 //   - DATA frame -> term.write(bytes, cb); cb feeds an AckBatcher (ack ≥64 KiB or 30 ms after last parse).
-//   - RESET frame -> term.reset() queued behind already-pending writes (so a reset never overtakes data).
+//   - RESET frame (every attach, and when the view fell behind the ring) -> term.reset() queued behind
+//     already-pending writes; starts a new ack epoch (the backend zeroed its unacked counter).
+//   - Query replies (e.g. ESC[6n -> CPR) flow untouched via onData -> sessionWrite; the backend filters
+//     queries out of replayed bytes, so replays never trigger stale replies.
 //
 // Rendering
 //   - WebGL only for terminals that are visible; at most MAX_WEBGL contexts (webglBudget.ts); others DOM.
@@ -33,7 +36,6 @@ import { ipc } from "../lib/ipc";
 import { FRAME_DATA, FRAME_RESET, type SessionId, type SessionInfo, type Settings } from "../lib/types";
 import { isLive, useApp } from "../store/appStore";
 import { AckBatcher } from "./ackBatcher";
-import { isTerminalReport } from "./reports";
 import { terminalTheme } from "./theme";
 import { MAX_WEBGL, allocateWebgl, type WebglCandidate } from "./webglBudget";
 import { splitForWrite } from "./writeChunks";
@@ -49,16 +51,11 @@ export interface RendererStatus {
   contextLosses: number;
 }
 
-/** Optional backend extension: "replay finished, live output follows". Not in the contract yet. */
-const FRAME_REPLAY_END = 2;
-
 const WEBGL_RELEASE_GRACE_MS = 400; // keep the context briefly across unmount/remount (layout reshuffles)
 const WEBGL_RETRY_MS = 3000;
 const WEBGL_MAX_LOSSES = 3;
 const FIT_TRAILING_MS = 50;
 const NOTICE_SETTLE_MS = 150;
-const REPLAY_MAX_MS = 4000;
-const FRESH_START_MS = 2000;
 
 interface Entry {
   id: SessionId;
@@ -95,12 +92,6 @@ interface Entry {
   attachTries: number;
   attachRetryTimer: number | null;
   lastRuntime: SessionInfo | undefined;
-  /** Suppress xterm's replies to queries contained in replayed output. */
-  inReplay: boolean;
-  replayCanEnd: boolean;
-  replayPending: number;
-  replayTimer: number | null;
-  replayDeadline: number | null;
 
   // Exit notice
   noticeKey: string | null;
@@ -108,7 +99,6 @@ interface Entry {
 
   // Input
   writeChain: Promise<void>;
-  lastKeyAt: number;
   lastKeyPasteAt: number;
   lastSentCols: number;
   lastSentRows: number;
@@ -469,23 +459,6 @@ function dropChannel(e: Entry) {
   }, 2000);
 }
 
-function endReplay(e: Entry) {
-  e.inReplay = false;
-  e.replayCanEnd = false;
-  if (e.replayTimer !== null) window.clearTimeout(e.replayTimer);
-  if (e.replayDeadline !== null) window.clearTimeout(e.replayDeadline);
-  e.replayTimer = e.replayDeadline = null;
-}
-
-function maybeEndReplay(e: Entry) {
-  if (!e.inReplay || !e.replayCanEnd || e.replayPending > 0) return;
-  if (e.replayTimer !== null) window.clearTimeout(e.replayTimer);
-  e.replayTimer = window.setTimeout(() => {
-    e.replayTimer = null;
-    if (e.replayPending === 0) endReplay(e);
-  }, 40);
-}
-
 async function attach(e: Entry, startedAt: string | null) {
   if (e.disposed) return;
   if (e.attachRetryTimer !== null) {
@@ -493,13 +466,8 @@ async function attach(e: Entry, startedAt: string | null) {
     e.attachRetryTimer = null;
   }
   dropChannel(e);
-  endReplay(e);
   const gen = ++e.gen;
   e.attachedStartedAt = startedAt;
-  // Re-attaching to a process that has been running for a while replays old output: suppress
-  // xterm's answers to queries inside it. A fresh process must get its answers (e.g. ConPTY's DSR).
-  const started = startedAt ? Date.parse(startedAt) : NaN;
-  const suppressReplies = Number.isFinite(started) && Date.now() - started > FRESH_START_MS;
 
   let channel: Channel<ArrayBuffer>;
   try {
@@ -508,9 +476,13 @@ async function attach(e: Entry, startedAt: string | null) {
     log("warn", `cannot create channel for ${e.id}: ${String(err)}`);
     return;
   }
-  const batcher = new AckBatcher((n) => {
+  const sendAck = (n: number) => {
     if (gen === e.gen && !e.disposed) ipc.sessionAck(e.id, n).catch(() => {});
-  });
+  };
+  // The backend zeroes its unacked counter when it sends RESET, so every RESET starts a new ack
+  // epoch: bytes received before it are never acked afterwards (their callbacks feed a disposed
+  // batcher). Every DATA byte received after a RESET is acked once xterm has parsed it.
+  let batcher = new AckBatcher(sendAck);
   e.channel = channel;
   e.batcher = batcher;
   e.lastSentCols = e.lastSentRows = 0;
@@ -522,40 +494,26 @@ async function attach(e: Entry, startedAt: string | null) {
     const kind = bytes[0];
     if (kind === FRAME_DATA) {
       const payload = bytes.subarray(1);
-      const n = payload.length;
+      const n = payload.length; // ack unit = frame byteLength - 1
       if (n === 0) return;
-      const replay = e.inReplay;
-      if (replay) e.replayPending++;
+      const b = batcher;
       try {
-        e.term.write(payload, () => {
-          batcher.add(n);
-          if (replay && gen === e.gen) {
-            e.replayPending--;
-            maybeEndReplay(e);
-          }
-        });
+        e.term.write(payload, () => b.add(n));
       } catch {
         // xterm's hard 50 MB buffer limit: data discarded. Ack anyway so the backend never stalls.
-        batcher.add(n);
-        if (replay) e.replayPending--;
+        b.add(n);
       }
       if (e.noticeTimer !== null) scheduleNoticeCheck(e);
     } else if (kind === FRAME_RESET) {
+      batcher.dispose();
+      batcher = new AckBatcher(sendAck);
+      e.batcher = batcher;
       e.noticeKey = null;
       // Queue the reset behind data already handed to xterm so it cannot overtake it.
       e.term.write("", () => {
         if (gen === e.gen && !e.disposed) e.term.reset();
       });
-      if (suppressReplies) {
-        e.inReplay = true;
-        e.replayPending = 0;
-        if (e.replayDeadline !== null) window.clearTimeout(e.replayDeadline);
-        e.replayDeadline = window.setTimeout(() => endReplay(e), REPLAY_MAX_MS);
-      }
       scheduleNoticeCheck(e);
-    } else if (kind === FRAME_REPLAY_END) {
-      e.replayCanEnd = true;
-      maybeEndReplay(e);
     }
   };
 
@@ -569,12 +527,9 @@ async function attach(e: Entry, startedAt: string | null) {
     // otherwise keep the store's value so the re-attach trigger compares like with like.
     if (e.attachedStartedAt === null && info?.startedAt) e.attachedStartedAt = info.startedAt;
     e.attachTries = 0;
-    e.replayCanEnd = true;
-    maybeEndReplay(e);
     syncPtySize(e);
   } catch {
     if (gen !== e.gen || e.disposed) return;
-    endReplay(e);
     // Not started yet (or already gone). Retry a few times only while the store says it is live.
     const info = useApp.getState().runtime[e.id];
     if (isLive(info) && e.attachTries < 5) {
@@ -626,7 +581,6 @@ function writeNotice(e: Entry, text: string) {
 
 function sendInput(e: Entry, data: string) {
   if (e.disposed || !data) return;
-  if (e.inReplay && Date.now() - e.lastKeyAt > 50 && isTerminalReport(data)) return;
   const info = useApp.getState().runtime[e.id];
   if (info && !isLive(info)) return; // exited/failed: nothing to write to
   const parts = splitForWrite(data);
@@ -654,7 +608,6 @@ function copySelection(e: Entry, clear: boolean) {
 function installKeyHandler(e: Entry) {
   const term = e.term;
   term.attachCustomKeyEventHandler((ev) => {
-    if (ev.type === "keydown") e.lastKeyAt = Date.now();
     if (isAppShortcut(ev)) return false;
     // Only plain Ctrl(+Shift) combos are ours; AltGr (Ctrl+Alt) and everything else go to xterm.
     if (!ev.ctrlKey || ev.altKey || ev.metaKey) return true;
@@ -851,15 +804,9 @@ function createEntry(id: SessionId): Entry {
     attachTries: 0,
     attachRetryTimer: null,
     lastRuntime: useApp.getState().runtime[id],
-    inReplay: false,
-    replayCanEnd: false,
-    replayPending: 0,
-    replayTimer: null,
-    replayDeadline: null,
     noticeKey: null,
     noticeTimer: null,
     writeChain: Promise.resolve(),
-    lastKeyAt: 0,
     lastKeyPasteAt: 0,
     lastSentCols: 0,
     lastSentRows: 0,
@@ -1033,7 +980,6 @@ export function disposeTerminal(id: SessionId): void {
   e.gen++;
   const hadChannel = !!e.channel;
   dropChannel(e);
-  endReplay(e);
   if (hadChannel) {
     const p = ipc.sessionDetach(id).catch(() => {});
     pendingDetach.set(id, p);
