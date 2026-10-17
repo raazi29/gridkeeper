@@ -68,16 +68,23 @@ pub struct PathInfo {
     pub normalized: Option<String>,
 }
 
+/// Async + blocking pool: a stat/canonicalize of an offline UNC path or a
+/// disconnected mapped drive can block for many seconds, which on the main
+/// thread (sync commands) would freeze the whole window.
 #[tauri::command]
-pub fn path_info(path: String) -> PathInfo {
-    let p = std::path::Path::new(&path);
-    PathInfo {
-        exists: p.exists(),
-        is_dir: p.is_dir(),
-        normalized: std::fs::canonicalize(p)
-            .ok()
-            .map(|c| c.to_string_lossy().trim_start_matches(r"\\?\").to_string()),
-    }
+pub async fn path_info(path: String) -> Result<PathInfo, AppError> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let p = std::path::Path::new(&path);
+        PathInfo {
+            exists: p.exists(),
+            is_dir: p.is_dir(),
+            normalized: std::fs::canonicalize(p)
+                .ok()
+                .map(|c| c.to_string_lossy().trim_start_matches(r"\\?\").to_string()),
+        }
+    })
+    .await
+    .map_err(|e| AppError::Other(e.to_string()))
 }
 
 #[tauri::command]
@@ -102,10 +109,15 @@ pub async fn git_worktree_add(
     .map_err(|e| AppError::Other(e.to_string()))?
 }
 
+/// Polled every 2 s while the status bar shows diagnostics: the process
+/// snapshot runs on the blocking pool, never on the main thread.
 #[tauri::command]
-pub fn diagnostics_snapshot(ctx: State<'_, AppCtx>) -> Diagnostics {
+pub async fn diagnostics_snapshot(ctx: State<'_, AppCtx>) -> Result<Diagnostics, AppError> {
     let roots = ctx.sessions.root_pids();
-    ctx.diag.snapshot(&roots)
+    let diag = std::sync::Arc::clone(&ctx.diag);
+    tauri::async_runtime::spawn_blocking(move || diag.snapshot(&roots))
+        .await
+        .map_err(|e| AppError::Other(e.to_string()))
 }
 
 /// Writes a redacted diagnostics bundle and returns its path. Async so the
