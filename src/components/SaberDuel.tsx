@@ -26,6 +26,7 @@ export function SaberDuel() {
     const unsub = useAttention.subscribe((st) => {
       if (st.sessions === last) return;
       last = st.sessions;
+      for (const k of prev.keys()) if (!(k in st.sessions)) prev.delete(k);
       for (const [id, a] of Object.entries(st.sessions)) {
         const was = prev.get(id);
         if (was === a.state) continue;
