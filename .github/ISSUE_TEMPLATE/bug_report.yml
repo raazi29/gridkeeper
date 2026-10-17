@@ -1,0 +1,95 @@
+name: Bug report
+description: Something in Gridkeeper doesn't work as described.
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the report. **Security problems go through a private advisory, not an issue**: see SECURITY.md.
+        Please remove e-mail addresses, tokens and private paths from anything you paste.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      description: What did you do, what did you expect, and what happened instead?
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Create a workspace with …
+        2. Start 3 Claude Code sessions …
+        3. …
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Gridkeeper version
+      placeholder: "0.1.0 (installer) / commit abc1234 (dev build)"
+    validations:
+      required: true
+  - type: input
+    id: windows
+    attributes:
+      label: Windows version and build
+      placeholder: "Windows 11 24H2, build 26100"
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      multiple: true
+      options:
+        - Terminal / rendering
+        - Sessions / process lifecycle
+        - Accounts / profiles
+        - Restore / persistence
+        - Notifications / attention
+        - Mission Control / Formations / Fleet / Broadcast
+        - Browser panes / ports
+        - Changes drawer (git)
+        - Themes / appearance
+        - Keybindings / command palette
+        - Performance (CPU / RAM / GPU)
+        - Installer / startup
+        - Other
+  - type: input
+    id: agents
+    attributes:
+      label: Agents involved (with versions)
+      placeholder: "Claude Code 2.1.302, codex-cli 0.162.0, pwsh 7.6.7"
+  - type: dropdown
+    id: renderer
+    attributes:
+      label: Renderer (Diagnostics panel, Ctrl+Shift+`)
+      options:
+        - WebGL
+        - DOM
+        - Don't know
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs or diagnostics
+      description: |
+        Relevant lines from `%APPDATA%\app.gridkeeper.desktop\logs\` or an exported diagnostics bundle (both are
+        redacted, but please check before pasting).
+      render: text
+  - type: textarea
+    id: screens
+    attributes:
+      label: Screenshots or recording
+      description: Drag images or a short clip here. Make sure no account e-mails are visible.
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Checks
+      options:
+        - label: I searched existing issues and this isn't a duplicate.
+          required: true
+        - label: I removed secrets, e-mail addresses and private paths from this report.
+          required: true

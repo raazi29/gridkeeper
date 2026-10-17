@@ -1,0 +1,52 @@
+name: Feature request
+description: Suggest an idea or an improvement for Gridkeeper.
+title: "[Feature]: "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Check [docs/ROADMAP.md](https://github.com/raazi29/gridkeeper/blob/main/docs/ROADMAP.md) first, since your idea may already be planned.
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What are you trying to do, and what gets in the way today?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: What should Gridkeeper do? Mock-ups welcome.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Workarounds you use now, or how other tools solve it.
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      multiple: true
+      options:
+        - Terminal / rendering
+        - Agents / adapters
+        - Accounts / profiles
+        - Mission Control / Formations / Fleet / Broadcast
+        - Notifications / attention
+        - Browser panes / ports / Changes
+        - Themes / appearance
+        - Keybindings / command palette
+        - Performance
+        - Packaging / updates
+        - Other
+  - type: checkboxes
+    id: principles
+    attributes:
+      label: Fit
+      description: Gridkeeper stays local-first, never reads credentials, never polls while idle and never binds keys terminals need.
+      options:
+        - label: This idea is compatible with those principles (or I explain the trade-off above).
