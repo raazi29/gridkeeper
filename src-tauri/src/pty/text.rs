@@ -154,6 +154,11 @@ fn csi_first_param(params: &[u8]) -> Option<u32> {
 fn is_query(seq: &[u8], kind: EscKind) -> bool {
     match kind {
         EscKind::Csi => {
+            // A CSI aborted right after `ESC [` (by a control byte, ESC or a
+            // high byte) is two bytes long: no final byte, never a query.
+            if seq.len() < 3 {
+                return false;
+            }
             let fin = seq[seq.len() - 1];
             let body = &seq[2..seq.len() - 1];
             match fin {
@@ -325,6 +330,21 @@ mod tests {
     fn filter_removes_queries_only() {
         let raw = b"a\x1b[6nb\x1b[cc\x1b[>0cd\x1b[?2026$pe\x1b[>qf\x1b[?ug\x1b]11;?\x07h\x1bP$qm\x1b\\i\x1b[31mj\x1b]0;t\x07k";
         assert_eq!(filter_queries(raw), b"abcdefghi\x1b[31mj\x1b]0;t\x07k".to_vec());
+    }
+
+    #[test]
+    fn filter_survives_aborted_csi() {
+        // `ESC [` followed by ESC / a control byte / a high byte scans as a
+        // 2-byte CSI; classifying it used to slice `seq[2..1]` and panic.
+        assert_eq!(filter_queries(b"a\x1b[\x1b[6nb"), b"a\x1b[b".to_vec());
+        assert_eq!(filter_queries(b"a\x1b[\x07b"), b"a\x1b[\x07b".to_vec());
+        assert_eq!(filter_queries(b"a\x1b[\xffb"), b"a\x1b[\xffb".to_vec());
+        assert_eq!(filter_queries(b"\x1b[\r\n"), b"\x1b[\r\n".to_vec());
+        // Every 3-byte prefix `ESC [ x` must be handled without panicking.
+        for x in 0..=255u8 {
+            let _ = filter_queries(&[b'z', ESC, b'[', x, b'z']);
+            let _ = strip_ansi(&[b'z', ESC, b'[', x, b'z']);
+        }
     }
 
     #[test]

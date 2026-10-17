@@ -262,6 +262,33 @@ fn graceful_stop_closes_interactive_shell() {
 }
 
 #[test]
+fn state_events_never_end_on_a_stale_running() {
+    // A slow listener while delivering `Running` used to let the waiter's
+    // `Exited` overtake it (snapshot taken before the callback, without
+    // ordering), leaving the UI showing a live session for an exited process.
+    let events = Arc::new(Mutex::new(Vec::<SessionInfo>::new()));
+    let ev = Arc::clone(&events);
+    let core = SessionCore::new(move |info: &SessionInfo| {
+        // Delay only the launching thread's `Running` (session threads are
+        // named `pty-*`; stalling the reader would stall ConPTY itself).
+        let on_session_thread = std::thread::current().name().is_some_and(|n| n.starts_with("pty-"));
+        if info.state == SessionState::Running && !on_session_thread {
+            std::thread::sleep(Duration::from_millis(1500));
+        }
+        ev.lock().push(info.clone());
+    });
+    for i in 0..2 {
+        let id = format!("it-order-{i}");
+        core.start(spec(&id), plan("cmd.exe", &["/c", "echo order"]), 256 * 1024).unwrap();
+        assert!(core.wait_exit(&id, Duration::from_secs(20)).unwrap());
+        assert!(core.wait_output_eof(&id, Duration::from_secs(10)).unwrap());
+        std::thread::sleep(Duration::from_millis(2000));
+        let last = events.lock().iter().rev().find(|e| e.id == id).map(|e| e.state.clone());
+        assert!(matches!(last, Some(SessionState::Exited { .. })), "{id}: last event {last:?}");
+    }
+}
+
+#[test]
 fn launch_failures_are_reported() {
     let fx = fixture();
     let err = fx.core.start(spec("it-missing"), plan("no-such-program-altera-xyz", &[]), 256 * 1024).unwrap_err();

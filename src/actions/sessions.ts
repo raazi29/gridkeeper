@@ -3,7 +3,7 @@
 import { writeText } from "@tauri-apps/plugin-clipboard-manager";
 import { errorMessage, ipc } from "../lib/ipc";
 import type { AgentKind, ResumeMode, SessionId, SessionMeta, SessionSpec, WorktreeRef } from "../lib/types";
-import { isLive, uid, useApp } from "../store/appStore";
+import { isLive, shouldApplyStartResult, uid, useApp } from "../store/appStore";
 import { clearTerminal, getTerminalSize } from "../terminal/registry";
 import { notify } from "./notify";
 
@@ -130,7 +130,7 @@ export async function startSession(id: SessionId, resume: ResumeMode = { mode: "
   });
   try {
     const info = await ipc.sessionStart(spec);
-    useApp.getState().setRuntime(info);
+    if (shouldApplyStartResult(useApp.getState().runtime[id], info)) useApp.getState().setRuntime(info);
     return true;
   } catch (e) {
     const message = errorMessage(e);

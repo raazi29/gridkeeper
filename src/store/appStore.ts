@@ -276,6 +276,16 @@ export const selectSessionMeta = (id: SessionId) => (s: AppStore) => s.persisted
 export const isLive = (info?: SessionInfo) =>
   !!info && (info.state.state === "running" || info.state.state === "starting" || info.state.state === "stopping");
 
+/**
+ * Whether a `session_start` response should be written to the store. The response and the
+ * `session-state` events travel separately, so an event for the same run (same `startedAt`) can arrive
+ * first — e.g. `exited` for a process that ended immediately. The ordered event stream is then
+ * authoritative; applying the older response snapshot would resurrect a "running" pane.
+ */
+export function shouldApplyStartResult(current: SessionInfo | undefined, result: SessionInfo): boolean {
+  return !(current && current.startedAt !== null && current.startedAt === result.startedAt);
+}
+
 /** Find the group (and workspace) containing a session. */
 export function findGroupOf(id: SessionId): { workspace: Workspace; group: Group } | undefined {
   for (const workspace of useApp.getState().persisted.workspaces)
@@ -290,7 +300,8 @@ let lastSaved: PersistedState | null = null;
 
 export function startPersistence() {
   useApp.subscribe((s) => {
-    if (!s.loaded || s.persisted === lastSaved) return;
+    // After a failed load `persisted` holds defaults: saving them would overwrite the real file.
+    if (!s.loaded || s.loadError || s.persisted === lastSaved) return;
     window.clearTimeout(saveTimer);
     saveTimer = window.setTimeout(() => {
       const snapshot = useApp.getState().persisted;
@@ -303,8 +314,8 @@ export function startPersistence() {
 /** Flush pending save immediately (e.g. before window close). */
 export async function flushPersistence() {
   window.clearTimeout(saveTimer);
-  const snapshot = useApp.getState().persisted;
-  if (snapshot !== lastSaved) {
+  const { persisted: snapshot, loaded, loadError } = useApp.getState();
+  if (loaded && !loadError && snapshot !== lastSaved) {
     lastSaved = snapshot;
     await ipc.stateSave(snapshot).catch(() => {});
   }
