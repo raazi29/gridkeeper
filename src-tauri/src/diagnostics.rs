@@ -463,7 +463,20 @@ pub fn write_bundle(input: &ExportInput<'_>, frontend: Value) -> AppResult<PathB
     Ok(path)
 }
 
+/// Blocking: runs agent `--version` probes (up to 10 s). Prefer
+/// `export_with_agents` from async contexts with detection done off-thread.
 pub fn export(ctx: &AppCtx, roots: &[(SessionId, u32)], frontend: Value) -> AppResult<String> {
+    let agents = crate::adapters::detect(&ctx.store.settings());
+    export_with_agents(ctx, roots, frontend, agents)
+}
+
+/// Write the bundle using already-collected agent detection results.
+pub fn export_with_agents(
+    ctx: &AppCtx,
+    roots: &[(SessionId, u32)],
+    frontend: Value,
+    agents: Vec<AgentAvailability>,
+) -> AppResult<String> {
     let state = ctx.store.get();
     let home = crate::adapters::discovery::home_dir();
     let input = ExportInput {
@@ -471,7 +484,7 @@ pub fn export(ctx: &AppCtx, roots: &[(SessionId, u32)], frontend: Value) -> AppR
         logs_dir: &ctx.paths.logs_dir,
         home: home.as_deref(),
         profiles: ctx.profiles.list(),
-        agents: crate::adapters::detect(&state.settings),
+        agents,
         snapshot: ctx.diag.snapshot(roots),
         cpu_brand: ctx.diag.cpu_brand(),
         state,

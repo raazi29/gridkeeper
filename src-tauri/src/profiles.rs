@@ -396,15 +396,16 @@ fn parse_auth_status(stdout: &[u8], exit_code: Option<i32>, base: ProfileStatus)
 pub fn check_status(profile: &ClaudeProfile, settings: &Settings) -> AppResult<ProfileStatus> {
     let root = config_root(profile);
     let base = cheap_status(root.as_deref());
-    let Some(root) = root.filter(|r| r.is_dir()) else {
+    if !root.as_deref().is_some_and(Path::is_dir) {
         return Ok(ProfileStatus { note: Some("Directory does not exist".into()), ..base });
-    };
+    }
     let exe = crate::adapters::resolve_executable(AgentKind::Claude, settings, None)?;
     let (program, mut args) = exe.program_and_prefix();
     args.extend(["auth", "status", "--json"].map(String::from));
 
     let mut cmd = process::hidden_command(&program);
-    cmd.args(&args).current_dir(&root);
+    // Neutral cwd: no project-level .claude settings, no project entry for the config dir.
+    cmd.args(&args).current_dir(std::env::temp_dir());
     match profile.config_dir.as_deref().map(str::trim).filter(|d| !d.is_empty()) {
         Some(dir) => {
             cmd.env("CLAUDE_CONFIG_DIR", dir);

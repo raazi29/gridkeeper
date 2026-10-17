@@ -108,11 +108,16 @@ pub fn diagnostics_snapshot(ctx: State<'_, AppCtx>) -> Diagnostics {
     ctx.diag.snapshot(&roots)
 }
 
-/// Writes a redacted diagnostics bundle and returns its path.
+/// Writes a redacted diagnostics bundle and returns its path. Async so the
+/// agent `--version` probes (up to 10 s) never block the main thread.
 #[tauri::command]
-pub fn diagnostics_export(ctx: State<'_, AppCtx>, frontend: serde_json::Value) -> AppResult<String> {
+pub async fn diagnostics_export(ctx: State<'_, AppCtx>, frontend: serde_json::Value) -> Result<String, AppError> {
+    let settings = ctx.store.settings();
+    let agents = tauri::async_runtime::spawn_blocking(move || crate::adapters::detect(&settings))
+        .await
+        .map_err(|e| AppError::Other(e.to_string()))?;
     let roots = ctx.sessions.root_pids();
-    crate::diagnostics::export(&ctx, &roots, frontend)
+    crate::diagnostics::export_with_agents(&ctx, &roots, frontend, agents)
 }
 
 #[tauri::command]
