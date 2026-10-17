@@ -1,8 +1,13 @@
-// Palette commands for themes, the welcome sheet and notification preferences. Kept out of
+// Palette commands for themes, saber effects, the welcome sheet and notification preferences. Kept out of
 // commands.ts (one spread there) so the registry stays easy to scan.
 
+import { igniteFocused } from "../layout/saberBlade";
 import { selectActiveGroup, useApp } from "../store/appStore";
 import { useUi } from "../store/uiStore";
+import { currentSaberLevel } from "../theme/applyTheme";
+import { getSaber } from "../theme/saber";
+import { nextSaberColor } from "../theme/saberFx";
+import { getTheme } from "../theme/themes";
 import type { Command } from "./commands";
 import { notify } from "./notify";
 import { toggleDnd, toggleSessionMute } from "./notifyPrefs";
@@ -36,4 +41,28 @@ export const EXPERIENCE_COMMANDS: Command[] = [
     },
   },
   { id: "notifications.settings", title: "Notification settings…", category: "View", run: () => useUi.getState().openDialog({ kind: "settings", section: "notifications" }) },
+  {
+    id: "saber.ignite",
+    title: "Saber: ignite focused pane",
+    category: "Theme",
+    // After the palette has closed and focus is back on the pane.
+    run: () =>
+      void setTimeout(() => {
+        if (igniteFocused()) return;
+        if (currentSaberLevel() === "off") notify("info", "Saber effects are off (Settings › Appearance › Saber)");
+        else notify("info", "No pane focused");
+      }, 80),
+  },
+  {
+    id: "saber.cycleColor",
+    title: "Saber: cycle colour",
+    category: "Theme",
+    run: () => {
+      const s = useApp.getState().persisted.settings;
+      const next = nextSaberColor(s.saberColor, s.saberBladeFromTheme !== false && !getTheme(s.theme).saber);
+      useApp.getState().updateSettings({ saberColor: next, saberBladeFromTheme: false });
+      notify("info", `Blade colour: ${getSaber(next).name}`);
+      setTimeout(() => igniteFocused(), 80);
+    },
+  },
 ];

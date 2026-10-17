@@ -12,7 +12,8 @@ import { displayUrl, normalizeUrlInput, urlForPort } from "../lib/url";
 import { useApp } from "../store/appStore";
 import { PaneHeader } from "./PaneHeader";
 import type { PaneProps } from "./Pane";
-import { usePaneDrop } from "./Pane";
+import { PaneBlade, usePaneDrop } from "./Pane";
+import { useSaberBlade } from "./saberBlade";
 import { IconBack, IconCode, IconExternal, IconForward, IconPopout, IconRestart } from "./icons";
 
 const DEVTOOLS = import.meta.env.DEV;
@@ -20,6 +21,8 @@ const DEVTOOLS = import.meta.env.DEV;
 export const BrowserPane = memo(function BrowserPane({ sessionId, groupId, index, count, visible, maximized }: PaneProps) {
   const focused = useApp((s) => s.focusedSessionId === sessionId);
   const { dropTarget, onDragOver, onDragLeave, onDrop } = usePaneDrop(sessionId, groupId);
+  // A page is always "lit": its blade ignites on focus.
+  const blade = useSaberBlade(sessionId, focused, true, visible);
 
   useEffect(() => ensureNav(sessionId), [sessionId]);
 
@@ -31,6 +34,7 @@ export const BrowserPane = memo(function BrowserPane({ sessionId, groupId, index
     <div
       className="pane pane--browser"
       data-focused={focused || undefined}
+      data-alive=""
       data-drop-target={dropTarget || undefined}
       onMouseDownCapture={focus}
       onDragOver={onDragOver}
@@ -38,6 +42,7 @@ export const BrowserPane = memo(function BrowserPane({ sessionId, groupId, index
       onDrop={onDrop}
     >
       <PaneHeader sessionId={sessionId} groupId={groupId} index={index} count={count} maximized={maximized} />
+      <PaneBlade blade={blade} />
       <AddressBar sessionId={sessionId} />
       <div className="pane-body browser-body">
         <BrowserHost sessionId={sessionId} />

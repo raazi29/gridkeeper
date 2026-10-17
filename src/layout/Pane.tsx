@@ -12,6 +12,7 @@ import { PaneFindBar } from "../components/FindBar";
 import { PaneHeader, useRuntimeView } from "./PaneHeader";
 import { currentPaneDrag, endPaneDrag } from "./paneDrag";
 import { BrowserPane } from "./BrowserPane";
+import { useSaberBlade, type BladeState } from "./saberBlade";
 
 export interface PaneProps {
   sessionId: SessionId;
@@ -66,6 +67,8 @@ const TerminalPane = memo(function TerminalPane({ sessionId, groupId, index, cou
   const resumeOnRestore = useApp((s) => selectSessionMeta(sessionId)(s)?.resumeOnRestore);
   const rt = useRuntimeView(sessionId);
   const { dropTarget, onDragOver, onDragLeave, onDrop } = usePaneDrop(sessionId, groupId);
+  const alive = rt.state === "starting" || rt.state === "running";
+  const blade = useSaberBlade(sessionId, focused, alive, visible && !hidden);
 
   // Hidden view: free the terminal entirely (Rust keeps the process + bounded buffer; Show replays it).
   useEffect(() => {
@@ -144,6 +147,7 @@ const TerminalPane = memo(function TerminalPane({ sessionId, groupId, index, cou
     <div
       className="pane"
       data-focused={focused || undefined}
+      data-alive={alive || undefined}
       data-drop-target={dropTarget || undefined}
       onMouseDownCapture={focus}
       onDragOver={onDragOver}
@@ -151,6 +155,7 @@ const TerminalPane = memo(function TerminalPane({ sessionId, groupId, index, cou
       onDrop={onDrop}
     >
       <PaneHeader sessionId={sessionId} groupId={groupId} index={index} count={count} maximized={maximized} />
+      <PaneBlade blade={blade} />
       <div className="pane-body">
         {!hidden && <TerminalView sessionId={sessionId} visible={visible} />}
         {!hidden && <PaneFindBar sessionId={sessionId} />}
@@ -184,6 +189,11 @@ const TerminalPane = memo(function TerminalPane({ sessionId, groupId, index, cou
     </div>
   );
 });
+
+/** The saber blade along the top edge (styled only while saber effects are on; see styles/saber.css). */
+export function PaneBlade({ blade }: { blade: BladeState }) {
+  return <div key={blade.key} className="pane-blade" data-anim={blade.anim ?? undefined} onAnimationEnd={blade.onAnimationEnd} aria-hidden="true" />;
+}
 
 const SILENT_MS = 12000;
 

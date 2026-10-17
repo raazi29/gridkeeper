@@ -490,10 +490,27 @@ pub struct Settings {
     /// Terminal right-click: "menu" (context menu, default) | "paste" (copy selection / paste). String so unknown values never fail loading.
     #[serde(default = "default_right_click_action")]
     pub right_click_action: String,
+    /// Saber effects: "auto" | "off" | "subtle" | "full" (string so unknown values never fail loading).
+    #[serde(default = "default_saber_effects")]
+    pub saber_effects: String,
+    /// Outside Saber Duel the blade follows the theme accent until the user picks a blade colour.
+    #[serde(default = "default_saber_blade_from_theme")]
+    pub saber_blade_from_theme: bool,
+    /// Synthesized ignite / retract sound with the saber effects (off by default).
+    #[serde(default)]
+    pub saber_sound: bool,
 }
 
 fn default_right_click_action() -> String {
     "menu".into()
+}
+
+fn default_saber_effects() -> String {
+    "auto".into()
+}
+
+fn default_saber_blade_from_theme() -> bool {
+    true
 }
 
 /// Desktop / in-app attention notifications (decided in the frontend: src/actions/attentionNotify.ts).
@@ -603,6 +620,9 @@ impl Default for Settings {
             saber_color: "blue".into(),
             hyperspace_transition: "auto".into(),
             right_click_action: default_right_click_action(),
+            saber_effects: default_saber_effects(),
+            saber_blade_from_theme: default_saber_blade_from_theme(),
+            saber_sound: false,
         }
     }
 }

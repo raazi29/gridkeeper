@@ -2,6 +2,7 @@
 //   - theme base tokens as CSS variables on :root (derived tokens recompute in tokens.css)
 //   - data-theme / data-kind / color-scheme, data-glow / data-scanlines / data-holo effects
 //   - data-density, data-reduce-motion (setting OR the OS preference)
+//   - data-saber + --saber / --saber-core / --saber-rival (saber effects, every theme: theme/saberFx.ts)
 //   - data-focus-mode / data-presentation (uiStore, not persisted)
 //   - data-app-blurred while the window is in the background (pauses the few CSS loops)
 //   - previewTheme(): temporary theme for the quick switcher's hover preview (never cached)
@@ -10,11 +11,13 @@
 import type { CSSProperties } from "react";
 import "../styles/fonts";
 import "../styles/signature.css";
+import "../styles/saber.css";
 import type { Settings } from "../lib/types";
 import { useApp } from "../store/appStore";
 import { isKeyCaptureSuspended, useUi } from "../store/uiStore";
 import { useEffectPrefs } from "./effectPrefs";
 import { resolveTheme } from "./saber";
+import { duelPartner, resolveBlade, resolveSaberLevel, type SaberLevel } from "./saberFx";
 import { UI_TOKENS, themeFonts, type DerivedToken, type Theme } from "./themes";
 
 const DERIVED: DerivedToken[] = ["accent-3", "accent-soft", "accent-ring", "scroll-thumb", "scroll-thumb-hover", "selection"];
@@ -116,13 +119,26 @@ export function prefersReducedMotion(s: Pick<Settings, "reduceMotion"> = useApp.
   return s.reduceMotion || !!reduceQuery?.matches;
 }
 
+/** Saber effect level on screen right now (follows the quick switcher's preview theme). */
+export function currentSaberLevel(s: Settings = useApp.getState().persisted.settings): SaberLevel {
+  return resolveSaberLevel(s.saberEffects, previewing ?? resolveTheme(s), prefersReducedMotion(s));
+}
+
 function applyModes(s: Settings) {
   if (typeof document === "undefined") return;
   const root = document.documentElement;
   const ui = useUi.getState();
   const fx = useEffectPrefs.getState();
   const reduce = prefersReducedMotion(s);
-  const effects = (previewing ?? resolveTheme(s)).effects;
+  const shown = previewing ?? resolveTheme(s);
+  const effects = shown.effects;
+  // Saber: data-saber="subtle|full" (absent = off, incl. reduced motion) + the blade colours for every theme.
+  const saber = resolveSaberLevel(s.saberEffects, shown, reduce);
+  toggleAttr(root, "data-saber", saber !== "off", saber);
+  const blade = resolveBlade(shown, s);
+  root.style.setProperty("--saber", blade.color);
+  root.style.setProperty("--saber-core", blade.core);
+  root.style.setProperty("--saber-rival", duelPartner(blade, shown));
   root.dataset.density = s.uiDensity === "comfortable" ? "comfortable" : "compact";
   toggleAttr(root, "data-reduce-motion", reduce);
   toggleAttr(root, "data-glow", !!effects?.glow && fx.glow);

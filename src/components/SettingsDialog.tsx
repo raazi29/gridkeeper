@@ -19,7 +19,7 @@ import { pickExecutable } from "./util/pick";
 import { TERMINAL_FONTS, preloadFont } from "../styles/fonts";
 import { withSaber } from "../theme/saber";
 import { THEMES, getTheme } from "../theme/themes";
-import { HyperspaceToggle, ThemeEffects } from "./AppearanceExtras";
+import { HyperspaceToggle, SaberSettings, ThemeEffects } from "./AppearanceExtras";
 import { ThemeCard } from "./ThemeCard";
 
 type Section = "appearance" | "terminal" | "agents" | "keys" | "interface" | "notifications";
@@ -88,6 +88,11 @@ function AppearanceSection() {
         <ThemeEffects theme={theme} />
       </section>
 
+      <section className="appearance-group form" aria-label="Saber">
+        <div className="micro-label">Saber</div>
+        <SaberSettings theme={theme} />
+      </section>
+
       <section className="appearance-group form">
         <div className="micro-label">Interface</div>
         <Field label="Density">
@@ -112,7 +117,7 @@ function AppearanceSection() {
             options={TERMINAL_FONTS.map((f) => ({ value: f.value, label: f.label }))}
           />
         </Field>
-        <Toggle checked={reduceMotion} onChange={setReduceMotion} label="Reduce motion" hint="Turns off transitions, lamp pulses, the holo band, the hyperspace jump and the CRT overlay. Also follows the Windows animation setting." />
+        <Toggle checked={reduceMotion} onChange={setReduceMotion} label="Reduce motion" hint="Turns off transitions, lamp pulses, the holo band, the hyperspace jump, saber effects and the CRT overlay. Also follows the Windows animation setting." />
         <HyperspaceToggle />
       </section>
 

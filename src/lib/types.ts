@@ -322,11 +322,18 @@ export interface Settings {
   saberColor: string;
   /** Star-streak transition on workspace switch: "auto" = only with the Hyperspace theme. */
   hyperspaceTransition: HyperspaceMode;
+  /** Saber effects (blade ignition, blade dividers, duel): "auto" = full with Saber Duel, subtle elsewhere. */
+  saberEffects: SaberEffectsMode;
+  /** Outside Saber Duel the blade follows the theme accent until the user picks a blade colour. */
+  saberBladeFromTheme: boolean;
+  /** Synthesized ignite / retract sound with the saber effects (off by default; uses the alert volume). */
+  saberSound: boolean;
   /** Terminal right-click: "menu" = context menu (default); "paste" = copy selection / paste (Windows Terminal style). */
   rightClickAction: RightClickAction;
 }
 
 export type HyperspaceMode = "auto" | "on" | "off";
+export type SaberEffectsMode = "auto" | "off" | "subtle" | "full";
 export type RightClickAction = "menu" | "paste";
 /** "toast": Windows notification in the background, in-app toast in front; "inApp": in-app toasts only; "off": Comms feed only. */
 export type NotifyDelivery = "toast" | "inApp" | "off";
@@ -479,6 +486,9 @@ export const DEFAULT_SETTINGS: Settings = {
   },
   saberColor: "blue",
   hyperspaceTransition: "auto",
+  saberEffects: "auto",
+  saberBladeFromTheme: true,
+  saberSound: false,
   pasteWarning: true,
   rightClickAction: "menu",
 };
