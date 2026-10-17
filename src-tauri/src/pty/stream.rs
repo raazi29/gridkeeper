@@ -369,6 +369,10 @@ impl Output {
                 if !just_reset {
                     tracing::debug!(session = %self.label, "view fell behind the ring; resetting");
                     just_reset = true;
+                    // A view may discard queued writes on RESET and never ack
+                    // them; start a fresh window (late acks saturate at 0).
+                    st.unacked = 0;
+                    st.paused = false;
                     if self.send(&mut st, sink.as_mut(), vec![frame::RESET]).is_err() {
                         return;
                     }
