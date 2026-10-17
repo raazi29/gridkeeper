@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import { restoreSessions } from "./actions/sessions";
 import { setupBench } from "./bench";
+import { ErrorBoundary } from "./components/ErrorBoundary";
 import { Shell } from "./components/Shell";
 import { errorMessage, ipc, onSessionState } from "./lib/ipc";
 import { flushPersistence, startPersistence, useApp } from "./store/appStore";
@@ -51,5 +52,9 @@ export default function App() {
     void boot();
   }, []);
   if (!loaded) return <div className="boot" />;
-  return <Shell />;
+  return (
+    <ErrorBoundary scope="The app">
+      <Shell />
+    </ErrorBoundary>
+  );
 }

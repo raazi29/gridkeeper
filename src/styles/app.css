@@ -1853,3 +1853,89 @@ input[type="number"].input {
 .key-actions .link-btn {
   align-self: center;
 }
+
+/* ---------- quick launch ---------- */
+.quick-launch {
+  gap: 4px;
+  padding: 0 10px 0 8px;
+}
+.quick-panel {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  margin-top: 6px;
+}
+.quick-panel-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, 168px);
+  justify-content: center;
+  gap: 8px;
+  max-width: 720px;
+}
+.quick-card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  height: 58px;
+  padding: 10px 12px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-l);
+  background: var(--bg-2);
+  color: var(--text-0);
+  text-align: left;
+  cursor: pointer;
+  transition: border-color var(--dur) var(--ease), background-color var(--dur) var(--ease);
+}
+.quick-card:hover:not(:disabled) {
+  border-color: var(--accent);
+  background: var(--bg-3);
+}
+.quick-card:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.quick-card-title {
+  font-size: var(--fs-m);
+  font-weight: 500;
+}
+.quick-card-hint {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--fs-xs);
+  color: var(--text-1);
+}
+.quick-panel-more {
+  align-self: center;
+}
+
+/* ---------- error boundary ---------- */
+.crash {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 24px;
+  background: var(--bg-0);
+  text-align: center;
+}
+.crash--compact {
+  border: 1px solid var(--border);
+}
+.crash-title {
+  font-size: var(--fs-l);
+  color: var(--text-0);
+}
+.crash-msg {
+  color: #ff8a80;
+  max-width: 640px;
+  overflow-wrap: anywhere;
+}
+.crash-note {
+  color: var(--text-2);
+  font-size: var(--fs-s);
+}

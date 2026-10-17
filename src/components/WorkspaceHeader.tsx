@@ -6,7 +6,8 @@ import { ipc } from "../lib/ipc";
 import type { GitInfo, LayoutPreset } from "../lib/types";
 import { selectActiveGroup, selectActiveWorkspace, useApp } from "../store/appStore";
 import { useShortcut, withShortcut } from "./hooks";
-import { IconBranch, IconColumns, IconFolder, IconGrid, IconInspector, IconPlus, IconRows } from "./icons";
+import { IconBranch, IconColumns, IconFolder, IconGrid, IconInspector, IconRows } from "./icons";
+import { QuickLaunchButton } from "./QuickLaunch";
 import { IconButton } from "./ui/Button";
 import { pickFolder, revealPath } from "./util/pick";
 
@@ -17,7 +18,6 @@ export function WorkspaceHeader() {
   const groupId = useApp((s) => selectActiveGroup(s)?.id);
   const preset = useApp((s) => selectActiveGroup(s)?.layout.preset ?? "grid");
   const inspectorOpen = useApp((s) => s.persisted.settings.inspectorOpen);
-  const scNew = useShortcut("session.new");
   const scInspector = useShortcut("view.toggleInspector");
 
   const [git, setGit] = useState<GitInfo | null>(null);
@@ -95,9 +95,7 @@ export function WorkspaceHeader() {
       )}
 
       <div className="ws-header-actions">
-        <IconButton label={withShortcut("New session", scNew)} onClick={() => runCommand("session.new")}>
-          <IconPlus size={15} />
-        </IconButton>
+        <QuickLaunchButton />
         <span className="divider-v" />
         <div className="preset-switch" role="group" aria-label="Layout preset">
           <IconButton label="Grid layout" active={preset === "grid"} onClick={() => setPreset("grid")}>

@@ -8,6 +8,8 @@ import type { Group, LayoutPreset, SessionId } from "../lib/types";
 import { useApp, type AppStore } from "../store/appStore";
 import { Pane } from "./Pane";
 import { chunkRows, equalSizes, layoutSignature, rowKey, rowsKey, validSizes } from "./gridGeometry";
+import { ErrorBoundary } from "../components/ErrorBoundary";
+import { QuickLaunchPanel } from "../components/QuickLaunch";
 import "./layout.css";
 
 export interface GroupGridProps {
@@ -101,7 +103,9 @@ const PaneRow = memo(function PaneRow({ groupId, sig, row, ids, offset, count, v
     >
       {ids.map((id, j) => (
         <PaneSlot key={`p${j}`} panelId={`p${j}`} first={j === 0} minSize={140}>
-          <Pane key={id} sessionId={id} groupId={groupId} index={offset + j} count={count} visible={visible} maximized={false} />
+          <ErrorBoundary scope="This pane" compact>
+            <Pane key={id} sessionId={id} groupId={groupId} index={offset + j} count={count} visible={visible} maximized={false} />
+          </ErrorBoundary>
         </PaneSlot>
       ))}
     </PanelGroup>
@@ -191,16 +195,8 @@ function EmptyState() {
   return (
     <div className="grid-empty">
       <div className="grid-empty-title">No sessions in this group</div>
-      <div className="grid-empty-hint">
-        <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>T</kbd> to start a session
-      </div>
-      <button
-        type="button"
-        className="lay-btn lay-btn--primary"
-        onClick={() => window.dispatchEvent(new CustomEvent("altera:new-session"))}
-      >
-        New session
-      </button>
+      <div className="grid-empty-hint">Start one — it opens in this workspace's project folder</div>
+      <QuickLaunchPanel />
     </div>
   );
 }
