@@ -276,7 +276,7 @@ export const PaneHeader = memo(function PaneHeader({ sessionId, groupId, index, 
     }
     beginPaneDrag({ groupId, index, sessionId });
     e.dataTransfer.effectAllowed = "move";
-    e.dataTransfer.setData("application/x-altera-pane", sessionId);
+    e.dataTransfer.setData("application/x-gridkeeper-pane", sessionId);
   };
 
   return (

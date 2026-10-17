@@ -35,11 +35,11 @@ export function Shell() {
       const groupId = detail?.groupId ?? selectActiveGroup(useApp.getState())?.id;
       useUi.getState().openDialog({ kind: "newSession", groupId });
     };
-    window.addEventListener("altera:new-session", onNewSession);
+    window.addEventListener("gridkeeper:new-session", onNewSession);
     return () => {
       offKeys();
       offFocus();
-      window.removeEventListener("altera:new-session", onNewSession);
+      window.removeEventListener("gridkeeper:new-session", onNewSession);
     };
   }, []);
 

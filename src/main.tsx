@@ -17,7 +17,7 @@ if (import.meta.env.DEV) {
     import("./terminal/registry"),
     import("./lib/ipc"),
   ]).then(([store, sessions, registry, ipcMod]) => {
-    (window as unknown as { __altera: unknown }).__altera = { store, sessions, registry, ipc: ipcMod.ipc };
+    (window as unknown as { __gridkeeper: unknown }).__gridkeeper = { store, sessions, registry, ipc: ipcMod.ipc };
   });
 }
 

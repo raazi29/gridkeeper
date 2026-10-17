@@ -806,7 +806,7 @@ function createEntry(id: SessionId): Entry {
   }
 
   const el = document.createElement("div");
-  el.className = "altera-term";
+  el.className = "gk-term";
   el.setAttribute("data-terminal-host", id);
 
   const e: Entry = {
@@ -1044,9 +1044,9 @@ export function disposeTerminal(id: SessionId): void {
 
 declare global {
   interface Window {
-    __alteraForceContextLoss?: (id?: SessionId) => string;
+    __gridkeeperForceContextLoss?: (id?: SessionId) => string;
     /** Diagnostics: per-terminal renderer/flow state and buffer text. */
-    __alteraTerminals?: {
+    __gridkeeperTerminals?: {
       list: () => { id: string; opened: boolean; shown: boolean; webgl: boolean; losses: number; cols: number; rows: number }[];
       text: (id: SessionId) => string;
     };
@@ -1054,7 +1054,7 @@ declare global {
 }
 
 if (typeof window !== "undefined") {
-  window.__alteraTerminals = {
+  window.__gridkeeperTerminals = {
     list: () =>
       [...entries.values()].map((e) => ({
         id: e.id,
@@ -1076,7 +1076,7 @@ if (typeof window !== "undefined") {
   };
 
   /** Simulate a GPU context loss on a terminal's WebGL canvas to exercise recovery. */
-  window.__alteraForceContextLoss = (id?: SessionId) => {
+  window.__gridkeeperForceContextLoss = (id?: SessionId) => {
     const focused = useApp.getState().focusedSessionId;
     const e =
       (id ? entries.get(id) : undefined) ??

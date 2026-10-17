@@ -59,7 +59,7 @@ export const Pane = memo(function Pane({ sessionId, groupId, index, count, visib
   // ---- drag & drop target
   const acceptsDrag = (e: DragEvent) => {
     const d = currentPaneDrag();
-    return !!d && d.groupId === groupId && d.sessionId !== sessionId && e.dataTransfer.types.includes("application/x-altera-pane");
+    return !!d && d.groupId === groupId && d.sessionId !== sessionId && e.dataTransfer.types.includes("application/x-gridkeeper-pane");
   };
   const onDragOver = (e: DragEvent<HTMLDivElement>) => {
     if (!acceptsDrag(e)) return;

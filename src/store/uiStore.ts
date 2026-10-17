@@ -76,8 +76,8 @@ export interface UiStore {
   setScanlines: (on: boolean) => void;
 }
 
-const LS_LAST = "altera.ui.lastSession";
-const LS_SCANLINES = "altera.ui.scanlines";
+const LS_LAST = "gridkeeper.ui.lastSession";
+const LS_SCANLINES = "gridkeeper.ui.scanlines";
 
 function readScanlines(): boolean {
   try {
