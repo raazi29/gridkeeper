@@ -1,7 +1,7 @@
 // Saber blade on a pane's top edge: ignites when the pane gains focus or its session starts, retracts
 // when the session exits. JS only decides *when* (a short-lived data-anim attribute on the blade element,
-// re-keyed so the same animation can replay); the animation itself is CSS (transform/opacity, see
-// signature.css). Nothing runs while idle: no timers, no rAF — the only timer is a 450 ms fallback that
+// re-keyed so the same animation can replay); the animation itself is CSS (transform/opacity, see styles/saber.css).
+// Nothing runs while idle: no timers, no rAF — the only timer is a 700 ms fallback that
 // exists during an animation. Hidden / parked panes never animate.
 
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
@@ -80,7 +80,7 @@ export function useSaberBlade(sessionId: SessionId, focused: boolean, live: bool
     setFx((f) => ({ key: f.key + 1, anim }));
     window.clearTimeout(fallback.current);
     // animationend never fires if the pane is hidden mid-animation: drop the attribute (and will-change) anyway.
-    fallback.current = window.setTimeout(() => setFx((f) => (f.anim ? { ...f, anim: null } : f)), 450);
+    fallback.current = window.setTimeout(() => setFx((f) => (f.anim ? { ...f, anim: null } : f)), 700);
   }, []);
 
   useLayoutEffect(() => {

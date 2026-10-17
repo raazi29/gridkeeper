@@ -190,7 +190,7 @@ const TerminalPane = memo(function TerminalPane({ sessionId, groupId, index, cou
   );
 });
 
-/** The saber blade along the top edge (styled only while saber effects are on; see signature.css). */
+/** The saber blade along the top edge (styled only while saber effects are on; see styles/saber.css). */
 export function PaneBlade({ blade }: { blade: BladeState }) {
   return <div key={blade.key} className="pane-blade" data-anim={blade.anim ?? undefined} onAnimationEnd={blade.onAnimationEnd} aria-hidden="true" />;
 }
