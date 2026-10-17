@@ -166,14 +166,14 @@ describe("saved formations", () => {
     expect(snapshot.groups).toHaveLength(1);
     expect(snapshot.groups[0].slots).toEqual([
       { role: "lead", agent: "claude", name: "Boss", worktreeKey: undefined, profileId: "p2", args: [] },
-      { role: "agent", agent: "codex", name: "Hands", worktreeKey: "wt-1", profileId: undefined, args: ["--model", "x"] },
+      { role: "", agent: "codex", name: "Hands", worktreeKey: "wt-1", profileId: undefined, args: ["--model", "x"] },
     ]);
   });
   it("re-plans with saved profiles and explicit names", () => {
     const plan = buildFormationPlan(input({ template: snapshot, profileByRole: { lead: PROFILE_SAVED } }));
-    expect(plan.groups[0].sessions.map((s) => [s.name, s.profileId])).toEqual([
-      ["Boss", "p2"],
-      ["Hands", null],
+    expect(plan.groups[0].sessions.map((s) => [s.name, s.profileId, s.role])).toEqual([
+      ["Boss", "p2", "lead"],
+      ["Hands", null, null], // a session without a role stays without one
     ]);
     expect(plan.worktrees.map((w) => w.branch)).toEqual(["gk/1017-1530/wt-1"]);
   });

@@ -13,6 +13,7 @@ import { Button } from "./ui/Button";
 import { Field, Input, Segmented, Select } from "./ui/Field";
 import { Modal } from "./ui/Modal";
 import { RolePicker } from "./mission/RoleTag";
+import { recordActivity } from "../store/activity";
 import { pickExecutable, pickFolder } from "./util/pick";
 import { AGENT_LABEL, profileStatusText } from "./util/session";
 import { defaultWorktreePath, isValidBranchName, splitArgs } from "./util/text";
@@ -198,6 +199,7 @@ export function NewSessionDialog({ groupId, preset, onClose }: { groupId?: strin
           const info = await ipc.gitWorktreeAdd(git.root, p, b, newBranch);
           worktree = { path: info.path, branch: info.branch ?? b };
           notify("info", `Worktree created at ${info.path}`);
+          recordActivity({ sessionId: null, sessionName: "worktree", role: null, agent: null, kind: "worktree", level: "ok", message: `worktree created: ${info.branch ?? b}`, result: "created" });
         } catch (err) {
           notify("error", `git worktree add failed: ${errorMessage(err)}`);
           setBusy(false);

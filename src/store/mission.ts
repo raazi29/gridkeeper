@@ -20,6 +20,7 @@ export const useMission = create<MissionUi>()((set, get) => ({
     if (next) {
       // Never stack two full-window overlays.
       useAttentionUi.getState().close();
+      useAttentionUi.getState().toggleComms(false);
       useUi.getState().closePalette();
     }
     set({ open: next });

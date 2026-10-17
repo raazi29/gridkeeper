@@ -53,7 +53,9 @@ export function MissionControl() {
   const runtime = useApp((s) => s.runtime);
   const attn = useAttention((s) => s.sessions);
   const diagOn = useApp((s) => s.persisted.settings.statusBarDiagnostics);
-  const still = useApp((s) => (s.persisted.settings as { reduceMotion?: boolean }).reduceMotion === true);
+  const stillSetting = useApp((s) => (s.persisted.settings as { reduceMotion?: boolean }).reduceMotion === true);
+  const prefersReduced = useMemo(() => typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches, []);
+  const still = stillSetting || prefersReduced;
   const sampledAt = useRates((s) => s.sampledAt);
 
   // Output-rate sampling and the shared diagnostics poll run only while Mission Control is open.

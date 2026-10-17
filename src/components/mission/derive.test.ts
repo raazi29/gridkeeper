@@ -124,5 +124,6 @@ describe("starter prompt safety", () => {
   it("lets a normal idle prompt through", () => {
     expect(looksLikeQuestion("╭────╮\n│ >  │\n╰────╯\n  ? for shortcuts")).toBe(false);
     expect(looksLikeQuestion("")).toBe(false);
+    expect(looksLikeQuestion("  ⏵⏵ accept edits on (shift+tab to cycle)\n  bypass permissions off")).toBe(false);
   });
 });

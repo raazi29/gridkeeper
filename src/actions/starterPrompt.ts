@@ -19,7 +19,7 @@ export const GIVE_UP_MS = 10 * 60 * 1000;
 const ENTER_DELAY_MS = 80;
 
 const PROMPT_SHAPED =
-  /(\(y\/n\)|\[y\/n\]|\by\/n\b|\byes\/no\b|do you trust|trust (the|this) (files|folder|directory)|do you want to|\ballow\b.*\?|approve|permission|press enter to (continue|confirm)|❯\s*1\.\s*yes|^\s*1\.\s*yes\b|sign in|log in to|\/login)/im;
+  /(\(y\/n\)|\[y\/n\]|\by\/n\b|\byes\/no\b|do you trust|trust (the|this) (files|folder|directory)|do you want to|\ballow\b.*\?|\bapprove\b.*\?|\bpermission\b.*\?|press enter to (continue|confirm)|❯\s*1\.\s*yes|^\s*1\.\s*yes\b|sign in|log in to|\/login)/im;
 
 /** True when the visible tail of an agent's output looks like it is asking the user something. Pure. */
 export function looksLikeQuestion(tail: string): boolean {

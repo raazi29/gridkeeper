@@ -50,6 +50,11 @@ export interface BuiltinParams {
 
 export const DEFAULT_PARAMS: BuiltinParams = { builders: 3, builderAgent: "claude", verifier: true, scouts: 4, scoutAgent: "claude" };
 export const MAX_BUILDERS = 8;
+
+/** Key used for naming, per-role accounts and prompts; slots without a role share "agent". */
+export function roleKeyOf(role: string | null | undefined): string {
+  return normalizeRole(role) ?? "agent";
+}
 export const MAX_SCOUTS = 16;
 
 export const BUILTIN_FORMATIONS: { id: BuiltinFormationId; name: string; description: string }[] = [
@@ -129,7 +134,8 @@ export interface PlanInput {
 
 export interface PlannedSession {
   name: string;
-  role: string;
+  /** null = no role (saved sessions that never had one). */
+  role: string | null;
   agent: AgentKind;
   preset: string | null;
   command: string | null;
@@ -194,7 +200,7 @@ export function buildFormationPlan(input: PlanInput): FormationPlan {
   // Session names: role, or role-N when the role occurs more than once.
   const roleTotals = new Map<string, number>();
   for (const g of input.template.groups) for (const s of g.slots) {
-    const r = normalizeRole(s.role) ?? "agent";
+    const r = roleKeyOf(s.role);
     roleTotals.set(r, (roleTotals.get(r) ?? 0) + 1);
   }
   const roleSeen = new Map<string, number>();
@@ -225,7 +231,7 @@ export function buildFormationPlan(input: PlanInput): FormationPlan {
     name: g.name.trim() || "Group",
     layout: g.layout,
     sessions: g.slots.map((slot) => {
-      const role = normalizeRole(slot.role) ?? "agent";
+      const role = roleKeyOf(slot.role);
       const n = (roleSeen.get(role) ?? 0) + 1;
       roleSeen.set(role, n);
       const { agent, preset, command } = parseAgentKey(slot.agent);
@@ -251,7 +257,7 @@ export function buildFormationPlan(input: PlanInput): FormationPlan {
       const prompt = input.prompts[role]?.trim() || null;
       return {
         name: slot.name?.trim() || ((roleTotals.get(role) ?? 0) > 1 ? `${role}-${n}` : role),
-        role,
+        role: normalizeRole(slot.role),
         agent,
         preset,
         command,
@@ -350,7 +356,7 @@ export function templateFromWorkspace(name: string, groups: { name: string; layo
         name: g.name,
         layout: g.layout,
         slots: g.sessions.map((s) => ({
-          role: normalizeRole(s.role) ?? (s.agent === "powershell" ? "shell" : "agent"),
+          role: normalizeRole(s.role) ?? "",
           agent: s.agent === "generic" ? (s.preset ? `preset:${s.preset}` : `command:${s.command ?? ""}`) : s.agent,
           name: s.name,
           worktreeKey: s.hasWorktree ? `wt-${++wt}` : undefined,
@@ -378,7 +384,7 @@ export function sanitizeTemplate(raw: unknown): FormationTemplate | null {
       const ss = s as Partial<SlotTemplate>;
       if (typeof ss.agent !== "string") continue;
       slots.push({
-        role: normalizeRole(typeof ss.role === "string" ? ss.role : null) ?? "agent",
+        role: normalizeRole(typeof ss.role === "string" ? ss.role : null) ?? "",
         agent: ss.agent,
         name: typeof ss.name === "string" ? ss.name.slice(0, 80) : undefined,
         worktreeKey: typeof ss.worktreeKey === "string" ? ss.worktreeKey.replace(/[^a-z0-9-]/gi, "").slice(0, 32) || undefined : undefined,

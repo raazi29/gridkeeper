@@ -100,7 +100,11 @@ async function tick(gen: number) {
 /** Start sampling while held. Returns an idempotent release; the last release stops the timer. */
 export function acquireRateSampler(): () => void {
   holders++;
-  if (holders === 1) void tick(++generation);
+  if (holders === 1) {
+    // Fresh history per open: a rate spanning the closed interval would fake a 1-second sample.
+    useRates.setState({ hist: {}, last: {}, sampledAt: null });
+    void tick(++generation);
+  }
   let released = false;
   return () => {
     if (released) return;

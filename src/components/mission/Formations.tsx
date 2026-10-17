@@ -15,6 +15,7 @@ import {
   MAX_SCOUTS,
   PROFILE_RR,
   PROFILE_SAVED,
+  roleKeyOf,
   type BuiltinFormationId,
   type BuiltinParams,
   type FormationTemplate,
@@ -111,9 +112,10 @@ export function FormationDialog() {
     const out: { role: string; claude: boolean }[] = [];
     for (const g of template?.groups ?? [])
       for (const s of g.slots) {
-        const r = out.find((x) => x.role === s.role);
+        const key = roleKeyOf(s.role);
+        const r = out.find((x) => x.role === key);
         if (r) r.claude ||= s.agent === "claude";
-        else out.push({ role: s.role, claude: s.agent === "claude" });
+        else out.push({ role: key, claude: s.agent === "claude" });
       }
     return out;
   }, [template]);
@@ -426,7 +428,7 @@ function FragmentRow({ role, children }: { role: string; children: React.ReactNo
     <>
       <span className="fm-role-name">
         <RoleTag role={role} />
-        <span className="muted">{roleInfo(role)?.builtin ? "" : role}</span>
+        <span className="muted">{roleInfo(role)?.builtin ? "" : role === "agent" ? "no role" : role}</span>
       </span>
       {children}
     </>
