@@ -258,7 +258,7 @@ The ConPTY tests spawn real `pwsh`/`cmd` processes. Run them from PowerShell.
 
 - **Processes don't survive app exit or reboot.** On restore, agents start again and resume their *conversation*. The running process is not reattached.
 - **Codex conversation ids can't be pinned** up front. Panes sharing a folder use Codex's picker on restore.
-- **Shift+Enter in Claude Code on Windows** is unreliable: Claude enables the kitty keyboard protocol only for allowlisted terminals (Claude Code #92771). Per Claude Code's docs, `\` followed by Enter, or `Ctrl+J`, inserts a newline.
+- **Shift+Enter in Claude Code on Windows** is unreliable: Claude enables the kitty keyboard protocol only for allowlisted terminals (Claude Code #92771). See Claude Code's interactive-mode documentation for alternative ways to enter multiline input.
 - **The GPU accelerates terminal rendering only.** Agent CPU work, output parsing and IPC run on the CPU.
 - **Hybrid graphics:** Windows chooses which GPU WebView2 uses. To change it, go to Settings → System → Display → Graphics. Measured here: NVIDIA RTX 3050 via ANGLE/D3D11.
 - **Same-agent launches are staggered** (Claude 350 ms, Codex 600 ms) because of a rare Codex startup hang seen with 6 simultaneous launches. A pane with no output after 12 s offers Restart.
