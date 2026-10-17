@@ -27,11 +27,15 @@ export function MemoryPressureChip({ onClick }: { onClick: () => void }) {
   );
 }
 
-/** Non-blocking notice for the New Session dialog / quick-launch panel. Holds the poll while mounted. */
-export function MemoryPressureNotice({ count = 1 }: { count?: number }) {
-  useDiagnosticsPoll(true);
+/**
+ * Non-blocking notice before starting sessions. With `poll` (transient dialogs) it holds the diagnostics
+ * poll while mounted; without it (always-visible places like the empty-group panel) it only uses figures
+ * another view is already polling, so an idle window gains no timer.
+ */
+export function MemoryPressureNotice({ count = 1, poll = true }: { count?: number; poll?: boolean }) {
+  useDiagnosticsPoll(poll);
   const p = usePressure();
-  if (!p?.high) return null;
+  if (!p?.high || (!poll && !isDiagnosticsLive())) return null;
   return (
     <div className="callout is-warn pressure-note" role="status">
       System memory is at {p.percent}%. Starting {count > 1 ? `${count} more sessions` : "another session"} may slow the PC down — consider closing idle sessions

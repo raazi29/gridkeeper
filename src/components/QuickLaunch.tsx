@@ -98,7 +98,7 @@ export function QuickLaunchPanel() {
   const hasFolder = useApp((s) => !!selectActiveWorkspace(s)?.projectDir);
   return (
     <div className="quick-panel">
-      <MemoryPressureNotice />
+      <MemoryPressureNotice poll={false} />
       <div className="quick-panel-grid">
         {options.map((o) => (
           <button key={o.key} type="button" className="quick-card" disabled={o.disabled} onClick={() => quickLaunch(o)}>
