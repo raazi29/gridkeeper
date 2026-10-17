@@ -221,16 +221,56 @@ export interface Settings {
   notifications: NotificationSettings;
   /** Confirm before pasting >64 KiB or >20 lines into a program without bracketed paste. */
   pasteWarning: boolean;
+  /** Blade colour for the Saber Duel theme (src/theme/saber.ts preset id). */
+  saberColor: string;
+  /** Star-streak transition on workspace switch: "auto" = only with the Hyperspace theme. */
+  hyperspaceTransition: HyperspaceMode;
+}
+
+export type HyperspaceMode = "auto" | "on" | "off";
+/** "toast": Windows notification in the background, in-app toast in front; "inApp": in-app toasts only; "off": Comms feed only. */
+export type NotifyDelivery = "toast" | "inApp" | "off";
+export type SoundSet = "comm" | "console" | "droid" | "none";
+
+export interface QuietHours {
+  enabled: boolean;
+  /** "HH:MM", local time. A range may cross midnight (22:00 → 07:00). */
+  start: string;
+  end: string;
+}
+
+export interface AgentNotifyFilter {
+  claude: boolean;
+  codex: boolean;
+  powershell: boolean;
+  /** Generic / catalog tools. */
+  other: boolean;
 }
 
 export interface NotificationSettings {
   enabled: boolean;
   /** Notify when a session goes quiet after working ("finished"). */
   onIdle: boolean;
-  /** Notify on bell / notification escapes / "waiting for you" status. */
+  /** Notify on bell / notification escapes (OSC 9 / 777 / 99). */
   onBell: boolean;
-  /** Short in-app sound with each alert. */
+  /** Short in-app sound with each alert (master switch; the set is `soundSet`). */
   sound: boolean;
+  /** An agent is blocked on you: permission prompt, question, "waiting for you" status. */
+  onInput: boolean;
+  /** A session crashed, failed to start or reported an error. */
+  onError: boolean;
+  delivery: NotifyDelivery;
+  soundSet: SoundSet;
+  /** 0–100. */
+  volume: number;
+  /** Do not disturb: alerts only go to the Comms feed. */
+  dnd: boolean;
+  quietHours: QuietHours;
+  /** Only alert while the window is in the background. */
+  onlyWhenUnfocused: boolean;
+  agents: AgentNotifyFilter;
+  mutedSessions: SessionId[];
+  mutedWorkspaces: string[];
 }
 
 export interface Layout {
@@ -311,6 +351,24 @@ export const DEFAULT_SETTINGS: Settings = {
   theme: "deep-space",
   reduceMotion: false,
   uiDensity: "compact",
-  notifications: { enabled: true, onIdle: true, onBell: true, sound: false },
+  notifications: {
+    enabled: true,
+    onIdle: true,
+    onBell: true,
+    sound: false,
+    onInput: true,
+    onError: true,
+    delivery: "toast",
+    soundSet: "comm",
+    volume: 50,
+    dnd: false,
+    quietHours: { enabled: false, start: "22:00", end: "07:00" },
+    onlyWhenUnfocused: false,
+    agents: { claude: true, codex: true, powershell: true, other: true },
+    mutedSessions: [],
+    mutedWorkspaces: [],
+  },
+  saberColor: "blue",
+  hyperspaceTransition: "auto",
   pasteWarning: true,
 };

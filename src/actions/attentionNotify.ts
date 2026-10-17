@@ -1,14 +1,27 @@
 // Attention wiring: Rust `session-attention` + `session-state` events -> attention store, unread
 // clearing on focus, window title badge, in-app / Windows toasts, taskbar flash and optional sound.
 // `installAttention()` is called once (AttentionLayer) and returns a full cleanup.
+// Every "should this ping the user?" rule lives in the pure shouldNotify() (notifyRules.ts).
 
+import { disposeAudio, playSound } from "../audio/sounds";
 import { APP_NAME } from "../lib/brand";
 import { errorMessage, ipc, onSessionAttention, onSessionState } from "../lib/ipc";
-import { DEFAULT_SETTINGS, type NotificationSettings, type SessionId, type SessionInfo } from "../lib/types";
-import { selectActiveGroup, useApp } from "../store/appStore";
+import type { SessionId, SessionInfo } from "../lib/types";
+import { findGroupOf, selectActiveGroup, useApp } from "../store/appStore";
 import { countUnread, useAttention, type Alert } from "../store/attention";
 import { actionToast } from "../store/uiStore";
 import { jumpToSession } from "./commands";
+import {
+  MUTED_REASON_TEXT,
+  eventKindOf,
+  normalizeNotifications,
+  pruneMutes,
+  shouldNotify,
+  type NotifyDecision,
+  type NotifyEvent,
+} from "./notifyRules";
+
+export { shouldNotify } from "./notifyRules";
 
 const BASE_TITLE = APP_NAME;
 
@@ -39,25 +52,28 @@ export function sessionLabel(id: SessionId): string {
 
 // ---- notifications -----------------------------------------------------------------
 
-function notifSettings(): NotificationSettings {
-  return { ...DEFAULT_SETTINGS.notifications, ...(useApp.getState().persisted.settings.notifications ?? {}) };
-}
-
 const lastToastAt = new Map<SessionId, number>();
-const PER_SESSION_GAP_MS = 5000;
 
-/** Pure policy (exported for tests): should this alert produce a toast, and which kind? */
-export function toastDecision(
-  alert: Alert,
-  settings: NotificationSettings,
-  ctx: { windowFocused: boolean; onScreen: boolean; sinceLastMs: number },
-): "none" | "os" | "inApp" {
-  if (!settings.enabled) return "none";
-  if (alert.category === "bell" && !settings.onBell) return "none";
-  if (alert.category === "idle" && !settings.onIdle) return "none";
-  if (ctx.windowFocused && ctx.onScreen) return "none"; // the lamp is visible; no toast needed
-  if (ctx.sinceLastMs < PER_SESSION_GAP_MS) return "none";
-  return ctx.windowFocused ? "inApp" : "os";
+/** Gather the context for an alert and run the policy. */
+function decide(id: SessionId, alert: Alert, now = Date.now()): NotifyDecision {
+  const meta = useApp.getState().persisted.sessions.find((m) => m.id === id);
+  const event: NotifyEvent = {
+    kind: eventKindOf(alert),
+    sessionId: id,
+    workspaceId: findGroupOf(id)?.workspace.id ?? null,
+    agent: meta?.agent ?? "generic",
+  };
+  const d = new Date(now);
+  return shouldNotify(
+    event,
+    {
+      windowFocused: isWindowFocused(),
+      onScreen: isOnScreen(id),
+      sinceLastMs: now - (lastToastAt.get(id) ?? 0),
+      minutesOfDay: d.getHours() * 60 + d.getMinutes(),
+    },
+    useApp.getState().persisted.settings.notifications,
+  );
 }
 
 function toastText(id: SessionId, alert: Alert): { title: string; body: string } {
@@ -67,19 +83,15 @@ function toastText(id: SessionId, alert: Alert): { title: string; body: string }
   return { title: alert.title ? `${name}: ${alert.title}` : `${name} needs your attention`, body: alert.message };
 }
 
-function handleAlert(id: SessionId, alert: Alert) {
-  const settings = notifSettings();
-  const now = Date.now();
-  const decision = toastDecision(alert, settings, {
-    windowFocused: isWindowFocused(),
-    onScreen: isOnScreen(id),
-    sinceLastMs: now - (lastToastAt.get(id) ?? 0),
-  });
-  if (decision === "none") return;
-  lastToastAt.set(id, now);
-  if (settings.sound) playBlip(alert.kind);
+function handleAlert(id: SessionId, alert: Alert, decision: NotifyDecision) {
+  if (!decision.toast && !decision.inApp) return;
+  lastToastAt.set(id, Date.now());
+  if (decision.sound) {
+    const n = normalizeNotifications(useApp.getState().persisted.settings.notifications);
+    playSound(n.soundSet, eventKindOf(alert), n.volume);
+  }
   const { title, body } = toastText(id, alert);
-  if (decision === "os") {
+  if (decision.toast) {
     void osToast(title, body);
     void flashTaskbar();
   } else {
@@ -152,29 +164,6 @@ async function flashTaskbar() {
   }
 }
 
-let audio: AudioContext | null = null;
-function playBlip(kind: Alert["kind"]) {
-  try {
-    audio ??= new AudioContext();
-    // Created outside a user gesture it may start suspended.
-    if (audio.state === "suspended") void audio.resume();
-    const t = audio.currentTime;
-    const osc = audio.createOscillator();
-    const gain = audio.createGain();
-    osc.type = "sine";
-    osc.frequency.setValueAtTime(kind === "error" ? 330 : kind === "done" ? 660 : 880, t);
-    if (kind === "waiting") osc.frequency.setValueAtTime(1175, t + 0.07);
-    gain.gain.setValueAtTime(0.0001, t);
-    gain.gain.exponentialRampToValueAtTime(0.06, t + 0.01);
-    gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.16);
-    osc.connect(gain).connect(audio.destination);
-    osc.start(t);
-    osc.stop(t + 0.18);
-  } catch {
-    /* audio unavailable */
-  }
-}
-
 // ---- window title --------------------------------------------------------------------
 
 let lastTitle = "";
@@ -199,8 +188,13 @@ export function installAttention(): () => void {
   const apply = (id: SessionId, input: Parameters<ReturnType<typeof useAttention.getState>["apply"]>[1]) => {
     // Unknown ids (sessions of another window / already removed) are ignored.
     if (!useApp.getState().persisted.sessions.some((m) => m.id === id)) return;
-    const alert = useAttention.getState().apply(id, input, isSeen(id));
-    if (alert) handleAlert(id, alert);
+    // The decision is made while the feed entry is recorded, so muted alerts are marked as such.
+    let decision = null as NotifyDecision | null;
+    const alert = useAttention.getState().apply(id, input, isSeen(id), undefined, (a) => {
+      decision = decide(id, a);
+      return decision.muted ? { muted: true, mutedReason: MUTED_REASON_TEXT[decision.reason ?? "dnd"] } : undefined;
+    });
+    if (alert && decision) handleAlert(id, alert, decision);
   };
 
   // Previous coarse state per session, to tell user stops from crashes.
@@ -246,16 +240,33 @@ export function installAttention(): () => void {
 
   let prevFocus = useApp.getState().focusedSessionId;
   let prevSessions = useApp.getState().persisted.sessions;
+  let prevWorkspaces = useApp.getState().persisted.workspaces;
+  // Mutes of removed sessions / workspaces are dropped so the settings file does not accumulate ids.
+  const pruneMutedIds = () => {
+    const s = useApp.getState();
+    if (!s.loaded || s.loadError) return;
+    const cur = s.persisted.settings.notifications;
+    if (!cur?.mutedSessions?.length && !cur?.mutedWorkspaces?.length) return;
+    const n = normalizeNotifications(cur);
+    const next = pruneMutes(n, new Set(s.persisted.sessions.map((m) => m.id)), new Set(s.persisted.workspaces.map((w) => w.id)));
+    if (next !== n) s.updateSettings({ notifications: next });
+  };
   const unsubApp = useApp.subscribe((s) => {
     if (s.focusedSessionId !== prevFocus) {
       prevFocus = s.focusedSessionId;
       if (prevFocus && isWindowFocused()) useAttention.getState().markRead(prevFocus);
     }
-    if (s.persisted.sessions !== prevSessions) {
+    const sessionsChanged = s.persisted.sessions !== prevSessions;
+    if (sessionsChanged) {
       prevSessions = s.persisted.sessions;
       useAttention.getState().prune(new Set(prevSessions.map((m) => m.id)));
     }
+    if (sessionsChanged || s.persisted.workspaces !== prevWorkspaces) {
+      prevWorkspaces = s.persisted.workspaces;
+      pruneMutedIds();
+    }
   });
+  pruneMutedIds();
 
   let prevUnread = -1;
   const unsubAttn = useAttention.subscribe((s) => {
@@ -278,5 +289,6 @@ export function installAttention(): () => void {
     window.clearTimeout(flushTimer);
     flushTimer = undefined;
     pending = [];
+    disposeAudio();
   };
 }

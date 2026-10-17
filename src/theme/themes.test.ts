@@ -13,7 +13,8 @@
 //   foreground over the selection highlight ≥ 4.5, cursor vs background ≥ 3.
 
 import { describe, expect, it } from "vitest";
-import { THEMES, UI_TOKENS, contrast, getTheme, parseColor, xtermTheme, type TerminalPalette } from "./themes";
+import { SABER_PRESETS, getSaber, resolveTheme, withSaber } from "./saber";
+import { THEMES, UI_TOKENS, contrast, getTheme, parseColor, xtermTheme, type Theme, type TerminalPalette } from "./themes";
 
 const ANSI: (keyof TerminalPalette)[] = [
   "black",
@@ -61,7 +62,21 @@ describe("theme registry", () => {
   });
 });
 
-for (const t of THEMES) {
+describe("saber blades", () => {
+  it("only saber themes change with the blade colour", () => {
+    expect(withSaber(getTheme("deep-space"), "red")).toBe(getTheme("deep-space"));
+    expect(resolveTheme({ theme: "saber-duel", saberColor: "green" }).ui.accent).toBe(getSaber("green").accent);
+    expect(resolveTheme({ theme: "saber-duel", saberColor: "nope" }).ui.accent).toBe(SABER_PRESETS[0].accent);
+  });
+});
+
+// Every shipped theme, plus every blade colour of the saber themes.
+const VARIANTS: Theme[] = [
+  ...THEMES,
+  ...THEMES.filter((t) => t.saber).flatMap((t) => SABER_PRESETS.map((p) => ({ ...withSaber(t, p.id), name: `${t.name} (${p.name} blade)` }))),
+];
+
+for (const t of VARIANTS) {
   describe(`theme ${t.name}`, () => {
     const u = t.ui;
     const term = t.terminal;

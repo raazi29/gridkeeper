@@ -187,6 +187,44 @@ You see and confirm the exact `git worktree add` command before anything is crea
 - **Status bar:** the breadcrumb, running count, app vs agent CPU/RAM (polled every 2 s while the window is visible; can be turned off) and renderer status.
 - **Command palette** (`Ctrl+Shift+P`): fuzzy search over all commands, all sessions and all workspaces.
 
+### Themes & modes
+
+- **Switching:** the palette button in the workspace header and the theme chip in the status bar open a quick
+  switcher of live theme cards. Hovering (or arrowing to) a card previews it on the whole interface; leaving
+  reverts, clicking keeps it. *Choose theme…*, *Next / Previous theme* and *Theme: <name>* are in the palette;
+  effects and the full gallery are in Settings › Appearance.
+- **Themes (12):** Deep Space (default), Twin Suns, Carbonite, Ice Planet (light), Imperial, Rebel Squadron,
+  Hyperspace, Holo Comms, Saber Duel, Outer Rim, Phosphor, High Contrast. Every palette passes a WCAG contrast test
+  (`src/theme/themes.test.ts`: ≥ 7:1 terminal and body text).
+  - **Holo Comms:** hologram cyan on blue-black; a faint scan band sweeps the focused pane's header now and then.
+  - **Saber Duel:** near-black; the focused pane is framed by a glowing blade. *Saber colour*: blue, green, red,
+    purple, amber or white (every blade is contrast-tested).
+  - **Outer Rim:** rust, olive and bone on charcoal; stencilled labels and hazard trim on the focused pane.
+- **Effects** (per machine, Settings › Appearance, only where a theme offers them): glow, holo scan band, CRT
+  scanlines. **Hyperspace jump:** a 0.2 s star-streak flash on workspace switch — *With Hyperspace theme* (default),
+  *Always* or *Off*. Effects never run on unfocused panes, never block input, pause while the window is in the
+  background and are off under *Reduce motion* (or the Windows animation setting).
+- **Modes:** focus mode hides the chrome (Esc outside a terminal exits); presentation mode enlarges text and UI.
+- **Welcome:** a one-time sheet on first launch (theme, density, sounds / notifications, three tips); reopen it with
+  *Show welcome* in the palette.
+
+### Notifications
+
+Settings › Notifications decides who may interrupt you; everything is still recorded in **Comms** (the bell in the
+status bar), with silenced alerts marked *muted* and the reason.
+
+- **Events:** needs input (permission prompts, questions, "waiting for you"), finished, error, bell / notify escapes.
+- **Delivery:** *Windows + in-app* (Windows notification and taskbar flash in the background, a toast with *Jump* in
+  front), *In-app only*, or *Comms feed only*; optionally only while the window is in the background. You are never
+  pinged about the pane you are looking at, and each session is rate-limited.
+- **Sounds:** synthesized in-app (no audio files): *Comm beep*, *Console*, *Droid chatter* or *None*, with volume.
+  Off by default.
+- **Quiet:** *Do not disturb* (also: hold or right-click the Comms bell, or *Toggle do not disturb* in the palette)
+  and daily quiet hours (may cross midnight).
+- **Agents:** allow Claude Code, Codex, PowerShell and other tools separately.
+- **Mutes:** *Mute notifications* in a pane's ⋯ menu or a workspace's right-click menu; muted panes show a bell-off
+  glyph. Mutes are removed with the session / workspace.
+
 ## Keybindings
 
 Defaults (`src/keybindings/combo.ts`). Change them in Settings → Keybindings; an empty value unbinds a command.
@@ -240,10 +278,12 @@ These commands have no default shortcut and run from the palette (they can be bo
 
 ## Settings
 
-Settings (`Ctrl+,`) has four sections, and everything is saved in `workspaces.json`.
+Settings (`Ctrl+,`) has six sections, and everything is saved in `workspaces.json` (theme effects are per machine).
 
 | Section | Settings |
 |---|---|
+| Appearance | Theme gallery, saber colour, glow / holo band / scanlines, density, terminal font, reduce motion, hyperspace jump, focus and presentation modes. |
+| Notifications | Events, delivery, sound set and volume, Do not disturb, quiet hours, agent kinds, mute list (see [Notifications](#notifications)). |
 | Terminal | Renderer: Auto (WebGL) / WebGL / DOM. Font family (default Cascadia Mono), size 8–32, line height 1–2. Scrollback lines per view (default 5,000; 100–200,000). Output buffer KiB per session in the backend (default 2,048; 256–65,536), used for replay and Copy output. Default layout. Cursor blink. |
 | Agents | Executable paths for Claude Code, Codex and PowerShell, with detected path and version. |
 | Keybindings | Rebind with a key recorder. Forbidden combos are rejected. |

@@ -17,8 +17,10 @@ import { Field, Input, NumberInput, Segmented, Toggle } from "./ui/Field";
 import { Modal } from "./ui/Modal";
 import { pickExecutable } from "./util/pick";
 import { TERMINAL_FONTS, preloadFont } from "../styles/fonts";
-import { themeScopeStyle } from "../theme/applyTheme";
-import { THEMES, getTheme, type Theme } from "../theme/themes";
+import { withSaber } from "../theme/saber";
+import { THEMES, getTheme } from "../theme/themes";
+import { HyperspaceToggle, ThemeEffects } from "./AppearanceExtras";
+import { ThemeCard } from "./ThemeCard";
 
 type Section = "appearance" | "terminal" | "agents" | "keys" | "interface" | "notifications";
 const SECTIONS: { id: Section; label: string }[] = [
@@ -68,7 +70,7 @@ function AppearanceSection() {
   const [density, setDensity] = useSetting("uiDensity");
   const [reduceMotion, setReduceMotion] = useSetting("reduceMotion");
   const fontFamily = useApp((s) => s.persisted.settings.fontFamily);
-  const scanlines = useUi((s) => s.scanlines);
+  const saberColor = useApp((s) => s.persisted.settings.saberColor);
   const focusMode = useUi((s) => s.focusMode);
   const presentation = useUi((s) => s.presentation);
   const theme = getTheme(themeId);
@@ -80,9 +82,10 @@ function AppearanceSection() {
         <div className="micro-label">Theme</div>
         <div className="theme-grid" role="radiogroup" aria-label="Theme">
           {THEMES.map((t) => (
-            <ThemeCard key={t.id} theme={t} selected={t.id === themeId} onSelect={() => useApp.getState().updateSettings({ theme: t.id })} />
+            <ThemeCard key={t.id} theme={withSaber(t, saberColor)} selected={t.id === themeId} onSelect={() => useApp.getState().updateSettings({ theme: t.id })} />
           ))}
         </div>
+        <ThemeEffects theme={theme} />
       </section>
 
       <section className="appearance-group form">
@@ -109,10 +112,8 @@ function AppearanceSection() {
             options={TERMINAL_FONTS.map((f) => ({ value: f.value, label: f.label }))}
           />
         </Field>
-        <Toggle checked={reduceMotion} onChange={setReduceMotion} label="Reduce motion" hint="Turns off transitions, lamp pulses and the CRT overlay. Also follows the Windows animation setting." />
-        {theme.effects?.scanlines && (
-          <Toggle checked={scanlines} onChange={(v) => useUi.getState().setScanlines(v)} disabled={reduceMotion} label="CRT scanlines" hint={`Static scanline overlay on panes (${theme.name} only).`} />
-        )}
+        <Toggle checked={reduceMotion} onChange={setReduceMotion} label="Reduce motion" hint="Turns off transitions, lamp pulses, the holo band, the hyperspace jump and the CRT overlay. Also follows the Windows animation setting." />
+        <HyperspaceToggle />
       </section>
 
       <section className="appearance-group">
@@ -130,77 +131,6 @@ function AppearanceSection() {
     </div>
   );
 }
-
-const PREVIEW_LINES = (t: Theme) => {
-  const c = t.terminal;
-  return [
-    [
-      [c.green, "❯ "],
-      [c.blue, "claude "],
-      [c.brightBlack, "--continue"],
-    ],
-    [
-      [c.yellow, "● "],
-      [c.foreground, "edit "],
-      [c.cyan, "app.ts "],
-      [c.brightBlack, "+12 −3"],
-    ],
-    [
-      [c.green, "✓ 41 "],
-      [c.red, "✗ 1 "],
-      [c.magenta, "0.8s "],
-      [c.brightBlack, "vitest"],
-    ],
-  ] as [string, string][][];
-};
-
-const ThemeCard = memo(function ThemeCard({ theme, selected, onSelect }: { theme: Theme; selected: boolean; onSelect: () => void }) {
-  return (
-    <button
-      type="button"
-      role="radio"
-      aria-checked={selected}
-      className={`theme-card${selected ? " is-selected" : ""}`}
-      style={themeScopeStyle(theme)}
-      data-theme-scope={theme.id}
-      data-autofocus={selected || undefined}
-      onClick={onSelect}
-      title={theme.description}
-    >
-      <span className="tcp" aria-hidden="true">
-        <span className="tcp-side">
-          <i className="is-on" />
-          <i />
-          <i />
-        </span>
-        <span className="tcp-main">
-          <span className="tcp-pane">
-            <span className="tcp-head">
-              <b />
-              <i />
-            </span>
-            <span className="tcp-term">
-              {PREVIEW_LINES(theme).map((line, i) => (
-                <span key={i} style={{ display: "block" }}>
-                  {line.map(([color, text], j) => (
-                    <span key={j} style={{ color }}>
-                      {text}
-                    </span>
-                  ))}
-                </span>
-              ))}
-            </span>
-          </span>
-        </span>
-      </span>
-      <span className="theme-card-meta">
-        <span className="theme-card-name">{theme.name}</span>
-        <span className="theme-card-kind">{theme.kind}</span>
-      </span>
-      <span className="theme-card-desc">{theme.description}</span>
-    </button>
-  );
-});
 
 function TerminalSection() {
   const [scrollback, setScrollback] = useSetting("scrollbackLines");

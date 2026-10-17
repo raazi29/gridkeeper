@@ -10,6 +10,7 @@ import { useShortcut, withShortcut } from "./hooks";
 import { IconBranch, IconColumns, IconFocus, IconFolder, IconGrid, IconInspector, IconRows } from "./icons";
 import { IconMission } from "./mission/IconMission";
 import { QuickLaunchButton } from "./QuickLaunch";
+import { ThemeSwitcherButton } from "./ThemeSwitcher";
 import { IconButton } from "./ui/Button";
 import { pickFolder, revealPath } from "./util/pick";
 
@@ -117,6 +118,7 @@ export function WorkspaceHeader() {
         <IconButton label={withShortcut("Mission Control", scMission)} onClick={() => runCommand("view.mission")}>
           <IconMission size={15} />
         </IconButton>
+        <ThemeSwitcherButton />
         <IconButton label={withShortcut(inspectorOpen ? "Hide inspector" : "Show inspector", scInspector)} active={inspectorOpen} onClick={() => runCommand("view.toggleInspector")}>
           <IconInspector size={15} />
         </IconButton>

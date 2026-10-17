@@ -6,6 +6,7 @@ import { NewSessionDialog } from "./NewSessionDialog";
 import { NewWorkspaceDialog } from "./NewWorkspaceDialog";
 import { ProfilesDialog } from "./ProfilesDialog";
 import { SettingsDialog } from "./SettingsDialog";
+import { WelcomeSheet } from "./Welcome";
 
 export function DialogHost() {
   const dialog = useUi((s) => s.dialog);
@@ -22,5 +23,7 @@ export function DialogHost() {
       return <ProfilesDialog onClose={close} />;
     case "diagnostics":
       return <DiagnosticsPanel onClose={close} />;
+    case "welcome":
+      return <WelcomeSheet onClose={close} />;
   }
 }

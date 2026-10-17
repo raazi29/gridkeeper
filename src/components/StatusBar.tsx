@@ -6,6 +6,7 @@ import { useUi } from "../store/uiStore";
 import { CommsButton, FleetButton } from "./Comms";
 import { gpuLoadText, gpuTooltip } from "./GpuSection";
 import { MemoryPressureChip } from "./ResourceWarnings";
+import { ThemeChip } from "./ThemeSwitcher";
 import { useDiagnosticsPoll, useRendererStatus, useShortcut } from "./hooks";
 import { formatCpu, formatMb, taskManagerCpu } from "./util/text";
 import { stateLabel } from "./util/session";
@@ -54,6 +55,8 @@ export function StatusBar() {
           {running > 0 && <span className="dot is-ok" />}
           {running} running
         </span>
+        <span className="sb-div" />
+        <ThemeChip />
       </div>
       <div className="sb-right">
         <FleetButton />

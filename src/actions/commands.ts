@@ -1,5 +1,6 @@
 // Command registry: every user-invocable action (palette, keybindings, menus) goes through here.
 
+import { EXPERIENCE_COMMANDS } from "./experienceCommands";
 import { notify } from "./notify";
 import {
   clearSession,
@@ -390,6 +391,7 @@ export const COMMANDS: Command[] = [
   { id: "view.profiles", title: "Claude account profiles", category: "View", run: () => toggleDialog("profiles") },
   { id: "view.mission", title: "Mission Control (team view of this workspace)", category: "View", run: () => useMission.getState().toggle() },
   { id: "formation.launch", title: "Launch formation (agent team template)…", category: "Workspace", run: () => useMission.getState().openFormation() },
+  ...EXPERIENCE_COMMANDS,
 ];
 
 const byId = new Map(COMMANDS.map((c) => [c.id, c]));
