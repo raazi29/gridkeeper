@@ -892,7 +892,7 @@ mod tests {
     fn run_then_idle_done() {
         let t0 = Instant::now();
         let mut a = Activity::new(t0);
-        let s = t0 + ms(10_000);
+        let s = t0 + STARTUP_GRACE + ms(2_000);
         assert_eq!(a.on_chunk(s, true), None);
         assert_eq!(a.on_chunk(s + ms(500), true), Some(ActivityEvent::Active));
         for i in 1..=8 {
