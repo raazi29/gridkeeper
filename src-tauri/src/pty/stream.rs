@@ -221,6 +221,16 @@ impl Output {
         self.st.lock().ring.contents()
     }
 
+    /// Copy of (roughly) the newest `max` bytes, starting at a line boundary
+    /// when there is one, so plain-text export does not begin mid-sequence.
+    pub fn tail(&self, max: usize) -> Vec<u8> {
+        let st = self.st.lock();
+        let from = st.ring.replay_start_within(max);
+        let mut out = Vec::with_capacity(max.min(st.ring.len()));
+        st.ring.for_each_slice(from, st.ring.end(), |s| out.extend_from_slice(s));
+        out
+    }
+
     /// Answer (and mark as filtered) every CPR in bytes that were destined for
     /// live delivery but will not be delivered live after all.
     fn settle_undelivered(&self, st: &mut OutState) {

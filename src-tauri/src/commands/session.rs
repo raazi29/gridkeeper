@@ -84,6 +84,12 @@ pub async fn session_clear_buffer(ctx: State<'_, AppCtx>, id: SessionId) -> AppR
     ctx.sessions.clear_buffer(&id)
 }
 
+/// Plain text of roughly the last `max_bytes` of buffered output (cheap preview for overviews).
+#[tauri::command]
+pub async fn session_output_tail(ctx: State<'_, AppCtx>, id: SessionId, max_bytes: u32) -> AppResult<String> {
+    ctx.sessions.output_tail(&id, max_bytes as usize)
+}
+
 /// Forget an exited session (fails if still running).
 #[tauri::command]
 pub async fn session_remove(ctx: State<'_, AppCtx>, id: SessionId) -> AppResult<()> {

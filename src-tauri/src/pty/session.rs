@@ -25,6 +25,7 @@ use std::time::{Duration, Instant};
 use parking_lot::{Condvar, Mutex};
 use portable_pty::{Child, ChildKiller, CommandBuilder, MasterPty, PtySize, native_pty_system};
 
+use super::attention::{AttentionScanner, STATUS_PROBE_REPLY, Signal, Tracker, win32_input_encode};
 use super::job::Job;
 use super::stream::Output;
 use super::text::CprScanner;
@@ -193,6 +194,8 @@ pub(crate) struct Session {
     exited: Mutex<bool>,
     exit_cv: Condvar,
     events: EventSink,
+    /// Attention signals / activity of this run (see `attention.rs`).
+    attention: Arc<Tracker>,
 }
 
 fn short_label(id: &str) -> String {
@@ -201,7 +204,14 @@ fn short_label(id: &str) -> String {
 }
 
 impl Session {
-    pub fn new(spec: &SessionSpec, plan: &LaunchPlan, buffer_bytes: usize, seq: u64, events: EventSink) -> Arc<Self> {
+    pub fn new(
+        spec: &SessionSpec,
+        plan: &LaunchPlan,
+        buffer_bytes: usize,
+        seq: u64,
+        events: EventSink,
+        attention: Arc<Tracker>,
+    ) -> Arc<Self> {
         let label = short_label(&spec.id);
         let (tx, rx) = mpsc::channel();
         let input = Arc::new(InputHandle::new(tx));
@@ -235,6 +245,7 @@ impl Session {
             exited: Mutex::new(false),
             exit_cv: Condvar::new(),
             events,
+            attention,
         })
     }
 
@@ -297,6 +308,7 @@ impl Session {
             m.ended_at = Some(now_rfc3339());
         }
         self.input.close();
+        self.attention.close();
         self.out.mark_eof();
         self.signal_exited();
         self.emit();
@@ -319,6 +331,7 @@ impl Session {
                 true
             }
         };
+        self.attention.close();
         self.signal_exited();
         if transitioned {
             tracing::info!(session = %self.id, pid = ?self.pid(), exit_code = ?code, "session exited");
@@ -463,6 +476,8 @@ impl Session {
         let out = Arc::clone(&self.out);
         let label = self.label.clone();
         let weak = Arc::downgrade(self);
+        let input = Arc::clone(&self.input);
+        let attention = Arc::clone(&self.attention);
         spawn_guarded(format!("pty-read-{}", self.label), move || {
             struct EofGuard(Arc<Output>);
             impl Drop for EofGuard {
@@ -473,11 +488,20 @@ impl Session {
             let _eof = EofGuard(Arc::clone(&out));
             let mut buf = vec![0u8; READ_BUF];
             let mut cpr = CprScanner::new();
+            let mut att = AttentionScanner::new();
+            let status_reply = win32_input_encode(STATUS_PROBE_REPLY);
             loop {
                 match reader.read(&mut buf) {
                     Ok(0) => break,
                     Ok(n) => {
                         let chunk = &buf[..n];
+                        let signals = att.feed(chunk);
+                        // OSC 7501 feature probe: answer at once, before the
+                        // view (if any) can answer the DA1 that follows it.
+                        for _ in signals.iter().filter(|s| matches!(s, Signal::StatusProbe)) {
+                            input.send_internal(&status_reply);
+                        }
+                        attention.on_output(&signals, Instant::now());
                         let cprs = cpr.feed(chunk);
                         let first = out.bytes_out() == 0;
                         out.ingest(chunk, cprs);
@@ -588,6 +612,7 @@ impl Session {
         if !self.is_live() {
             return Err(AppError::Invalid("session is not running".into()));
         }
+        self.attention.note_input(Instant::now());
         self.input.send_user(data)
     }
 
@@ -599,6 +624,8 @@ impl Session {
         }
         let master = self.master.lock();
         if let Some(m) = master.as_ref() {
+            // The program repaints after a resize: not "activity".
+            self.attention.note_input(Instant::now());
             m.resize(PtySize { rows, cols, pixel_width: 0, pixel_height: 0 })
                 .map_err(|e| AppError::Other(format!("resize failed: {e:#}")))?;
         }
@@ -648,6 +675,7 @@ impl Session {
 
     /// The entry is being dropped from the manager (remove or restart).
     pub fn close(&self) {
+        self.attention.close();
         self.out.close();
     }
 }

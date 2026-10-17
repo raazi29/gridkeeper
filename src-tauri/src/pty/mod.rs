@@ -10,6 +10,8 @@
 //! - `ring` — bounded byte ring with absolute offsets.
 //! - `job` — Windows Job Object wrapper (kill-on-close process trees).
 //! - `text` — escape-sequence handling (plain-text export, query filter, CPR).
+//! - `attention` — BEL / notification / OSC 7501 scanner and activity monitor
+//!   (`session-attention` events, emitted even when no view is attached).
 //!
 //! Output framing (per-session `Channel<InvokeResponseBody>`): every message
 //! is `InvokeResponseBody::Raw` whose first byte is `frame::DATA` (followed by
@@ -19,6 +21,7 @@
 //! processed; the backend stops sending above 1 MiB unacknowledged and resumes
 //! at 256 KiB.
 
+pub mod attention;
 mod job;
 mod ring;
 mod session;
@@ -61,12 +64,15 @@ pub(crate) fn panic_message(p: &Box<dyn std::any::Any + Send>) -> String {
 // ---------------------------------------------------------------------------
 
 /// Registry of sessions, independent of Tauri. State transitions are reported
-/// through the callback given to [`SessionCore::new`].
+/// through the callback given to [`SessionCore::new`]; attention events through
+/// the second callback of [`SessionCore::with_attention`].
 pub struct SessionCore {
     sessions: RwLock<HashMap<SessionId, Arc<Session>>>,
     /// Serializes `start` so duplicate-id checks and replacement are atomic.
     start_lock: Mutex<()>,
     events: EventSink,
+    /// Shared attention monitor (one parked thread for all sessions).
+    attention: attention::AttentionHub,
     /// Set during shutdown: stop emitting events (the webview may be gone).
     quiet: Arc<AtomicBool>,
     seq: AtomicU64,
@@ -74,7 +80,25 @@ pub struct SessionCore {
 
 impl SessionCore {
     pub fn new(on_state: impl Fn(&SessionInfo) + Send + Sync + 'static) -> Self {
+        Self::with_attention(on_state, |_: &SessionAttention| {})
+    }
+
+    /// Like [`SessionCore::new`], also reporting attention events (bell,
+    /// notifications, program status, activity start / stop).
+    pub fn with_attention(
+        on_state: impl Fn(&SessionInfo) + Send + Sync + 'static,
+        on_attention: impl Fn(&SessionAttention) + Send + Sync + 'static,
+    ) -> Self {
         let quiet = Arc::new(AtomicBool::new(false));
+        let qa = Arc::clone(&quiet);
+        let attention_sink: attention::AttentionSink = Arc::new(move |ev: &SessionAttention| {
+            if qa.load(Ordering::Acquire) {
+                return;
+            }
+            if let Err(p) = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| on_attention(ev))) {
+                tracing::error!(panic = %panic_message(&p), "session attention listener panicked");
+            }
+        });
         let q = Arc::clone(&quiet);
         let events: EventSink = Arc::new(move |info: &SessionInfo| {
             if q.load(Ordering::Acquire) {
@@ -89,6 +113,7 @@ impl SessionCore {
             sessions: RwLock::new(HashMap::new()),
             start_lock: Mutex::new(()),
             events,
+            attention: attention::AttentionHub::new(attention_sink),
             quiet,
             seq: AtomicU64::new(0),
         }
@@ -112,7 +137,8 @@ impl SessionCore {
             return Err(AppError::Invalid(format!("Session '{}' is already running", spec.id)));
         }
         let seq = self.seq.fetch_add(1, Ordering::Relaxed);
-        let session = Session::new(&spec, &plan, buffer_bytes, seq, Arc::clone(&self.events));
+        let tracker = self.attention.tracker(&spec.id, Instant::now());
+        let session = Session::new(&spec, &plan, buffer_bytes, seq, Arc::clone(&self.events), tracker);
         self.sessions.write().insert(spec.id.clone(), Arc::clone(&session));
         if let Some(prev) = previous {
             // Views attached to the previous run stop; the frontend re-attaches.
@@ -176,6 +202,12 @@ impl SessionCore {
 
     pub fn output_text(&self, id: &str) -> AppResult<String> {
         let bytes = self.get(id)?.out.contents();
+        Ok(text::strip_ansi(&bytes))
+    }
+
+    /// Plain text of (roughly) the last `max_bytes` of retained output.
+    pub fn output_tail(&self, id: &str, max_bytes: usize) -> AppResult<String> {
+        let bytes = self.get(id)?.out.tail(max_bytes.clamp(256, 256 * 1024));
         Ok(text::strip_ansi(&bytes))
     }
 
@@ -285,11 +317,19 @@ pub struct SessionManager {
 
 impl SessionManager {
     pub fn new(app: AppHandle) -> Self {
-        let core = SessionCore::new(move |info| {
-            if let Err(e) = app.emit(EVT_SESSION_STATE, info) {
-                tracing::debug!(session = %info.id, error = %e, "failed to emit session state");
-            }
-        });
+        let app2 = app.clone();
+        let core = SessionCore::with_attention(
+            move |info| {
+                if let Err(e) = app.emit(EVT_SESSION_STATE, info) {
+                    tracing::debug!(session = %info.id, error = %e, "failed to emit session state");
+                }
+            },
+            move |ev| {
+                if let Err(e) = app2.emit(EVT_SESSION_ATTENTION, ev) {
+                    tracing::debug!(session = %ev.id, error = %e, "failed to emit session attention");
+                }
+            },
+        );
         Self { core }
     }
 
@@ -329,6 +369,9 @@ impl SessionManager {
     }
     pub fn output_text(&self, id: &str) -> AppResult<String> {
         self.core.output_text(id)
+    }
+    pub fn output_tail(&self, id: &str, max_bytes: usize) -> AppResult<String> {
+        self.core.output_tail(id, max_bytes)
     }
     pub fn clear_buffer(&self, id: &str) -> AppResult<()> {
         self.core.clear_buffer(id)

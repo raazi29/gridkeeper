@@ -52,6 +52,7 @@ pub fn run() {
             commands::session::session_stop,
             commands::session::session_list,
             commands::session::session_output_text,
+            commands::session::session_output_tail,
             commands::session::session_clear_buffer,
             commands::session::session_remove,
             commands::services::state_load,

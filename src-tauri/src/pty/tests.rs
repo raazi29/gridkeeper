@@ -318,3 +318,82 @@ fn shutdown_all_stops_everything() {
         assert!(matches!(s.state, SessionState::Exited { .. }), "{} is {:?}", s.id, s.state);
     }
 }
+
+// ---- attention ------------------------------------------------------------------
+
+fn attention_fixture() -> (Arc<SessionCore>, Arc<Mutex<Vec<SessionAttention>>>) {
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let ev = Arc::clone(&events);
+    let core = Arc::new(SessionCore::with_attention(|_: &SessionInfo| {}, move |a: &SessionAttention| ev.lock().push(a.clone())));
+    (core, events)
+}
+
+/// BEL and notification escapes printed by a real program must survive ConPTY
+/// and reach the scanner without any view attached.
+#[test]
+fn attention_signals_through_conpty() {
+    let (core, events) = attention_fixture();
+    let id = "it-attn";
+    // Separate prints with sleeps: alerts are rate-limited to one per 2 s.
+    let script = concat!(
+        "$e=[char]27; $b=[char]7; ",
+        "Write-Host -NoNewline \"bell:$b\"; Start-Sleep -Milliseconds 2300; ",
+        "Write-Host -NoNewline \"$e]9;osc9-hello$e\\\"; Start-Sleep -Milliseconds 2300; ",
+        "Write-Host -NoNewline \"$e]777;notify;T777;B777$b\"; Start-Sleep -Milliseconds 300; ",
+        "Write-Host -NoNewline \"$e]7501;state=working$e\\\"; Start-Sleep -Milliseconds 300; ",
+        "Write-Host -NoNewline \"$e]9;4;1;50$b\"; Start-Sleep -Milliseconds 300; ",
+        "Write-Host done-marker; Start-Sleep -Milliseconds 500"
+    );
+    core.start(spec(id), plan(pwsh(), &["-NoLogo", "-NoProfile", "-Command", script]), 1 << 20).unwrap();
+    assert!(core.wait_exit(id, Duration::from_secs(40)).unwrap());
+    assert!(core.wait_output_eof(id, Duration::from_secs(10)).unwrap());
+    let evs = events.lock().clone();
+    eprintln!("attention events through ConPTY: {evs:#?}");
+    assert!(evs.iter().any(|e| e.kind == AttentionKind::Bell), "BEL not seen: {evs:?}");
+    // Progress (9;4) is never a notification.
+    assert!(!evs.iter().any(|e| e.body.as_deref().is_some_and(|b| b.contains("50"))));
+    let osc9 = evs.iter().any(|e| e.kind == AttentionKind::Notify && e.body.as_deref() == Some("osc9-hello"));
+    let osc777 = evs.iter().any(|e| e.kind == AttentionKind::Notify && e.title.as_deref() == Some("T777"));
+    let osc7501 = evs.iter().any(|e| e.kind == AttentionKind::Status && e.status.as_deref() == Some("working"));
+    eprintln!("ConPTY passthrough: OSC 9 = {osc9}, OSC 777 = {osc777}, OSC 7501 = {osc7501}");
+    assert!(osc9 && osc777 && osc7501, "ConPTY dropped an OSC sequence: osc9={osc9} osc777={osc777} osc7501={osc7501}");
+}
+
+/// The OSC 7501 probe is answered by Rust (as win32-input-mode key events) and
+/// the exact reply reaches the program's console input.
+#[test]
+fn status_probe_is_answered() {
+    let (core, _events) = attention_fixture();
+    let id = "it-probe";
+    let script = concat!(
+        "$e=[char]27; Write-Host -NoNewline \"$e]7501;?$e\\\"; Start-Sleep -Milliseconds 1500; ",
+        "$s=''; while([Console]::KeyAvailable){ $k=[Console]::ReadKey($true); $s+=$k.KeyChar }; ",
+        "Write-Host ('GOT[' + ($s -replace [char]27,'<ESC>') + ']')"
+    );
+    core.start(spec(id), plan(pwsh(), &["-NoLogo", "-NoProfile", "-Command", script]), 1 << 20).unwrap();
+    assert!(core.wait_exit(id, Duration::from_secs(30)).unwrap());
+    assert!(core.wait_output_eof(id, Duration::from_secs(10)).unwrap());
+    let reply = "<ESC>]7501;?:states=idle,working,done,blocked,error,clear:kinds=permission,question,auth<ESC>\\";
+    let text = core.output_text(id).unwrap();
+    assert!(text.contains(&format!("GOT[{reply}]")), "reply not delivered intact: {text:?}");
+
+    // VT input mode (ENABLE_VIRTUAL_TERMINAL_INPUT only, like Node / Claude
+    // Code), probe followed by DA1 as the OSC 7501 detection does.
+    let id2 = "it-probe-vt";
+    let script2 = concat!(
+        "Add-Type -Name K -Namespace W -MemberDefinition '[DllImport(\"kernel32.dll\")] public static extern System.IntPtr GetStdHandle(int h); [DllImport(\"kernel32.dll\")] public static extern bool SetConsoleMode(System.IntPtr h, uint m); [DllImport(\"kernel32.dll\", CharSet=CharSet.Unicode)] public static extern bool ReadConsoleW(System.IntPtr h, char[] b, uint n, out uint r, System.IntPtr c);'; ",
+        "$h=[W.K]::GetStdHandle(-10); [void][W.K]::SetConsoleMode($h, 0x200); ",
+        "$e=[char]27; Write-Host -NoNewline \"$e]7501;?$e\\$e[c\"; Start-Sleep -Milliseconds 1500; ",
+        "$buf=New-Object char[] 1024; $r=0; [void][W.K]::ReadConsoleW($h,$buf,1024,[ref]$r,[IntPtr]::Zero); ",
+        "$s=-join $buf[0..([int]$r-1)]; Write-Host ('GOT[' + ($s -replace [char]27,'<ESC>') + ']')"
+    );
+    core.start(spec(id2), plan(pwsh(), &["-NoLogo", "-NoProfile", "-Command", script2]), 1 << 20).unwrap();
+    assert!(core.wait_exit(id2, Duration::from_secs(30)).unwrap());
+    assert!(core.wait_output_eof(id2, Duration::from_secs(10)).unwrap());
+    let text2 = core.output_text(id2).unwrap();
+    assert!(text2.contains(reply), "reply not delivered in VT input mode: {text2:?}");
+    // Observation (Windows 11 build 26300 inbox ConPTY): conhost answers DA1
+    // itself, synchronously, so its DA1 reply precedes ours. Logged only.
+    let da1_first = text2.contains("c<ESC>]7501");
+    eprintln!("VT-mode input as seen by the program: {text2:?} (ConPTY DA1 reply first: {da1_first})");
+}
