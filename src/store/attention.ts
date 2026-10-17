@@ -225,7 +225,11 @@ export type AttentionOverlay = "fleet" | "broadcast" | null;
 interface AttentionUi {
   overlay: AttentionOverlay;
   commsOpen: boolean;
+  /** Sessions preselected in the Broadcast composer (null = default: live sessions of the active group). */
+  broadcastPreselect: SessionId[] | null;
   open: (o: Exclude<AttentionOverlay, null>) => void;
+  /** Open the Broadcast composer with these sessions preselected (Mission Control lanes, context menus). */
+  openBroadcast: (ids?: SessionId[] | null) => void;
   close: () => void;
   toggleComms: (open?: boolean) => void;
 }
@@ -233,7 +237,9 @@ interface AttentionUi {
 export const useAttentionUi = create<AttentionUi>()((set) => ({
   overlay: null,
   commsOpen: false,
-  open: (overlay) => set({ overlay, commsOpen: false }),
-  close: () => set({ overlay: null }),
+  broadcastPreselect: null,
+  open: (overlay) => set({ overlay, commsOpen: false, broadcastPreselect: null }),
+  openBroadcast: (ids) => set({ overlay: "broadcast", commsOpen: false, broadcastPreselect: ids ?? null }),
+  close: () => set({ overlay: null, broadcastPreselect: null }),
   toggleComms: (open) => set((s) => ({ commsOpen: open ?? !s.commsOpen })),
 }));

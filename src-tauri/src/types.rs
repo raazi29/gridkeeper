@@ -487,6 +487,13 @@ pub struct Settings {
     pub saber_color: String,
     /// Workspace-switch star-streak transition: "auto" | "on" | "off" (string so unknown values never fail loading).
     pub hyperspace_transition: String,
+    /// Terminal right-click: "menu" (context menu, default) | "paste" (copy selection / paste). String so unknown values never fail loading.
+    #[serde(default = "default_right_click_action")]
+    pub right_click_action: String,
+}
+
+fn default_right_click_action() -> String {
+    "menu".into()
 }
 
 /// Desktop / in-app attention notifications (decided in the frontend: src/actions/attentionNotify.ts).
@@ -595,6 +602,7 @@ impl Default for Settings {
             paste_warning: true,
             saber_color: "blue".into(),
             hyperspace_transition: "auto".into(),
+            right_click_action: default_right_click_action(),
         }
     }
 }

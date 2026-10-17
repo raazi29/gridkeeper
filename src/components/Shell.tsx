@@ -13,6 +13,7 @@ import { useUi } from "../store/uiStore";
 import { AttentionLayer } from "./AttentionLayer";
 import { CommandPalette } from "./CommandPalette";
 import { ConfirmDialog } from "./ConfirmDialog";
+import { ContextMenuHost } from "./ContextMenuHost";
 import { DialogHost } from "./DialogHost";
 import { ExperienceLayer } from "./ExperienceLayer";
 import { GroupTabs } from "./GroupTabs";
@@ -82,6 +83,7 @@ export function Shell() {
       <AttentionLayer />
       <MissionLayer />
       <ExperienceLayer />
+      <ContextMenuHost />
     </div>
   );
 }

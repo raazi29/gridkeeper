@@ -1,0 +1,50 @@
+/* Context menus: submenus, check marks, shortcut hints (base .menu styles live in app.css). Theme variables only. */
+
+.menu-root {
+  display: contents;
+}
+.menu {
+  max-height: calc(100vh - 8px);
+  overflow-y: auto;
+  max-width: min(360px, calc(100vw - 8px));
+}
+.menu-item {
+  white-space: nowrap;
+}
+.menu-item:focus {
+  outline: none;
+}
+.menu-item:focus:not(:disabled) {
+  background: var(--accent-soft);
+}
+.menu-item.is-danger:focus:not(:disabled) {
+  background: var(--err-soft);
+}
+.menu-item.is-open:not(:focus) {
+  background: color-mix(in srgb, var(--accent-soft) 60%, transparent);
+}
+.menu-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.menu-hint {
+  margin-left: 18px;
+  flex-shrink: 0;
+}
+.menu-check {
+  width: 12px;
+  flex-shrink: 0;
+  color: var(--accent);
+  font-size: var(--fs-xs);
+  text-align: center;
+}
+.menu-sub-arrow {
+  margin-left: 10px;
+  color: var(--text-2);
+  font-size: var(--fs-s);
+  line-height: 1;
+}
+.menu-item.is-open .menu-sub-arrow,
+.menu-item:focus .menu-sub-arrow {
+  color: var(--text-0);
+}

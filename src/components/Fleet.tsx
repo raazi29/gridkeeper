@@ -19,6 +19,8 @@ import { useDiagnosticsPoll } from "./hooks";
 import { IconClose } from "./icons";
 import { fleetLamp, formatUptime, matchesFleetFilter, tailLines, type FleetFilter, type FleetLamp } from "./util/fleet";
 import { formatCpu, formatMb, taskManagerCpu } from "./util/text";
+import { buildSessionMenu } from "./menus/sessionMenu";
+import { useContextMenu } from "./ui/Menu";
 import "../styles/attention.css";
 
 const LAMP_LABEL: Record<FleetLamp, string> = { ...ATTN_LABEL, exited: "Exited", stopped: "Not started" };
@@ -157,6 +159,17 @@ export function FleetOverlay() {
     [close],
   );
 
+  // Right-click / context-menu key on a tile: the shared session menu.
+  const menu = useContextMenu();
+  const openContextMenu = menu.open;
+  const openMenu = useCallback(
+    (e: { clientX: number; clientY: number; preventDefault?: () => void; stopPropagation?: () => void }, id: SessionId) => {
+      setSelected(id);
+      openContextMenu(e, buildSessionMenu(id, { surface: "fleet", onNavigate: close }));
+    },
+    [openContextMenu, close],
+  );
+
   const onKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "Escape") {
       e.preventDefault();
@@ -166,7 +179,11 @@ export function FleetOverlay() {
     }
     if (!flat.length) return;
     const i = selected ? flat.indexOf(selected) : -1;
-    if (e.key === "Enter" && selected && (e.target as HTMLElement).dataset.tile) {
+    if ((e.key === "ContextMenu" || (e.shiftKey && e.key === "F10")) && selected && (e.target as HTMLElement).dataset.tile) {
+      e.preventDefault();
+      const r = (e.target as HTMLElement).getBoundingClientRect();
+      openMenu({ clientX: r.left + 12, clientY: r.top + 24 }, selected);
+    } else if (e.key === "Enter" && selected && (e.target as HTMLElement).dataset.tile) {
       e.preventDefault();
       jump(selected);
     } else if (e.key === "ArrowRight" || e.key === "ArrowLeft") {
@@ -220,13 +237,14 @@ export function FleetOverlay() {
               <h3 className="attn-fleet-ws">{g.name}</h3>
               <div className="attn-fleet-grid">
                 {g.ids.map((id) => (
-                  <FleetTile key={id} id={id} selected={id === selected} onSelect={setSelected} onJump={jump} tileRef={observe} />
+                  <FleetTile key={id} id={id} selected={id === selected} onSelect={setSelected} onJump={jump} onMenu={openMenu} tileRef={observe} />
                 ))}
               </div>
             </section>
           ))}
         </div>
       </div>
+      {menu.element}
     </div>,
     document.body,
   );
@@ -256,12 +274,14 @@ const FleetTile = memo(function FleetTile({
   selected,
   onSelect,
   onJump,
+  onMenu,
   tileRef,
 }: {
   id: SessionId;
   selected: boolean;
   onSelect: (id: SessionId) => void;
   onJump: (id: SessionId) => void;
+  onMenu: (e: React.MouseEvent, id: SessionId) => void;
   tileRef: (el: HTMLElement | null) => void;
 }) {
   const meta = useApp(useShallow((s) => {
@@ -296,6 +316,7 @@ const FleetTile = memo(function FleetTile({
       className={`attn-tile attn-tile--${lamp}${selected ? " is-selected" : ""}${a?.unread ? " is-unread" : ""}`}
       onClick={() => onJump(id)}
       onFocus={() => onSelect(id)}
+      onContextMenu={(e) => onMenu(e, id)}
     >
       <div className="attn-tile-head">
         <span className={`attn-lamp attn-lamp--${lamp}`} title={LAMP_LABEL[lamp]} />

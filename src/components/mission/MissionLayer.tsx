@@ -20,10 +20,14 @@ export function MissionLayer() {
       cancelAllStarterPrompts();
     };
   }, []);
+  // Separate boundaries; Mission Control's is remounted on every open, so one render error never leaves
+  // the button / Ctrl+Shift+U / palette "stuck" on an error card.
   return (
-    <ErrorBoundary scope="Mission Control">
-      {open && <MissionControl />}
-      {formationOpen && <FormationDialog />}
-    </ErrorBoundary>
+    <>
+      <ErrorBoundary key={open ? "open" : "closed"} scope="Mission Control">
+        {open && <MissionControl />}
+      </ErrorBoundary>
+      <ErrorBoundary scope="Formations">{formationOpen && <FormationDialog />}</ErrorBoundary>
+    </>
   );
 }

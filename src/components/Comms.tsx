@@ -8,6 +8,8 @@ import { useApp } from "../store/appStore";
 import { useUi } from "../store/uiStore";
 import { IconBellOff } from "./MutedGlyph";
 import { useContextMenu } from "./ui/Menu";
+import { openAppMenu } from "./ContextMenuHost";
+import { buildSessionMenu } from "./menus/sessionMenu";
 import { countUnread, useAttention, useAttentionUi, type FeedItem } from "../store/attention";
 import { useShortcut, withShortcut } from "./hooks";
 import { IconBell, IconFleet } from "./AttentionBits";
@@ -131,10 +133,11 @@ export function CommsPanel() {
     ref.current?.querySelector<HTMLElement>(".attn-feed-row, button")?.focus();
     const onDown = (e: MouseEvent) => {
       const t = e.target as HTMLElement;
-      if (ref.current?.contains(t) || t.closest("[data-comms-toggle]")) return;
+      if (ref.current?.contains(t) || t.closest("[data-comms-toggle], .menu-root")) return;
       close();
     };
     const onKey = (e: KeyboardEvent) => {
+      if ((document.activeElement as HTMLElement | null)?.closest(".menu-root")) return; // a row's context menu handles its keys
       if (e.key === "Escape") {
         e.preventDefault();
         e.stopPropagation();
@@ -184,6 +187,10 @@ export function CommsPanel() {
               onClick={() => {
                 close();
                 jumpToSession(f.id);
+              }}
+              onContextMenu={(e) => {
+                e.preventDefault();
+                openAppMenu(e.clientX, e.clientY, buildSessionMenu(f.id, { surface: "comms", onNavigate: close }));
               }}
             >
               <span className={`attn-lamp attn-lamp--${f.kind} attn-still`} aria-label={KIND_LABEL[f.kind]} />

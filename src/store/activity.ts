@@ -28,6 +28,11 @@ export interface ActivityEvent {
   message: string;
   /** Short right-aligned outcome, e.g. "exit 0", "sent", "3 sessions". */
   result?: string;
+  /**
+   * Account id whose name was not known yet when the event was recorded (accounts load asynchronously at
+   * startup while restored sessions already start). The message holds PENDING_ACCOUNT until resolved.
+   */
+  pendingAccountId?: string;
 }
 
 export type ActivityInput = Omit<ActivityEvent, "seq" | "at"> & { at?: number };
@@ -99,6 +104,49 @@ export interface LifecycleTrack {
   startedAt: string | null;
 }
 
+// ---- account names ------------------------------------------------------------------------
+
+/** Placeholder in a "started" message while the account list is still loading. */
+export const PENDING_ACCOUNT = "account …";
+
+export interface NamedAccount {
+  id: string;
+  name: string;
+}
+
+/** Agents whose sessions always run on some account (no profile id = the agent's default login). */
+const ACCOUNT_AGENTS: ReadonlySet<AgentKind> = new Set<AgentKind>(["claude", "codex"]);
+
+/**
+ * Account shown for a session: looked up by id in BOTH the multi-agent `accounts` list and the
+ * historical Claude `profiles` list. "Default" only when the session has no account id (and the agent
+ * uses accounts); `pendingId` when the id is not known (yet); null = no account bit at all.
+ */
+export function resolveAccountName(
+  agent: AgentKind | null | undefined,
+  profileId: string | null | undefined,
+  accounts: readonly NamedAccount[],
+  profiles: readonly NamedAccount[],
+): { name: string; pendingId?: undefined } | { name: null; pendingId: string } | null {
+  if (!profileId) return agent && ACCOUNT_AGENTS.has(agent) ? { name: "Default" } : null;
+  const name = accounts.find((a) => a.id === profileId)?.name ?? profiles.find((p) => p.id === profileId)?.name;
+  return name ? { name } : { name: null, pendingId: profileId };
+}
+
+/** Fill in account names that were pending when their events were recorded. Returns null when nothing changed. */
+export function resolvePendingAccounts(events: readonly ActivityEvent[], nameOf: (id: string) => string | null | undefined): ActivityEvent[] | null {
+  let changed = false;
+  const next = events.map((e) => {
+    if (!e.pendingAccountId) return e;
+    const name = nameOf(e.pendingAccountId);
+    if (!name) return e;
+    changed = true;
+    const { pendingAccountId: _, ...rest } = e;
+    return { ...rest, message: e.message.replace(PENDING_ACCOUNT, `account ${name}`) };
+  });
+  return changed ? next : null;
+}
+
 /**
  * Process state change -> log entry. "started" is logged once per run (keyed by `startedAt`, so the
  * optimistic `starting` snapshot with startedAt = null is ignored). A stop after `stopping` is a user
@@ -107,12 +155,13 @@ export interface LifecycleTrack {
 export function mapLifecycle(
   prev: LifecycleTrack | undefined,
   info: SessionInfo,
-  meta: { profileName?: string | null; worktreeBranch?: string | null },
+  meta: { profileName?: string | null; accountPending?: boolean; worktreeBranch?: string | null },
 ): { level: ActivityLevel; message: string; result?: string } | null {
   const cur = info.state.state;
   if ((cur === "running" || cur === "starting") && info.startedAt && info.startedAt !== prev?.startedAt) {
     const bits = [`started ${info.agent}`];
     if (meta.profileName) bits.push(`account ${meta.profileName}`);
+    else if (meta.accountPending) bits.push(PENDING_ACCOUNT);
     if (meta.worktreeBranch) bits.push(`worktree ${meta.worktreeBranch}`);
     return { level: "info", message: bits.join(" · "), result: info.pid ? `pid ${info.pid}` : "started" };
   }
@@ -186,9 +235,10 @@ export function installActivity(): () => void {
       if (before[id] === info) continue;
       const prev = track.get(id);
       const meta = s.persisted.sessions.find((m) => m.id === id);
-      const profile = meta?.agent === "claude" ? s.profiles.find((p) => p.id === meta.profileId) : undefined;
+      const account = resolveAccountName(meta?.agent ?? info.agent, meta ? meta.profileId : info.profileId, s.accounts, s.profiles);
       const mapped = mapLifecycle(prev, info, {
-        profileName: meta?.agent === "claude" ? (profile?.name ?? "default") : null,
+        profileName: account?.name ?? null,
+        accountPending: !!account?.pendingId,
         worktreeBranch: meta?.worktree ? (meta.worktree.branch ?? meta.worktree.path) : null,
       });
       track.set(id, { state: info.state.state, startedAt: info.startedAt ?? prev?.startedAt ?? null });
@@ -200,9 +250,23 @@ export function installActivity(): () => void {
           agent: meta?.agent ?? info.agent,
           kind: "lifecycle",
           ...mapped,
+          ...(account?.pendingId && mapped.message.includes(PENDING_ACCOUNT) ? { pendingAccountId: account.pendingId } : {}),
         });
     }
     for (const id of track.keys()) if (!s.runtime[id]) track.delete(id);
+  });
+
+  // Account names that were unknown at event time (accounts still loading) are filled in once known.
+  let prevAccounts = useApp.getState().accounts;
+  let prevProfiles = useApp.getState().profiles;
+  const unsubAccounts = useApp.subscribe((s) => {
+    if (s.accounts === prevAccounts && s.profiles === prevProfiles) return;
+    prevAccounts = s.accounts;
+    prevProfiles = s.profiles;
+    const events = useActivity.getState().events;
+    if (!events.some((e) => e.pendingAccountId)) return;
+    const next = resolvePendingAccounts(events, (aid) => resolveAccountName("claude", aid, s.accounts, s.profiles)?.name);
+    if (next) useActivity.setState({ events: next });
   });
 
   let prevAttn = useAttention.getState().sessions;
@@ -223,6 +287,7 @@ export function installActivity(): () => void {
 
   return () => {
     unsubApp();
+    unsubAccounts();
     unsubAttn();
   };
 }
