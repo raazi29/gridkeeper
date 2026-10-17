@@ -20,6 +20,7 @@ import { focusTerminal } from "../terminal/registry";
 import { confirmAction } from "./confirm";
 import { AgentGlyph, IconBranch, IconClose, IconMaximize, IconMore, IconPlay, IconRestart, IconRestore, IconStop } from "./icons";
 import { beginPaneDrag, endPaneDrag } from "./paneDrag";
+import { AttentionLamp } from "../components/AttentionBits";
 
 export interface PaneHeaderProps {
   sessionId: SessionId;
@@ -299,6 +300,7 @@ export const PaneHeader = memo(function PaneHeader({ sessionId, groupId, index, 
     >
       <div className="pane-title-area">
         <span className={`pane-dot pane-dot--${status.cls}`} title={status.label} aria-label={status.label} />
+        <AttentionLamp sessionId={sessionId} />
         <span className="pane-glyph" title={meta.agent}>
           <AgentGlyph agent={meta.agent} />
         </span>

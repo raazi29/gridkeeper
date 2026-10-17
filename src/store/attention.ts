@@ -1,0 +1,229 @@
+// Attention model: per-session "what is it doing / does it need me" state and the Comms feed.
+// A separate small zustand store so attention churn never re-renders subscribers of the app store.
+// Pure functions (reduceAttention, nextAttentionTarget, …) carry the logic and are unit-tested;
+// event wiring lives in actions/attentionNotify.ts.
+
+import { create } from "zustand";
+import type { SessionAttention, SessionId } from "../lib/types";
+
+export type AttnState = "working" | "waiting" | "done" | "error" | "idle";
+
+export interface SessionAttn {
+  state: AttnState;
+  /** Something happened the user has not looked at yet. */
+  unread: boolean;
+  lastMessage?: string;
+  /** ms epoch of the last change. */
+  at: number;
+}
+
+export type AttnInput =
+  | { type: "attention"; ev: SessionAttention }
+  | { type: "start" }
+  | { type: "exit"; code: number | null; userStopped: boolean }
+  | { type: "failed"; message: string };
+
+/** Notification-worthy outcome of an input. `category` maps to the settings toggles. */
+export interface Alert {
+  category: "bell" | "idle" | "error";
+  /** Feed / lamp flavour. */
+  kind: "waiting" | "done" | "error";
+  message: string;
+  /** Notification title from the program (OSC 777 / 99 / 7501), if any. */
+  title?: string;
+}
+
+export interface Reduction {
+  next: SessionAttn;
+  alert?: Alert;
+}
+
+const WORKING = new Set(["working", "busy", "running", "thinking", "progress"]);
+const WAITING = new Set(["blocked", "waiting", "input", "question", "permission", "attention", "prompt"]);
+const DONE = new Set(["done", "complete", "completed", "finished", "success"]);
+const ERROR = new Set(["error", "failed", "failure"]);
+const QUIET = new Set(["idle", "clear", "ready"]);
+
+const REASON_TEXT: Record<string, string> = {
+  permission: "Waiting for permission",
+  question: "Has a question for you",
+  auth: "Needs you to sign in",
+};
+
+export function formatDuration(ms: number): string {
+  const s = Math.max(0, Math.round(ms / 1000));
+  if (s < 60) return `${s}s`;
+  const m = Math.floor(s / 60);
+  if (m < 60) return `${m}m ${s % 60}s`;
+  return `${Math.floor(m / 60)}h ${m % 60}m`;
+}
+
+function joinText(title?: string, body?: string): string | undefined {
+  const parts = [title, body].filter((x): x is string => !!x && x.trim().length > 0);
+  return parts.length ? parts.join(": ") : undefined;
+}
+
+/**
+ * Pure reducer. `seen` = the user is looking at this session right now (focused, on screen, window
+ * focused); alerts then never mark it unread.
+ */
+export function reduceAttention(prev: SessionAttn | undefined, input: AttnInput, seen: boolean, now: number): Reduction {
+  const base: SessionAttn = prev ?? { state: "idle", unread: false, at: now };
+  const flag = (unread: boolean) => (seen ? false : unread || base.unread);
+  const alertState = (state: AttnState, kind: Alert["kind"], category: Alert["category"], message: string, title?: string): Reduction => ({
+    next: { state, unread: flag(true), lastMessage: message, at: now },
+    alert: { category, kind, message, title },
+  });
+  const quiet = (state: AttnState, lastMessage = base.lastMessage): Reduction => ({
+    next: state === base.state && lastMessage === base.lastMessage ? base : { ...base, state, lastMessage, at: now },
+  });
+
+  switch (input.type) {
+    case "start":
+      return { next: { state: "idle", unread: false, at: now } };
+    case "failed":
+      return alertState("error", "error", "error", `Failed to start: ${input.message}`);
+    case "exit": {
+      if (input.userStopped) return { next: { state: "idle", unread: base.unread, lastMessage: "Stopped", at: now } };
+      if (input.code !== null && input.code !== 0) return alertState("error", "error", "error", `Exited with code ${input.code}`);
+      return alertState("done", "done", "idle", input.code === 0 ? "Exited (code 0)" : "Exited");
+    }
+    case "attention": {
+      const ev = input.ev;
+      switch (ev.kind) {
+        case "active":
+          return quiet("working");
+        case "idle":
+          if (ev.status === "done") return alertState("done", "done", "idle", `Finished after ${formatDuration(ev.activeMs ?? 0)}`);
+          return base.state === "working" ? quiet("idle") : { next: base };
+        case "bell":
+          return alertState("waiting", "waiting", "bell", "Needs your attention");
+        case "notify":
+          return alertState("waiting", "waiting", "bell", joinText(ev.title, ev.body) ?? "Notification", ev.title);
+        case "status": {
+          const st = (ev.status ?? "").toLowerCase();
+          const text = joinText(ev.title, ev.body);
+          if (WORKING.has(st)) return quiet("working", text ?? base.lastMessage);
+          if (WAITING.has(st))
+            return alertState("waiting", "waiting", "bell", text ?? REASON_TEXT[ev.reason ?? ""] ?? "Waiting for you", ev.title);
+          if (DONE.has(st)) return alertState("done", "done", "idle", text ?? "Done", ev.title);
+          if (ERROR.has(st)) return alertState("error", "error", "error", text ?? "Reported an error", ev.title);
+          // done / error persist until the user has seen them.
+          if (QUIET.has(st)) return quiet(base.unread ? base.state : "idle");
+          return quiet(base.state, text ?? (st ? `Status: ${st}` : base.lastMessage));
+        }
+      }
+    }
+  }
+  return { next: base };
+}
+
+export const needsAttention = (a: SessionAttn | undefined): boolean => !!a && (a.unread || a.state === "waiting");
+
+/**
+ * Round-robin "next alert": the first session after `current` (in global workspace → group → pane
+ * order, wrapping) that needs attention. Unread sessions win over merely-waiting ones that were
+ * already seen. Returns null when nothing needs attention.
+ */
+export function nextAttentionTarget(order: SessionId[], sessions: Record<SessionId, SessionAttn>, current: SessionId | null): SessionId | null {
+  if (order.length === 0) return null;
+  const start = current ? order.indexOf(current) : -1;
+  const rotated = [...order.slice(start + 1), ...order.slice(0, start + 1)];
+  const unread = rotated.find((id) => sessions[id]?.unread && id !== current);
+  if (unread) return unread;
+  const waiting = rotated.find((id) => id !== current && needsAttention(sessions[id]));
+  if (waiting) return waiting;
+  return current && needsAttention(sessions[current]) ? current : null;
+}
+
+export function countUnread(sessions: Record<SessionId, SessionAttn>, ids?: Iterable<SessionId>): number {
+  let n = 0;
+  if (ids) {
+    for (const id of ids) if (sessions[id]?.unread) n++;
+  } else for (const id in sessions) if (sessions[id].unread) n++;
+  return n;
+}
+
+// ---- store ---------------------------------------------------------------------
+
+export interface FeedItem {
+  seq: number;
+  id: SessionId;
+  kind: Alert["kind"];
+  message: string;
+  at: number;
+}
+
+export const FEED_LIMIT = 100;
+
+export interface AttentionStore {
+  sessions: Record<SessionId, SessionAttn>;
+  /** Newest last. In-memory only. */
+  feed: FeedItem[];
+  /** Apply an input; returns the alert (if any) for the notifier. */
+  apply: (id: SessionId, input: AttnInput, seen: boolean, now?: number) => Alert | undefined;
+  markRead: (id: SessionId) => void;
+  markAllRead: () => void;
+  clearFeed: () => void;
+  /** Drop state of sessions that no longer exist. */
+  prune: (alive: Set<SessionId>) => void;
+}
+
+let feedSeq = 1;
+
+export const useAttention = create<AttentionStore>()((set, get) => ({
+  sessions: {},
+  feed: [],
+  apply: (id, input, seen, now = Date.now()) => {
+    const prev = get().sessions[id];
+    const { next, alert } = reduceAttention(prev, input, seen, now);
+    if (next === prev && !alert) return undefined;
+    set((s) => ({
+      sessions: next === prev ? s.sessions : { ...s.sessions, [id]: next },
+      feed: alert ? [...s.feed.slice(-(FEED_LIMIT - 1)), { seq: feedSeq++, id, kind: alert.kind, message: alert.message, at: now }] : s.feed,
+    }));
+    return alert;
+  },
+  markRead: (id) =>
+    set((s) => {
+      const a = s.sessions[id];
+      return a?.unread ? { sessions: { ...s.sessions, [id]: { ...a, unread: false } } } : s;
+    }),
+  markAllRead: () =>
+    set((s) => {
+      if (!Object.values(s.sessions).some((a) => a.unread)) return s;
+      const sessions: Record<SessionId, SessionAttn> = {};
+      for (const [id, a] of Object.entries(s.sessions)) sessions[id] = a.unread ? { ...a, unread: false } : a;
+      return { sessions };
+    }),
+  clearFeed: () => set({ feed: [] }),
+  prune: (alive) =>
+    set((s) => {
+      const dead = Object.keys(s.sessions).filter((id) => !alive.has(id));
+      const feed = s.feed.filter((f) => alive.has(f.id));
+      if (dead.length === 0 && feed.length === s.feed.length) return s;
+      const sessions = { ...s.sessions };
+      for (const id of dead) delete sessions[id];
+      return { sessions, feed };
+    }),
+}));
+
+// ---- overlay UI state (Fleet / Broadcast / Comms) ---------------------------------
+
+export type AttentionOverlay = "fleet" | "broadcast" | null;
+
+interface AttentionUi {
+  overlay: AttentionOverlay;
+  commsOpen: boolean;
+  open: (o: Exclude<AttentionOverlay, null>) => void;
+  close: () => void;
+  toggleComms: (open?: boolean) => void;
+}
+
+export const useAttentionUi = create<AttentionUi>()((set) => ({
+  overlay: null,
+  commsOpen: false,
+  open: (overlay) => set({ overlay, commsOpen: false }),
+  close: () => set({ overlay: null }),
+  toggleComms: (open) => set((s) => ({ commsOpen: open ?? !s.commsOpen })),
+}));

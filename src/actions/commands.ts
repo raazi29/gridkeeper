@@ -16,6 +16,7 @@ import {
   selectActiveWorkspace,
   useApp,
 } from "../store/appStore";
+import { nextAttentionTarget, useAttention, useAttentionUi } from "../store/attention";
 import { confirmDialog, useUi } from "../store/uiStore";
 import { focusTerminal } from "../terminal/registry";
 
@@ -48,6 +49,38 @@ export function focusSession(id: SessionId) {
   }
   app.setFocused(id);
   focusSoon(id);
+}
+
+/** Every session in workspace -> group -> pane order. */
+export function globalSessionOrder(): SessionId[] {
+  const out: SessionId[] = [];
+  for (const w of useApp.getState().persisted.workspaces) for (const g of w.groups) out.push(...g.sessionIds);
+  return out;
+}
+
+/** Switch workspace / group as needed, focus the pane and clear its unread flag. */
+export function jumpToSession(id: SessionId) {
+  focusSession(id);
+  useAttention.getState().markRead(id);
+}
+
+/** `attention.next`: the next session needing attention, round-robin across all workspaces. */
+export function jumpToNextAlert() {
+  const target = nextAttentionTarget(globalSessionOrder(), useAttention.getState().sessions, useApp.getState().focusedSessionId);
+  if (!target) {
+    notify("info", "No sessions need attention");
+    return;
+  }
+  jumpToSession(target);
+}
+
+function toggleOverlay(kind: "fleet" | "broadcast") {
+  const ui = useAttentionUi.getState();
+  if (ui.overlay === kind) ui.close();
+  else {
+    useUi.getState().closePalette();
+    ui.open(kind);
+  }
 }
 
 /** Activate a group and restore its last focused session. */
@@ -300,6 +333,11 @@ export const COMMANDS: Command[] = [
     },
   },
   { id: "view.settings", title: "Settings", category: "View", run: () => toggleDialog("settings") },
+  { id: "attention.next", title: "Jump to next alert", category: "Session", run: jumpToNextAlert },
+  { id: "view.fleet", title: "Fleet overview (all sessions)", category: "View", run: () => toggleOverlay("fleet") },
+  { id: "session.broadcast", title: "Broadcast a line to several sessions…", category: "Session", run: () => toggleOverlay("broadcast") },
+  { id: "view.comms", title: "Comms: recent alerts", category: "View", run: () => useAttentionUi.getState().toggleComms() },
+  { id: "attention.markAllRead", title: "Comms: mark all alerts read", category: "View", run: () => useAttention.getState().markAllRead() },
   { id: "view.profiles", title: "Claude account profiles", category: "View", run: () => toggleDialog("profiles") },
 ];
 

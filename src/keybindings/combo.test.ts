@@ -97,9 +97,16 @@ describe("resolveBindings", () => {
     expect(m.get("alt+3")).toBe("session.focus3");
     expect(m.get("ctrl+c")).toBeUndefined();
   });
+  it("binds the attention commands by default", () => {
+    const m = resolveBindings({});
+    expect(m.get("ctrl+shift+j")).toBe("attention.next");
+    expect(m.get("ctrl+shift+o")).toBe("view.fleet");
+    expect(m.get("ctrl+shift+k")).toBe("session.broadcast");
+    for (const c of ["ctrl+shift+j", "ctrl+shift+o", "ctrl+shift+k"]) expect(forbiddenReason(c)).toBeNull();
+  });
   it("applies overrides, unbinding and ignores forbidden ones", () => {
-    const m = resolveBindings({ "view.palette": "ctrl+shift+k", "session.new": "", "group.new": "ctrl+c" });
-    expect(m.get("ctrl+shift+k")).toBe("view.palette");
+    const m = resolveBindings({ "view.palette": "ctrl+shift+y", "session.new": "", "group.new": "ctrl+c" });
+    expect(m.get("ctrl+shift+y")).toBe("view.palette");
     expect(m.get("ctrl+shift+p")).toBeUndefined();
     expect(m.get("ctrl+shift+t")).toBeUndefined();
     expect(m.get("ctrl+shift+g")).toBe("group.new");

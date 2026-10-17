@@ -9,6 +9,7 @@ import { installKeybindings } from "../keybindings";
 import { GroupGrid } from "../layout/GroupGrid";
 import { selectActiveGroup, selectActiveWorkspace, useApp } from "../store/appStore";
 import { useUi } from "../store/uiStore";
+import { AttentionLayer } from "./AttentionLayer";
 import { CommandPalette } from "./CommandPalette";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { DialogHost } from "./DialogHost";
@@ -65,6 +66,7 @@ export function Shell() {
       <DialogHost />
       <ConfirmDialog />
       <Toasts />
+      <AttentionLayer />
     </div>
   );
 }

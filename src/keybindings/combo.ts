@@ -51,6 +51,9 @@ export const DEFAULT_BINDINGS: Record<string, string> = {
   "view.toggleDiagnostics": "ctrl+shift+`",
   "view.settings": "ctrl+,",
   "group.new": "ctrl+shift+g",
+  "attention.next": "ctrl+shift+j",
+  "view.fleet": "ctrl+shift+o",
+  "session.broadcast": "ctrl+shift+k",
 };
 
 const CODE_KEYS: Record<string, string> = {

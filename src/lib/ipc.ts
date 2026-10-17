@@ -11,11 +11,12 @@ import type {
   PersistedState,
   ProfileStatus,
   SessionId,
+  SessionAttention,
   SessionInfo,
   SessionSpec,
   WorktreeInfo,
 } from "./types";
-import { EVT_SESSION_STATE } from "./types";
+import { EVT_SESSION_ATTENTION, EVT_SESSION_STATE } from "./types";
 
 export interface AppInfo {
   version: string;
@@ -39,6 +40,8 @@ export const ipc = {
   sessionStop: (id: SessionId, force: boolean) => invoke<void>("session_stop", { id, force }),
   sessionList: () => invoke<SessionInfo[]>("session_list"),
   sessionOutputText: (id: SessionId) => invoke<string>("session_output_text", { id }),
+  /** Plain text of roughly the last `maxBytes` of buffered output (cheap; for previews). */
+  sessionOutputTail: (id: SessionId, maxBytes: number) => invoke<string>("session_output_tail", { id, maxBytes }),
   sessionClearBuffer: (id: SessionId) => invoke<void>("session_clear_buffer", { id }),
   sessionRemove: (id: SessionId) => invoke<void>("session_remove", { id }),
 
@@ -67,6 +70,10 @@ export const ipc = {
 
 export function onSessionState(cb: (info: SessionInfo) => void): Promise<UnlistenFn> {
   return listen<SessionInfo>(EVT_SESSION_STATE, (e) => cb(e.payload));
+}
+
+export function onSessionAttention(cb: (ev: SessionAttention) => void): Promise<UnlistenFn> {
+  return listen<SessionAttention>(EVT_SESSION_ATTENTION, (e) => cb(e.payload));
 }
 
 /** Extract a readable message from an invoke rejection. */
