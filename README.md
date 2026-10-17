@@ -89,7 +89,10 @@ dependency (WSL-only on Windows).
   Goose, Crush, Amp and OpenClaw are detected on PATH (broken installs are reported, not listed) with their own
   continue/resume flags where documented.
 - **Inspector** for the focused session: PID, state, exit code, times, bytes, CPU/RAM of its tree, the command line (redacted), and restore options.
-- **Diagnostics:** CPU/RAM split between the app host, WebView2 and each session's tree, plus GPU renderer status and a redacted export bundle.
+- **Diagnostics:** CPU/RAM split between the app host, WebView2 and each session's tree, live GPU load and GPU memory from the Windows GPU counters (the adapter that draws the UI, per-engine bars), renderer status and a redacted export bundle. The status bar shows the WebView2 GPU load and warns when system memory is above 85 %.
+- **Find in terminal (Ctrl+Shift+F):** find bar per pane with next/previous (Enter / Shift+Enter), match case, regex and match count.
+- **Per-pane zoom:** Ctrl+Shift+= / Ctrl+Shift+- / Ctrl+Shift+0 change one pane's font size; the PTY is resized to match.
+- **Paste guard:** pasting more than 20 lines or 64 KiB into a program that has not enabled bracketed paste asks first (Settings › Terminal; programs like Claude Code and Codex are never asked).
 - **Command palette** over commands, sessions in all workspaces, and workspaces.
 - **Persistence:** a versioned, atomically written workspace file with a backup. A damaged file is preserved, never silently overwritten.
 - **No telemetry.**

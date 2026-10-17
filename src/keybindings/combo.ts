@@ -54,6 +54,10 @@ export const DEFAULT_BINDINGS: Record<string, string> = {
   "attention.next": "ctrl+shift+j",
   "view.fleet": "ctrl+shift+o",
   "session.broadcast": "ctrl+shift+k",
+  "terminal.find": "ctrl+shift+f",
+  "terminal.zoomIn": "ctrl+shift+=",
+  "terminal.zoomOut": "ctrl+shift+-",
+  "terminal.zoomReset": "ctrl+shift+0",
 };
 
 const CODE_KEYS: Record<string, string> = {

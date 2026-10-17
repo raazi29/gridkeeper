@@ -12,6 +12,7 @@ import { IconBranch, IconFolder, IconWarn } from "./icons";
 import { Button } from "./ui/Button";
 import { Field, Input, Segmented, Select } from "./ui/Field";
 import { Modal } from "./ui/Modal";
+import { MemoryPressureNotice } from "./ResourceWarnings";
 import { pickExecutable, pickFolder } from "./util/pick";
 import { AGENT_LABEL, profileStatusText } from "./util/session";
 import { defaultWorktreePath, isValidBranchName, splitArgs } from "./util/text";
@@ -265,6 +266,7 @@ export function NewSessionDialog({ groupId, preset, onClose }: { groupId?: strin
           }
         }}
       >
+        <MemoryPressureNotice count={count} />
         <Field label="Agent">
           <Segmented
             ariaLabel="Agent"

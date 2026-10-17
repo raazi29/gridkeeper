@@ -1,0 +1,175 @@
+/* Find bar, GPU telemetry and resource-pressure warnings. Theme tokens only (src/styles/tokens.css). */
+
+/* ---------- find bar ---------- */
+.findbar {
+  position: absolute;
+  top: 6px;
+  right: 14px;
+  z-index: 20; /* above xterm layers (11) and scanlines (12) */
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  max-width: calc(100% - 20px);
+  padding: 3px;
+  border-radius: var(--radius-m);
+  border: 1px solid var(--border-strong);
+  background: var(--bg-2);
+  box-shadow: var(--elev-2);
+  font-size: var(--fs-xs);
+}
+.findbar-input {
+  width: 180px;
+  min-width: 60px;
+  flex: 1 1 auto;
+  height: var(--control-h-sm);
+  padding: 0 7px;
+  border-radius: var(--radius-s);
+  border: 1px solid var(--border);
+  background: var(--bg-0);
+  color: var(--text-0);
+  font: inherit;
+  font-family: var(--font-mono);
+  outline: none;
+}
+.findbar-input:focus {
+  border-color: var(--accent-line);
+  box-shadow: 0 0 0 1px var(--accent-ring);
+}
+.findbar-input.is-miss {
+  border-color: var(--err-line);
+}
+.findbar-count {
+  flex: none;
+  min-width: 56px;
+  padding: 0 6px;
+  color: var(--text-2);
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.findbar-btn {
+  flex: none;
+  min-width: 22px;
+  height: var(--control-h-sm);
+  padding: 0 5px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-s);
+  background: none;
+  color: var(--text-1);
+  font: inherit;
+  font-family: var(--font-mono);
+  cursor: pointer;
+}
+.findbar-btn:hover {
+  background: var(--bg-3);
+  color: var(--text-0);
+}
+.findbar-btn.is-on {
+  color: var(--accent-fg);
+  border-color: var(--accent-line);
+  background: var(--accent-soft);
+}
+
+/* ---------- GPU section (Diagnostics) ---------- */
+.gpu-section {
+  margin: 0 0 12px;
+}
+.gpu-head {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.gpu-figures {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  margin: 8px 0 10px;
+}
+.gpu-figure {
+  min-width: 0;
+  padding: 6px 8px;
+  border-radius: var(--radius-s);
+  border: 1px solid var(--border);
+  background: var(--bg-1);
+}
+.gpu-figure-v {
+  display: block;
+  color: var(--text-0);
+  font-size: var(--fs-l);
+  font-variant-numeric: tabular-nums;
+}
+.gpu-figure-k {
+  display: block;
+  color: var(--text-2);
+  font-size: var(--fs-2xs);
+  letter-spacing: var(--label-tracking);
+  text-transform: uppercase;
+}
+.gpu-adapter {
+  margin-top: 8px;
+}
+.gpu-adapter-head {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+  margin-bottom: 4px;
+  color: var(--text-1);
+  font-size: var(--fs-xs);
+}
+.gpu-bars {
+  display: grid;
+  grid-template-columns: 64px 1fr 44px;
+  gap: 3px 8px;
+  align-items: center;
+  font-size: var(--fs-xs);
+}
+.gpu-bar-k {
+  color: var(--text-2);
+}
+.gpu-bar-v {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-1);
+}
+.gpu-bar {
+  height: 6px;
+  border-radius: 3px;
+  background: var(--bg-3);
+  overflow: hidden;
+}
+.gpu-bar > span {
+  display: block;
+  height: 100%;
+  border-radius: 3px;
+  background: var(--accent);
+}
+
+/* ---------- resource warnings ---------- */
+.sb-warn {
+  color: var(--warn-fg);
+}
+.callout.is-warn {
+  border-color: var(--warn-line);
+  background: var(--warn-soft);
+  color: var(--warn-fg);
+}
+.pressure-note {
+  margin: 0 0 10px;
+}
+.confirm-check {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 10px;
+  color: var(--text-1);
+  font-size: var(--fs-s);
+  cursor: pointer;
+}
+
+@media (max-width: 640px) {
+  .gpu-figures {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}

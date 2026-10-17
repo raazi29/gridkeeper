@@ -6,6 +6,8 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 
+pub use crate::gpu::{EnginePercent, GpuAdapter, GpuStats};
+
 pub type SessionId = String;
 
 // ---------------------------------------------------------------------------
@@ -326,6 +328,8 @@ pub struct Diagnostics {
     pub system_memory_total: u64,
     pub system_memory_used: u64,
     pub running_sessions: u32,
+    /// GPU engine / memory counters (Windows PDH). None only where never sampled.
+    pub gpu: Option<GpuStats>,
 }
 
 // ---------------------------------------------------------------------------
@@ -393,6 +397,8 @@ pub struct Settings {
     /// "compact" | "comfortable". A string, not an enum, so an unknown value never fails loading the state file.
     pub ui_density: String,
     pub notifications: NotificationSettings,
+    /// Confirm before pasting large text (>64 KiB or >20 lines) into a program without bracketed paste.
+    pub paste_warning: bool,
 }
 
 /// Desktop / in-app attention notifications (decided in the frontend).
@@ -434,6 +440,7 @@ impl Default for Settings {
             reduce_motion: false,
             ui_density: "compact".into(),
             notifications: NotificationSettings::default(),
+            paste_warning: true,
         }
     }
 }

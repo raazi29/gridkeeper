@@ -103,7 +103,30 @@ never paused the producing processes.
   either GPU: *Settings → System → Display → Graphics → add the app → Options*. The status bar shows the verbatim
   renderer string; it never guesses.
 - **Limits:** Chromium allows ~16 live WebGL contexts per page, so the app uses WebGL for up to 12 visible panes and
-  the DOM renderer for the rest, and recovers from context loss automatically.
+  the DOM renderer for the rest, and recovers from context loss automatically. Diagnostics warns when a group shows
+  more than 12 panes.
+
+### In-app GPU telemetry
+
+The status bar ("GPU: WebGL ×6 · GPU 4%") and *Diagnostics › GPU* show live figures read from the same Windows
+performance counters Task Manager uses, through one long-lived PDH query (`src-tauri/src/gpu.rs`):
+
+- `\GPU Engine(*)\Utilization Percentage`: per engine instance (`pid_…_luid_…_phys_…_eng_…_engtype_3D`), attributed
+  to the host process, the app's WebView2 processes and the session process trees (the PID sets Diagnostics already
+  computes). A group's figure is its busiest engine (Task Manager's per-process "GPU" column); "WebView2 3D" is the
+  busiest 3D engine. Whole-adapter load is shown per engine class (3D, Copy, Video, Compute, Other).
+- `\GPU Process Memory(*)\Dedicated Usage` / `Shared Usage` for WebView2, `\GPU Adapter Memory(*)\Dedicated Usage`
+  per adapter.
+- Adapters are identified by LUID (no DXGI dependency). The adapter holding WebView2's GPU allocations is marked
+  "Draws the UI" and shown next to the verbatim WebGL renderer string; with no WebView2 signal nothing is marked.
+- Utilization is a rate: the first sample after opening the query shows "measuring", values follow on the next
+  2 s refresh. If the counters are unavailable (e.g. some VMs) the UI says so; no figure is ever estimated.
+- Cost, measured on the test machine (debug build, 381 engine instances, 3 adapters): ~5–6 ms per snapshot
+  (collect ≈1 ms, format ≈2–3 ms, rest attribution); opening the query once costs ≈0.4 s on the blocking pool. It
+  runs only inside `diagnostics_snapshot`, i.e. only while the status-bar resources or Diagnostics are visible.
+
+What the figures show: the GPU draws terminal text and composites the UI. Typical idle load is a few percent of the
+3D engine; it does not reduce agent CPU.
 
 ## Reproduce
 
@@ -119,4 +142,7 @@ Each run uses its own WebView2 profile folder, so it can run beside a normal ins
 - Other processes (including concurrent builds during this session) share the CPU; numbers are per-process
   attribution, not isolated-machine benchmarks.
 - `sample.ps1` uses `Get-Process` + performance counters at 1 Hz; sub-second spikes are averaged out.
-- Windows sleep/resume and multi-hour soak tests were not run in this session.
+- Multi-hour soak tests were not run in this session. Sleep/resume: session processes survive on their own; when the
+  window returns after more than 60 s away (hidden or unfocused), the UI refits visible terminals, re-sends PTY
+  sizes and re-syncs session state from the backend (event-driven, no timers). Network-bound agents may need to retry
+  their own requests after resume. A full sleep/resume cycle was not exercised in this session.

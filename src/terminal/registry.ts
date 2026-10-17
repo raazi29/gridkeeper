@@ -36,10 +36,12 @@ import { ipc } from "../lib/ipc";
 import { FRAME_DATA, FRAME_RESET, type SessionId, type SessionInfo, type Settings } from "../lib/types";
 import { isLive, useApp } from "../store/appStore";
 import { AckBatcher } from "./ackBatcher";
-import { useUi } from "../store/uiStore";
+import { confirmDialogEx, useUi } from "../store/uiStore";
+import { checkPaste, pasteTitle } from "./pasteGuard";
 import { PRESENTATION_FONT_BOOST, getSearchDecorations, getTerminalTheme } from "./theme";
 import { MAX_WEBGL, allocateWebgl, type WebglCandidate } from "./webglBudget";
 import { splitForWrite } from "./writeChunks";
+import { clampZoom, zoomStep } from "./zoom";
 
 export interface RendererStatus {
   /** Number of terminals currently using the WebGL renderer. */
@@ -124,6 +126,8 @@ let parking: HTMLDivElement | null = null;
 let storeUnsub: (() => void) | null = null;
 let totalContextLosses = 0;
 let lastStatus: RendererStatus | null = null;
+/** Per-session font-size offset (zoom). Survives hide/show of the view; dropped with the session. */
+const zoomBySession = new Map<SessionId, number>();
 
 // ---- GPU probe ------------------------------------------------------------------------------
 
@@ -378,8 +382,9 @@ function handleContextLoss(e: Entry, addon: WebglAddon) {
 
 function applyFontSettings(e: Entry, s: Settings) {
   const o = e.term.options;
+  const fontSize = s.fontSize + clampZoom(s.fontSize, zoomBySession.get(e.id) ?? 0);
   if (o.fontFamily !== s.fontFamily) o.fontFamily = s.fontFamily;
-  if (o.fontSize !== s.fontSize) o.fontSize = s.fontSize;
+  if (o.fontSize !== fontSize) o.fontSize = fontSize;
   if (o.lineHeight !== s.lineHeight) o.lineHeight = s.lineHeight;
   e.settingsDirty = false;
 }
@@ -428,6 +433,7 @@ function ensureStoreSubscription() {
       if (s.loaded && entries.size > 0) {
         const ids = new Set(prevSessions.map((m) => m.id));
         for (const id of [...entries.keys()]) if (!ids.has(id)) disposeTerminal(id);
+        for (const id of [...zoomBySession.keys()]) if (!ids.has(id)) zoomBySession.delete(id);
       }
     }
     if (s.runtime !== prevRuntime) {
@@ -627,10 +633,42 @@ function sendInput(e: Entry, data: string) {
   });
 }
 
+function pasteCheck(e: Entry, text: string) {
+  return checkPaste(text, {
+    bracketed: e.term.modes.bracketedPasteMode,
+    enabled: useApp.getState().persisted.settings.pasteWarning !== false,
+  });
+}
+
+/**
+ * Paste with a guard: a large paste (>64 KiB or >20 lines) into a program that has NOT enabled bracketed
+ * paste would arrive as typed lines (each newline = Enter), so ask first. Programs that enabled bracketed
+ * paste (term.modes.bracketedPasteMode, e.g. Claude Code, Codex) are never prompted.
+ */
+async function guardedPaste(e: Entry, text: string) {
+  if (!text || e.disposed) return;
+  const check = pasteCheck(e, text);
+  if (check.confirm) {
+    const name = useApp.getState().persisted.sessions.find((m) => m.id === e.id)?.name ?? "this session";
+    const preview = text.split(/\r\n|\r|\n/, 4).map((l) => (l.length > 120 ? `${l.slice(0, 120)}…` : l));
+    const { ok, checked } = await confirmDialogEx({
+      title: pasteTitle(check, name),
+      message:
+        "This program has not enabled bracketed paste, so every line break is sent as Enter and each line may run as a command.",
+      detail: preview.join("\n") + (check.lines > preview.length ? "\n…" : ""),
+      confirmLabel: "Paste",
+      checkbox: "Don't ask again",
+    });
+    if (!ok || e.disposed) return;
+    if (checked) useApp.getState().updateSettings({ pasteWarning: false });
+  }
+  e.term.paste(text); // applies bracketed paste when the program enabled it
+}
+
 async function pasteFromClipboard(e: Entry) {
   const text = await readClipboard();
   if (!text || e.disposed) return;
-  e.term.paste(text); // applies bracketed paste when the program enabled it
+  await guardedPaste(e, text);
 }
 
 function copySelection(e: Entry, clear: boolean) {
@@ -862,11 +900,18 @@ function createEntry(id: SessionId): Entry {
   installKeyHandler(e);
 
   // Exactly-once paste: a native paste event right after our Ctrl+V handling is swallowed.
+  // Other native pastes (Shift+Insert, Ctrl+Shift+V) go through the same paste guard.
   const onPaste = (ev: ClipboardEvent) => {
     if (Date.now() - e.lastKeyPasteAt < 1000) {
       ev.preventDefault();
       ev.stopImmediatePropagation();
+      return;
     }
+    const text = ev.clipboardData?.getData("text/plain") ?? "";
+    if (!text || !pasteCheck(e, text).confirm) return; // xterm's own paste handling
+    ev.preventDefault();
+    ev.stopImmediatePropagation();
+    void guardedPaste(e, text);
   };
   // Right-click: copy if there is a selection, else paste (Windows Terminal behaviour).
   const onContextMenu = (ev: MouseEvent) => {
@@ -988,6 +1033,47 @@ export function clearSearch(id: SessionId): void {
   if (!e) return;
   e.search.clearDecorations();
   e.term.clearSelection();
+}
+
+/** Match counts for the find bar (`index` -1 when beyond the highlight limit). Returns unsubscribe. */
+export function onSearchResults(id: SessionId, cb: (r: { index: number; count: number }) => void): () => void {
+  const e = entries.get(id);
+  if (!e) return () => {};
+  const d = e.search.onDidChangeResults((r) => cb({ index: r.resultIndex, count: r.resultCount }));
+  return () => d.dispose();
+}
+
+/**
+ * Per-pane font zoom: 1 = in, -1 = out, 0 = reset. Refits the terminal (which resizes the PTY).
+ * Returns the new font size, or null when the session has no terminal.
+ */
+export function zoomTerminal(id: SessionId, dir: 1 | -1 | 0): number | null {
+  const e = entries.get(id);
+  if (!e) return null;
+  const s = settings();
+  const next = zoomStep(s.fontSize, zoomBySession.get(id) ?? 0, dir);
+  if (next === 0) zoomBySession.delete(id);
+  else zoomBySession.set(id, next);
+  if (isShown(e)) {
+    applyFontSettings(e, s);
+    scheduleFit(e);
+  } else e.settingsDirty = true;
+  return s.fontSize + next;
+}
+
+/** Refit and repaint every visible terminal (after sleep/resume or a long absence). */
+export function refitAllTerminals(): void {
+  for (const e of entries.values()) {
+    if (!isShown(e)) continue;
+    e.lastSentCols = e.lastSentRows = 0; // re-send the PTY size even if unchanged
+    scheduleFit(e);
+    try {
+      e.term.refresh(0, e.term.rows - 1);
+    } catch {
+      /* not rendered yet */
+    }
+  }
+  scheduleReconcile(0);
 }
 
 export function getRendererStatus(): RendererStatus {

@@ -20,6 +20,7 @@ import { nextAttentionTarget, useAttention, useAttentionUi } from "../store/atte
 import { confirmDialog, useUi } from "../store/uiStore";
 import { focusTerminal } from "../terminal/registry";
 import { THEMES, getTheme } from "../theme/themes";
+import { terminalCommands } from "./terminalCommands";
 
 export interface Command {
   id: string;
@@ -317,6 +318,7 @@ export const COMMANDS: Command[] = [
       if (id) return clearSession(id);
     },
   },
+  ...terminalCommands(requireTarget),
   { id: "workspace.new", title: "New workspace…", category: "Workspace", run: () => useUi.getState().openDialog({ kind: "newWorkspace" }) },
   { id: "workspace.next", title: "Next workspace", category: "Workspace", run: () => cycleWorkspace(1) },
   { id: "workspace.prev", title: "Previous workspace", category: "Workspace", run: () => cycleWorkspace(-1) },

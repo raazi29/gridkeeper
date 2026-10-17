@@ -4,6 +4,8 @@ import { APP_NAME } from "../lib/brand";
 import { useApp, isLive, selectActiveGroup, selectActiveWorkspace } from "../store/appStore";
 import { useUi } from "../store/uiStore";
 import { CommsButton, FleetButton } from "./Comms";
+import { gpuLoadText, gpuTooltip } from "./GpuSection";
+import { MemoryPressureChip } from "./ResourceWarnings";
 import { useDiagnosticsPoll, useRendererStatus, useShortcut } from "./hooks";
 import { formatCpu, formatMb, taskManagerCpu } from "./util/text";
 import { stateLabel } from "./util/session";
@@ -57,8 +59,9 @@ export function StatusBar() {
         <FleetButton />
         <CommsButton />
         <span className="sb-div" />
+        {showDiag && <MemoryPressureChip onClick={open} />}
         {showDiag && <ResourceItems onClick={open} />}
-        <RendererItem onClick={open} />
+        <RendererItem onClick={open} live={showDiag} />
         {scPalette && (
           <>
             <span className="sb-div" />
@@ -114,13 +117,16 @@ function ResourceItems({ onClick }: { onClick: () => void }) {
   );
 }
 
-function RendererItem({ onClick }: { onClick: () => void }) {
+function RendererItem({ onClick, live }: { onClick: () => void; live: boolean }) {
   const r = useRendererStatus();
+  // GPU load only while the status bar holds the diagnostics poll (otherwise the figure could be stale).
+  const diag = useUi((s) => (live ? s.diag : null));
+  const load = gpuLoadText(diag);
   let text: string;
   let title: string;
   if (r.webglActive > 0) {
-    text = `GPU: WebGL ×${r.webglActive}`;
-    title = `${r.gpuRenderer ?? "GPU renderer string unavailable"}${r.domActive ? `\n${r.domActive} terminal(s) on DOM renderer` : ""}${r.contextLosses ? `\n${r.contextLosses} WebGL context loss(es)` : ""}`;
+    text = `GPU: WebGL ×${r.webglActive}${load ? ` · ${load}` : ""}`;
+    title = `${r.gpuRenderer ?? "GPU renderer string unavailable"}${r.domActive ? `\n${r.domActive} terminal(s) on DOM renderer` : ""}${r.contextLosses ? `\n${r.contextLosses} WebGL context loss(es)` : ""}${diag?.gpu ? `\n\n${gpuTooltip(diag)}` : ""}`;
   } else if (r.domActive > 0) {
     text = "Renderer: DOM (software)";
     title = r.webglSupported ? `WebGL available: ${r.gpuRenderer ?? "unknown GPU"}` : "WebGL unavailable in this WebView";

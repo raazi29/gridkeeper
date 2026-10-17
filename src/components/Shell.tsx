@@ -5,6 +5,7 @@
 import { useEffect, useState } from "react";
 import { useShallow } from "zustand/react/shallow";
 import { installFocusTracking } from "../actions/commands";
+import { installResumeWatch } from "../actions/resume";
 import { installKeybindings } from "../keybindings";
 import { GroupGrid } from "../layout/GroupGrid";
 import { selectActiveGroup, selectActiveWorkspace, useApp } from "../store/appStore";
@@ -30,6 +31,7 @@ export function Shell() {
   useEffect(() => {
     const offKeys = installKeybindings();
     const offFocus = installFocusTracking();
+    const offResume = installResumeWatch();
     const onNewSession = (e: Event) => {
       const detail = (e as CustomEvent<{ groupId?: string } | undefined>).detail;
       const groupId = detail?.groupId ?? selectActiveGroup(useApp.getState())?.id;
@@ -39,6 +41,7 @@ export function Shell() {
     return () => {
       offKeys();
       offFocus();
+      offResume();
       window.removeEventListener("gridkeeper:new-session", onNewSession);
     };
   }, []);

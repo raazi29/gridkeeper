@@ -5,7 +5,10 @@ import { useState } from "react";
 import { useShallow } from "zustand/react/shallow";
 import { errorMessage, ipc } from "../lib/ipc";
 import type { ProcStats } from "../lib/types";
-import { useApp } from "../store/appStore";
+import { selectActiveGroup, useApp } from "../store/appStore";
+import { webglOverBudget } from "../lib/pressure";
+import { MAX_WEBGL } from "../terminal/webglBudget";
+import { GpuSection } from "./GpuSection";
 import { actionToast, useUi } from "../store/uiStore";
 import { useDiagnosticsPoll, useRendererStatus } from "./hooks";
 import { Button } from "./ui/Button";
@@ -23,6 +26,12 @@ export function DiagnosticsPanel({ onClose }: { onClose: () => void }) {
   const names = useApp(useShallow((s) => Object.fromEntries(s.persisted.sessions.map((m) => [m.id, `${m.name}\u0000${m.agent}`]))));
   const pids = useApp(useShallow((s) => Object.fromEntries(Object.values(s.runtime).map((r) => [r.id, r.pid ?? 0]))));
   const [exporting, setExporting] = useState(false);
+  const visibleInGroup = useApp((s) => {
+    const g = selectActiveGroup(s);
+    if (!g) return 0;
+    return g.layout.maximized ? 1 : g.sessionIds.filter((id) => !s.hiddenViews[id]).length;
+  });
+  const overBudget = webglOverBudget(visibleInGroup);
 
   const cores = diag?.logicalCores ?? 1;
   const cpu = (p: ProcStats) => formatCpu(taskManagerCpu(p.cpuPercent, cores));
@@ -172,9 +181,16 @@ export function DiagnosticsPanel({ onClose }: { onClose: () => void }) {
           </div>
         </div>
       </div>
+      <GpuSection diag={diag} renderer={renderer} />
+      {overBudget && (
+        <div className="callout is-warn pressure-note" role="status">
+          {visibleInGroup} terminals are visible in this group. Only {MAX_WEBGL} use WebGL (the browser&apos;s GPU context budget); the rest are drawn by the slower DOM
+          renderer. Hide or move some panes for full GPU rendering.
+        </div>
+      )}
       <p className="explain">
-        CPU is shown like Task Manager: a share of all logical cores. The GPU only accelerates drawing terminal text. Agent CPU — Node/Rust CLIs, git, builds, tests — runs on the CPU
-        and is unaffected by the renderer choice. No GPU usage figure is shown because the app cannot measure it reliably.
+        CPU is shown like Task Manager: a share of all logical cores. The GPU draws terminal text and the UI. Agent CPU — Node/Rust CLIs, git, builds, tests — runs on the CPU and is
+        unaffected by the renderer choice.
       </p>
     </Modal>
   );

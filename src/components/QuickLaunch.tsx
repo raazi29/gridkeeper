@@ -8,6 +8,7 @@ import { selectActiveGroup, selectActiveWorkspace, useApp } from "../store/appSt
 import { useUi } from "../store/uiStore";
 import { useShortcut, withShortcut } from "./hooks";
 import { IconPlus } from "./icons";
+import { MemoryPressureNotice, memoryPressureNow } from "./ResourceWarnings";
 import { useContextMenu, type MenuItem } from "./ui/Menu";
 
 interface LaunchOption {
@@ -77,7 +78,11 @@ export function QuickLaunchButton() {
         type="button"
         className="btn btn-sm btn-primary quick-launch"
         title={withShortcut("New session", scNew)}
-        onClick={(e) => menu.openAt(e.currentTarget, items)}
+        onClick={(e) => {
+          // Non-blocking memory warning at the top of the menu (read when it opens).
+          const pressure = memoryPressureNow();
+          menu.openAt(e.currentTarget, pressure ? [{ label: pressure, disabled: true, onSelect: () => {} }, "separator", ...items] : items);
+        }}
       >
         <IconPlus size={13} />
         New
@@ -93,6 +98,7 @@ export function QuickLaunchPanel() {
   const hasFolder = useApp((s) => !!selectActiveWorkspace(s)?.projectDir);
   return (
     <div className="quick-panel">
+      <MemoryPressureNotice />
       <div className="quick-panel-grid">
         {options.map((o) => (
           <button key={o.key} type="button" className="quick-card" disabled={o.disabled} onClick={() => quickLaunch(o)}>

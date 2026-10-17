@@ -146,6 +146,44 @@ export interface Diagnostics {
   systemMemoryTotal: number;
   systemMemoryUsed: number;
   runningSessions: number;
+  /** Windows GPU performance counters (same source as Task Manager); absent from older backends. */
+  gpu?: GpuStats | null;
+}
+
+/** Busiest engine of each class, percent. */
+export interface EnginePercent {
+  "3d": number;
+  copy: number;
+  video: number;
+  compute: number;
+  other: number;
+}
+
+export interface GpuAdapter {
+  /** Adapter LUID as printed in the counter instance names. */
+  luid: string;
+  dedicatedUsedBytes: number;
+  enginePercent: EnginePercent;
+  /** Holds the app's WebView2 GPU allocations: this adapter draws the UI and terminals. */
+  carriesUi: boolean;
+}
+
+export interface GpuStats {
+  available: boolean;
+  /** First sample after opening the counters: utilization is not known yet. */
+  warmingUp: boolean;
+  webview3dPercent: number;
+  /** Busiest engine of any class (Task Manager's per-process "GPU" column). */
+  webviewTotalPercent: number;
+  webviewDedicatedBytes: number;
+  webviewSharedBytes: number;
+  hostPercent: number;
+  sessionsPercent: number;
+  adapters: GpuAdapter[];
+  engineInstances: number;
+  /** Cost of reading the counters, ms. */
+  sampleMs: number;
+  error?: string;
 }
 
 // ---- persisted state -------------------------------------------------------
@@ -181,6 +219,8 @@ export interface Settings {
   reduceMotion: boolean;
   uiDensity: UiDensity;
   notifications: NotificationSettings;
+  /** Confirm before pasting >64 KiB or >20 lines into a program without bracketed paste. */
+  pasteWarning: boolean;
 }
 
 export interface NotificationSettings {
@@ -270,4 +310,5 @@ export const DEFAULT_SETTINGS: Settings = {
   reduceMotion: false,
   uiDensity: "compact",
   notifications: { enabled: true, onIdle: true, onBell: true, sound: false },
+  pasteWarning: true,
 };

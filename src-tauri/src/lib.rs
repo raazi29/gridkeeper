@@ -13,6 +13,7 @@ pub mod adapters;
 pub mod commands;
 pub mod diagnostics;
 pub mod git;
+pub mod gpu;
 pub mod logging;
 pub mod persistence;
 pub mod profiles;

@@ -52,7 +52,7 @@ export function installKeybindings(): () => void {
     if (!id) return;
     e.preventDefault();
     e.stopPropagation();
-    if (e.repeat && !id.startsWith("session.next") && !id.startsWith("session.prev")) return;
+    if (e.repeat && !id.startsWith("session.next") && !id.startsWith("session.prev") && id !== "terminal.zoomIn" && id !== "terminal.zoomOut") return;
     runCommand(id);
   };
   window.addEventListener("keydown", onKeyDown, true);
