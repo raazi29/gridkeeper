@@ -23,7 +23,7 @@ with every edge on a whole pixel.
 
 | File | Use at | Notes |
 | --- | --- | --- |
-| `gridkeeper-icon-small.svg` | 16 px (also 48 at 3×) | 16 px grid: panes 5 px, gap 2 px, margin 2 px |
+| `gridkeeper-icon-small.svg` | 16 px | 16 px grid: panes 5 px, gap 2 px, margin 2 px |
 | `gridkeeper-icon-24.svg` | 24 px | Windows 11 taskbar at 100 % scale. Panes 8, gap 2, margin 3 |
 | `gridkeeper-icon-32.svg` | 32 px | 16 px design at 2×, 1 px rim, slight gradient on the lit pane |
 | `gridkeeper-icon-mid.svg` | 40–96 px | Full icon without specks or prompt glyph, heavier brackets |
@@ -55,7 +55,7 @@ converted to paths, so no fonts are needed to render them.
   pane is about 29 % of the mark's height. The lockup SVGs already include this padding.
 - **Lockup:** the mark is 2.4× the wordmark's cap height, and the gap between them is 0.8 cap
   heights. Don't rescale the two parts separately.
-- **Minimum size:** mark 16 px (use the small tile icon below 24 px), lockup 96 px wide.
+- **Minimum size:** mark 16 px (use the small tile icon below 24 px), lockup 180 px wide (about a 13 px cap height).
 - **Don't:** recolour the ink panes, light more than one pane, move the lit pane (always
   top-right), add outlines or shadows to the mark, or set the wordmark in another font.
 
