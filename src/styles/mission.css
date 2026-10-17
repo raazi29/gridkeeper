@@ -862,7 +862,7 @@
   margin-top: 10px;
 }
 /* the app's quick-launch button, dressed as a Mission Control button */
-.mc .quick-launch {
+.mc .btn.quick-launch {
   height: 22px;
   padding: 0 8px;
   gap: 4px;
@@ -875,7 +875,7 @@
   letter-spacing: 0.08em;
   text-transform: uppercase;
 }
-.mc .quick-launch:hover {
+.mc .btn.quick-launch:hover {
   background: var(--bg-2);
 }
 
@@ -984,9 +984,18 @@
   letter-spacing: 0.06em;
   text-transform: uppercase;
 }
-.mc-keys {
+.mc-status > span {
+  flex-shrink: 0;
+}
+.mc-status > .mc-keys {
+  flex-shrink: 1;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+/* keyboard selection never scrolls a card under the sticky sign-off dock */
+.mc-scroll {
+  scroll-padding-bottom: 104px;
 }
 .mc-keys kbd {
   font-family: var(--font-mono);
