@@ -118,3 +118,13 @@ describe("resolveBindings", () => {
     expect(bindingsByCommand({ "view.palette": "ctrl+shift+t" })["session.new"]).toBe("");
   });
 });
+
+describe("Mission Control binding", () => {
+  it("binds view.mission to an allowed, unique combo", () => {
+    expect(DEFAULT_BINDINGS["view.mission"]).toBe("ctrl+shift+u");
+    expect(forbiddenReason("ctrl+shift+u")).toBeNull();
+    expect(resolveBindings({}).get("ctrl+shift+u")).toBe("view.mission");
+    const combos = Object.values(DEFAULT_BINDINGS);
+    expect(new Set(combos).size).toBe(combos.length);
+  });
+});

@@ -4,6 +4,7 @@
 import { errorMessage, ipc } from "../lib/ipc";
 import type { AgentKind, SessionId, Workspace } from "../lib/types";
 import { isLive, type AppStore } from "../store/appStore";
+import { recordBroadcast } from "../store/activity";
 
 export interface BroadcastCandidate {
   id: SessionId;
@@ -81,5 +82,6 @@ export async function sendBroadcast(line: string, targets: BroadcastCandidate[])
       }
     }),
   );
+  recordBroadcast(text, targets, failed);
   return { sent, failed };
 }

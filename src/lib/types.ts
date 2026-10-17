@@ -237,6 +237,8 @@ export interface SessionMeta {
   worktree: WorktreeRef | null;
   createdAt: string | null;
   lastExitCode: number | null;
+  /** Team role (lead, scout, builder, reviewer, verifier or custom; [a-z0-9-], <= 24 chars). */
+  role?: string | null;
 }
 
 export interface PersistedState {

@@ -5,6 +5,7 @@ import { clearSession, copyOutput, hideView, restartSession, showView, startSess
 import { isLive, useApp } from "../store/appStore";
 import { useUi } from "../store/uiStore";
 import { useDiagnosticsPoll } from "./hooks";
+import { RolePicker } from "./mission/RoleTag";
 import { IconClose, IconCopy } from "./icons";
 import { Button, IconButton } from "./ui/Button";
 import { Segmented, Toggle } from "./ui/Field";
@@ -103,6 +104,12 @@ function SessionDetails({ id }: { id: string }) {
 
       <div className="inspector-section">
         <Row k="Agent">{AGENT_LABEL[meta.agent]}</Row>
+        <div className="kv">
+          <span className="kv-k">Role</span>
+          <span className="kv-v">
+            <RolePicker value={meta.role ?? null} onChange={(role) => update(id, { role })} />
+          </span>
+        </div>
         {meta.agent === "claude" && (
           <Row k="Account">
             {profile ? (

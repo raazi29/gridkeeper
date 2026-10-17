@@ -33,6 +33,8 @@ export interface NewSessionOptions {
   /** Catalog tool id (agent = "generic"), e.g. "hermes". */
   preset?: string | null;
   start?: boolean;
+  /** Team role (see lib/roles.ts). */
+  role?: string | null;
 }
 
 export function newSession(o: NewSessionOptions): SessionId {
@@ -55,6 +57,7 @@ export function newSession(o: NewSessionOptions): SessionId {
     worktree: o.worktree ?? null,
     createdAt: new Date().toISOString(),
     lastExitCode: null,
+    role: o.role ?? null,
   };
   s.addSessionMeta(o.groupId, meta);
   s.setFocused(meta.id);

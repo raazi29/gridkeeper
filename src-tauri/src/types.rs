@@ -516,6 +516,10 @@ pub struct SessionMeta {
     pub created_at: Option<String>,
     #[serde(default)]
     pub last_exit_code: Option<u32>,
+    /// Team role shown in Mission Control (lead, scout, builder, reviewer, verifier or custom).
+    /// `[a-z0-9-]`, at most 24 chars (normalized by `persistence::sanitize`).
+    #[serde(default)]
+    pub role: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
