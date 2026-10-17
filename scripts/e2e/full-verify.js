@@ -54,8 +54,7 @@
   await check("terminal.bulk20k", async () => {
     await ipc.sessionWrite(b, "1..20000 | % { \"r $_\" }; 'BULK-OK'\r");
     // The echoed command scrolls out of the 5,000-line scrollback; check the output tail instead.
-    return await waitFor(() => /r 20000\s*
-\s*BULK-OK/.test(text(b)), 60000);
+    return await waitFor(() => /r 20000\s+BULK-OK/.test(text(b)), 60000);
   });
 
   // ---- pane UI affordances
