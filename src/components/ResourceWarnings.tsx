@@ -1,6 +1,7 @@
 // Resource-pressure warnings: a status-bar chip and a non-blocking notice shown before starting more
 // sessions. Driven by the shared diagnostics poll; never shown from stale or missing figures.
 
+import { useMemo } from "react";
 import { memoryPressure, memoryPressureLabel } from "../lib/pressure";
 import { isDiagnosticsLive, useUi } from "../store/uiStore";
 import { useDiagnosticsPoll } from "./hooks";
@@ -8,7 +9,10 @@ import { formatMb } from "./util/text";
 import "../styles/tools.css";
 
 function usePressure() {
-  return useUi((s) => memoryPressure(s.diag?.systemMemoryUsed, s.diag?.systemMemoryTotal));
+  // Select primitives only: a selector that builds a new object every call makes React re-render forever.
+  const used = useUi((s) => s.diag?.systemMemoryUsed);
+  const total = useUi((s) => s.diag?.systemMemoryTotal);
+  return useMemo(() => memoryPressure(used, total), [used, total]);
 }
 
 /** Status-bar chip; renders only while memory use is above the threshold. */
