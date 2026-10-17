@@ -34,17 +34,17 @@ cloud agent sessions, no clean way to run several Claude Code accounts at once, 
 
 Based on public information gathered in October 2026 (sources in
 [docs/research-notes/agents-notifications-market.md](docs/research-notes/agents-notifications-market.md));
-features change quickly, so check the projects themselves.
+features change quickly, so check the projects themselves. "?" = not verified in our research.
 
 | | Gridkeeper | Terax | Warp | Wave Terminal | Windows Terminal | Claude Squad | Superset / Conductor |
 |---|---|---|---|---|---|---|---|
 | Native Windows | yes | yes | yes | yes | yes | WSL only (tmux) | macOS-first |
 | Grid of many agent panes | yes | single agent | tabs/panes | blocks | panes | yes (TUI) | yes |
 | Several Claude accounts at once | yes, per pane | no | no | no | manual | no | no |
-| Process-tree containment (no orphans) | Job Objects | — | — | — | — | tmux | — |
-| Attention detection + notifications | yes | hooks | yes | — | — | status | yes |
-| Fleet overview / broadcast input | yes | — | — | — | — | — | partial |
-| Footprint | Tauri, 5 MB installer | Tauri, ~8 MB | Rust/GPU | Electron | native | Go TUI | Electron |
+| Process-tree containment (no orphans) | Job Objects | ? | ? | ? | ? | tmux | ? |
+| Attention detection + notifications | yes | via Claude hooks | ? | ? | — | ? | ? |
+| Fleet overview / broadcast input | yes | ? | ? | ? | — | ? | ? |
+| Footprint | Tauri, 5 MB installer | Tauri, ~7–8 MB | ? | Electron (reported) | native | Go TUI | ? |
 | License | (yours) | Apache-2.0 | proprietary | Apache-2.0 | MIT | AGPL-3.0 | ELv2 / closed |
 
 Known public complaints about alternatives that motivated this design include Warp issues on Windows for high
