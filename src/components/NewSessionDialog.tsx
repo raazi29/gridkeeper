@@ -12,6 +12,7 @@ import { IconBranch, IconFolder, IconWarn } from "./icons";
 import { Button } from "./ui/Button";
 import { Field, Input, Segmented, Select } from "./ui/Field";
 import { Modal } from "./ui/Modal";
+import { RolePicker } from "./mission/RoleTag";
 import { pickExecutable, pickFolder } from "./util/pick";
 import { AGENT_LABEL, profileStatusText } from "./util/session";
 import { defaultWorktreePath, isValidBranchName, splitArgs } from "./util/text";
@@ -46,6 +47,7 @@ export function NewSessionDialog({ groupId, preset, onClose }: { groupId?: strin
   const [wtPath, setWtPath] = useState("");
   const [wtPathEdited, setWtPathEdited] = useState(false);
   const [name, setName] = useState("");
+  const [role, setRole] = useState<string | null>(null);
   const [argsText, setArgsText] = useState("");
   const [command, setCommand] = useState("");
   /** Catalog tool id when agent = generic ("" = custom command). */
@@ -217,6 +219,7 @@ export function NewSessionDialog({ groupId, preset, onClose }: { groupId?: strin
           preset: agent === "generic" && tool ? tool : null,
           args,
           worktree,
+          role,
         });
       }
       useUi.getState().setLastSession({ agent, profileId: agent === "claude" ? profileId : last.profileId });
@@ -449,6 +452,10 @@ export function NewSessionDialog({ groupId, preset, onClose }: { groupId?: strin
 
         <Field label="Name" htmlFor="ns-name">
           <Input id="ns-name" value={name} onChange={(e) => setName(e.target.value)} placeholder={`${AGENT_LABEL[agent]} (auto)`} />
+        </Field>
+
+        <Field label="Role" htmlFor="ns-role" hint="Optional team role, shown in the pane header and Mission Control">
+          <RolePicker id="ns-role" value={role} onChange={setRole} />
         </Field>
 
         <Field label="Arguments" htmlFor="ns-args" hint={args.length ? <span className="mono">{args.map((a) => (/\s/.test(a) || a === "" ? JSON.stringify(a) : a)).join("  ")}</span> : "Optional, quotes respected"}>

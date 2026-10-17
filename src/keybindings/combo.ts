@@ -54,6 +54,7 @@ export const DEFAULT_BINDINGS: Record<string, string> = {
   "attention.next": "ctrl+shift+j",
   "view.fleet": "ctrl+shift+o",
   "session.broadcast": "ctrl+shift+k",
+  "view.mission": "ctrl+shift+u",
 };
 
 const CODE_KEYS: Record<string, string> = {

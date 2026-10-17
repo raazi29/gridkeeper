@@ -7,6 +7,7 @@ import type { GitInfo, LayoutPreset } from "../lib/types";
 import { selectActiveGroup, selectActiveWorkspace, useApp } from "../store/appStore";
 import { useShortcut, withShortcut } from "./hooks";
 import { IconBranch, IconColumns, IconFolder, IconGrid, IconInspector, IconRows } from "./icons";
+import { IconMission } from "./mission/IconMission";
 import { QuickLaunchButton } from "./QuickLaunch";
 import { IconButton } from "./ui/Button";
 import { pickFolder, revealPath } from "./util/pick";
@@ -19,6 +20,7 @@ export function WorkspaceHeader() {
   const preset = useApp((s) => selectActiveGroup(s)?.layout.preset ?? "grid");
   const inspectorOpen = useApp((s) => s.persisted.settings.inspectorOpen);
   const scInspector = useShortcut("view.toggleInspector");
+  const scMission = useShortcut("view.mission");
 
   const [git, setGit] = useState<GitInfo | null>(null);
   const [gitBusy, setGitBusy] = useState(false);
@@ -109,6 +111,9 @@ export function WorkspaceHeader() {
           </IconButton>
         </div>
         <span className="divider-v" />
+        <IconButton label={withShortcut("Mission Control", scMission)} onClick={() => runCommand("view.mission")}>
+          <IconMission size={15} />
+        </IconButton>
         <IconButton label={withShortcut(inspectorOpen ? "Hide inspector" : "Show inspector", scInspector)} active={inspectorOpen} onClick={() => runCommand("view.toggleInspector")}>
           <IconInspector size={15} />
         </IconButton>

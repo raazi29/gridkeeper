@@ -17,6 +17,7 @@ import {
   useApp,
 } from "../store/appStore";
 import { nextAttentionTarget, useAttention, useAttentionUi } from "../store/attention";
+import { useMission } from "../store/mission";
 import { confirmDialog, useUi } from "../store/uiStore";
 import { focusTerminal } from "../terminal/registry";
 
@@ -339,6 +340,8 @@ export const COMMANDS: Command[] = [
   { id: "view.comms", title: "Comms: recent alerts", category: "View", run: () => useAttentionUi.getState().toggleComms() },
   { id: "attention.markAllRead", title: "Comms: mark all alerts read", category: "View", run: () => useAttention.getState().markAllRead() },
   { id: "view.profiles", title: "Claude account profiles", category: "View", run: () => toggleDialog("profiles") },
+  { id: "view.mission", title: "Mission Control (team view of this workspace)", category: "View", run: () => useMission.getState().toggle() },
+  { id: "formation.launch", title: "Launch formation (agent team template)…", category: "Workspace", run: () => useMission.getState().openFormation() },
 ];
 
 const byId = new Map(COMMANDS.map((c) => [c.id, c]));

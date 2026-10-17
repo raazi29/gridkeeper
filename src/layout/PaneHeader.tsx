@@ -21,6 +21,8 @@ import { confirmAction } from "./confirm";
 import { AgentGlyph, IconBranch, IconClose, IconMaximize, IconMore, IconPlay, IconRestart, IconRestore, IconStop } from "./icons";
 import { beginPaneDrag, endPaneDrag } from "./paneDrag";
 import { AttentionLamp } from "../components/AttentionBits";
+import { RoleTag } from "../components/mission/RoleTag";
+import { roleMenuItems } from "../components/mission/roleMenu";
 
 export interface PaneHeaderProps {
   sessionId: SessionId;
@@ -233,6 +235,8 @@ export const PaneHeader = memo(function PaneHeader({ sessionId, groupId, index, 
   }, [live, meta?.name, sessionId]);
 
   const closeMenu = useCallback(() => setMenuAnchor(null), []);
+  const [roleAnchor, setRoleAnchor] = useState<HTMLElement | null>(null);
+  const closeRoleMenu = useCallback(() => setRoleAnchor(null), []);
 
   if (!meta) return <div className="pane-header" />;
 
@@ -246,6 +250,7 @@ export const PaneHeader = memo(function PaneHeader({ sessionId, groupId, index, 
     { label: "Copy output", onSelect: () => void copyOutput(sessionId) },
     { label: "Clear", onSelect: () => void clearSession(sessionId) },
     { label: "Hide view", onSelect: () => hideView(sessionId) },
+    { label: "Role ▸", onSelect: () => setRoleAnchor(menuAnchor) },
     {
       label: "Restart fresh",
       separatorBefore: true,
@@ -334,6 +339,7 @@ export const PaneHeader = memo(function PaneHeader({ sessionId, groupId, index, 
             {meta.name}
           </span>
         )}
+        <RoleTag role={meta.role} />
         {meta.agent === "claude" && (
           <span
             className={`pane-chip pane-chip--account${profileWarn ? " pane-chip--warn" : ""}`}
@@ -401,6 +407,7 @@ export const PaneHeader = memo(function PaneHeader({ sessionId, groupId, index, 
         </button>
       </div>
       {menuAnchor && <PaneMenu anchor={menuAnchor} items={menuItems} onClose={closeMenu} />}
+      {roleAnchor && <PaneMenu anchor={roleAnchor} items={roleMenuItems(sessionId, meta.role ?? null)} onClose={closeRoleMenu} />}
     </div>
   );
 });

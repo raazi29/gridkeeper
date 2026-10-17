@@ -246,6 +246,23 @@ fn sanitize_settings(s: &mut Settings) {
     s.keybindings.retain(|k, v| !has_nul(k) && !has_nul(v));
 }
 
+/// Session role: lower-case `[a-z0-9-]`, at most 24 characters; anything else is dropped.
+fn normalize_role(raw: &str) -> Option<String> {
+    let mut out = String::new();
+    for c in raw.trim().chars().flat_map(char::to_lowercase) {
+        if out.len() >= 24 {
+            break;
+        }
+        if c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-' {
+            out.push(c);
+        } else if c == ' ' || c == '_' {
+            out.push('-');
+        }
+    }
+    let out = out.trim_matches('-').to_string();
+    (!out.is_empty()).then_some(out)
+}
+
 /// Repair a state document in place-ish. Returns the repaired state and a
 /// list of human-readable notes about what was changed (for logs; no values).
 pub fn sanitize(mut state: PersistedState) -> (PersistedState, Vec<String>) {
@@ -276,6 +293,7 @@ pub fn sanitize(mut state: PersistedState) -> (PersistedState, Vec<String>) {
         if m.worktree.as_ref().is_some_and(|w| w.path.trim().is_empty()) {
             m.worktree = None;
         }
+        m.role = m.role.as_deref().and_then(normalize_role);
     }
     let known: HashSet<String> = state.sessions.iter().map(|m| m.id.clone()).collect();
 
@@ -467,6 +485,7 @@ mod tests {
             worktree: None,
             created_at: None,
             last_exit_code: None,
+            role: None,
         }
     }
 
@@ -637,6 +656,24 @@ mod tests {
         assert_eq!(st.settings.font_size, Settings::default().font_size);
         assert_eq!(st.settings.line_height, 2.0);
         assert_eq!(st.sessions[0].env, vec![EnvVar { key: "MY_FLAG".into(), value: "1".into() }]);
+    }
+
+    #[test]
+    fn sanitize_normalizes_roles() {
+        let mut st = sample();
+        st.sessions[0].role = Some("  Lead ".into());
+        st.sessions[1].role = Some("a-very-long-custom-role-name-here".into());
+        let (st, _) = sanitize(st);
+        assert_eq!(st.sessions[0].role.as_deref(), Some("lead"));
+        // Capped at 24 chars, trailing dash trimmed.
+        assert_eq!(st.sessions[1].role.as_deref(), Some("a-very-long-custom-role"));
+        assert_eq!(normalize_role("<script>").as_deref(), Some("script"));
+        assert_eq!(normalize_role("Db Migrator").as_deref(), Some("db-migrator"));
+        assert_eq!(normalize_role("!!!"), None);
+        assert_eq!(normalize_role("   "), None);
+        // Older files without the field still load.
+        let v: SessionMeta = serde_json::from_value(json!({"id":"x","name":"x","agent":"claude","cwd":"C:\\"})).unwrap();
+        assert_eq!(v.role, None);
     }
 
     #[test]

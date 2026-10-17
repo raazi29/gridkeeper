@@ -2,6 +2,7 @@
 // empty group. Starts immediately in the active group using the workspace's project folder; anything
 // more specific (worktree, args, count) goes through the full New Session dialog.
 
+import { runCommand } from "../actions/commands";
 import { newSession } from "../actions/sessions";
 import type { AgentKind } from "../lib/types";
 import { selectActiveGroup, selectActiveWorkspace, useApp } from "../store/appStore";
@@ -70,6 +71,7 @@ export function QuickLaunchButton() {
     ),
     "separator",
     { label: "More options…", hint: scNew ?? undefined, onSelect: openFullDialog },
+    { label: "Launch formation…", onSelect: () => runCommand("formation.launch") },
   ];
   return (
     <>

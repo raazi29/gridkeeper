@@ -18,6 +18,7 @@ This document describes what the code does today. File paths are relative to the
 12. [Security model](#12-security-model)
 13. [Diagnostics and attribution](#13-diagnostics-and-attribution)
 14. [Logging](#14-logging)
+15. [Mission Control, roles and formations](#15-mission-control-roles-and-formations)
 
 ---
 
@@ -460,3 +461,13 @@ Conversation ids passed to agents must be 8–64 characters of hex digits and da
 - The default level is `info`. `GRIDKEEPER_LOG` takes standard `EnvFilter` syntax, for example `GRIDKEEPER_LOG=debug,gridkeeper_lib::pty=trace`.
 - Debug builds also log human-readable, redacted lines to stdout.
 - Frontend messages arrive through `log_frontend` (redacted, target `frontend`).
+
+---
+
+## 15. Mission Control, roles and formations
+
+- **Roles.** `SessionMeta.role` (optional, `[a-z0-9-]`, ≤ 24 chars; normalized by `persistence::sanitize` / `lib/roles.ts`). Built-ins: lead, scout, builder, reviewer, verifier; colours are the `--role-*` variables in `src/styles/mission.css`.
+- **Activity log** (`src/store/activity.ts`): an in-memory ring (`ACTIVITY_LIMIT` = 500) of real events — process start / exit / failure, attention transitions into working / waiting / done / error, broadcasts, worktrees created, formation launches. Installed once by `components/mission/MissionLayer.tsx`; never persisted.
+- **Output rate** (`src/store/rates.ts`): while Mission Control is open — and only then — `session_list` is polled once per second (self-rescheduling, never overlapping, skipped while the window is hidden). Rates are derived from `bytesOut` deltas (a new `startedAt` or a smaller counter is a reset). This is PTY output volume in KB/s, not tokens.
+- **Mission Control** (`components/mission/*`, `view.mission`, Ctrl+Shift+U): lead node(s), one lane per group, a sign-off node (sessions waiting / done), SVG connectors measured from the DOM (ResizeObserver), an activity-river canvas (≤ 10 fps, only while visible) and the session log. Every figure is real; nothing is estimated.
+- **Formations** (`actions/formationPlan.ts` pure planner, `actions/formations.ts` executor, `formation.launch`): the plan lists every group, session and `git worktree add -b` command and is confirmed once. Worktrees are created one by one; the first failure stops the launch and nothing is ever deleted. Optional starter prompts (`actions/starterPrompt.ts`) are sent once per session after it has started and gone quiet, and are held (with a "Send now" toast) while the agent shows a trust / permission / login question, so nothing is auto-approved. Saved formations live in `localStorage` (no prompts, env or conversation ids).

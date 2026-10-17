@@ -16,6 +16,7 @@ import { DialogHost } from "./DialogHost";
 import { GroupTabs } from "./GroupTabs";
 import { IconClose, IconWarn } from "./icons";
 import { Inspector } from "./Inspector";
+import { MissionLayer } from "./mission/MissionLayer";
 import { Sidebar } from "./Sidebar";
 import { StatusBar } from "./StatusBar";
 import { Toasts } from "./Toasts";
@@ -67,6 +68,7 @@ export function Shell() {
       <ConfirmDialog />
       <Toasts />
       <AttentionLayer />
+      <MissionLayer />
     </div>
   );
 }

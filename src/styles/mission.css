@@ -1,0 +1,804 @@
+/* Mission Control, formations and role tags. Only theme variables are used; the role colours below are
+   the only new colours, mixed with --text-0 so they gain contrast on dark AND light themes. */
+
+:root {
+  --role-lead: color-mix(in oklab, #b69cff 76%, var(--text-0));
+  --role-scout: color-mix(in oklab, #5aa9ff 76%, var(--text-0));
+  --role-builder: color-mix(in oklab, #ff9a3d 78%, var(--text-0));
+  --role-reviewer: color-mix(in oklab, #34c98a 76%, var(--text-0));
+  --role-verifier: color-mix(in oklab, #ff6fae 76%, var(--text-0));
+  --role-custom: var(--text-1);
+
+  --mc-line: var(--border-strong);
+  --mc-fs: 11.5px;
+  --mc-fs-micro: 10px;
+}
+
+/* ---- role tag (pane header, cards, log) ---------------------------------------------------- */
+
+.role-tag {
+  --rc: var(--role-custom);
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  flex-shrink: 0;
+  height: 16px;
+  padding: 0 5px;
+  border: 1px solid color-mix(in srgb, var(--rc) 55%, transparent);
+  border-radius: var(--radius-s);
+  color: var(--rc);
+  background: color-mix(in srgb, var(--rc) 10%, transparent);
+  font-family: var(--font-mono);
+  font-size: var(--mc-fs-micro);
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  line-height: 1;
+  white-space: nowrap;
+}
+.role-tag-glyph {
+  font-size: 9px;
+}
+.role-tag.is-bare {
+  border: 0;
+  background: none;
+  padding: 0;
+  height: auto;
+}
+
+.role-picker {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+.role-picker .select {
+  flex: 1;
+}
+.role-picker .input {
+  flex: 1;
+}
+
+/* ---- overlay ------------------------------------------------------------------------------- */
+
+.mc-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 90; /* below .modal-backdrop (100) so the formation dialog and confirms sit above */
+  display: flex;
+  background: color-mix(in srgb, var(--bg-0) 70%, transparent);
+  padding: 14px;
+}
+.mc {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-0);
+  border: 1px solid var(--mc-line);
+  border-radius: var(--radius-m);
+  font-family: var(--font-mono);
+  font-size: var(--mc-fs);
+  color: var(--text-1);
+  outline: none;
+  overflow: hidden;
+  user-select: none;
+}
+.mc-micro {
+  font-size: var(--mc-fs-micro);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-2);
+}
+.mc-strong {
+  color: var(--text-0);
+}
+
+/* header strip */
+.mc-head {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-1);
+  min-height: 38px;
+  flex-wrap: wrap;
+}
+.mc-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--text-0);
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  font-size: var(--mc-fs);
+}
+.mc-title-glyph {
+  color: var(--accent);
+}
+.mc-head-meta {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  white-space: nowrap;
+}
+.mc-path {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--text-2);
+  min-width: 0;
+}
+.mc-branch {
+  color: var(--text-1);
+}
+.mc-legend {
+  display: inline-flex;
+  gap: 10px;
+  white-space: nowrap;
+}
+.mc-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--text-1);
+}
+.mc-legend-sq {
+  width: 8px;
+  height: 8px;
+  background: var(--rc, var(--role-custom));
+}
+.mc-bracket {
+  color: var(--text-2);
+}
+.mc-bracket b {
+  color: var(--text-0);
+  font-weight: 600;
+}
+.mc-head-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.mc-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 22px;
+  padding: 0 8px;
+  border: 1px solid var(--mc-line);
+  border-radius: var(--radius-s);
+  background: transparent;
+  color: var(--text-1);
+  font-family: var(--font-mono);
+  font-size: var(--mc-fs-micro);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+.mc-btn:hover {
+  color: var(--text-0);
+  border-color: var(--text-2);
+  background: var(--bg-2);
+}
+.mc-btn.is-primary {
+  border-color: color-mix(in srgb, var(--accent) 60%, transparent);
+  color: var(--text-0);
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+}
+
+/* ---- canvas -------------------------------------------------------------------------------- */
+
+.mc-scroll {
+  flex: 1;
+  min-height: 120px;
+  overflow: auto;
+}
+.mc-canvas {
+  position: relative;
+  padding: 16px 18px 18px;
+  min-height: 100%;
+}
+.mc-links {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  overflow: visible;
+}
+.mc-link {
+  fill: none;
+  stroke: var(--mc-line);
+  stroke-width: 1;
+  stroke-dasharray: 3 4;
+}
+.mc-link.is-active {
+  stroke: color-mix(in srgb, var(--role-builder) 70%, var(--text-2));
+  stroke-dasharray: 6 4;
+  animation: mc-flow 0.9s linear infinite;
+}
+.mc-link.is-needs {
+  stroke: var(--accent);
+  stroke-dasharray: none;
+}
+.mc-link.is-review {
+  stroke: color-mix(in srgb, var(--ok) 60%, var(--text-2));
+  stroke-dasharray: none;
+}
+.mc.is-still .mc-link.is-active {
+  animation: none;
+}
+@keyframes mc-flow {
+  to {
+    stroke-dashoffset: -20;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .mc-link.is-active {
+    animation: none;
+  }
+}
+
+.mc-row {
+  position: relative;
+  display: flex;
+  justify-content: center;
+}
+.mc-row + .mc-row,
+.mc-lanes + .mc-row,
+.mc-row + .mc-lanes {
+  margin-top: 34px;
+}
+
+/* nodes: thin box, corner label */
+.mc-node {
+  --rc: var(--text-2);
+  position: relative;
+  border: 1px dashed var(--mc-line);
+  border-radius: var(--radius-s);
+  background: var(--bg-1);
+  padding: 14px 10px 10px;
+  min-width: 0;
+}
+.mc-node.is-solid {
+  border-style: solid;
+}
+.mc-node.is-needs {
+  border: 1px solid var(--accent);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 25%, transparent);
+}
+.mc-node-label {
+  position: absolute;
+  top: -7px;
+  left: 8px;
+  padding: 0 5px;
+  background: var(--bg-0);
+  color: var(--rc);
+  font-size: var(--mc-fs-micro);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  line-height: 14px;
+  white-space: nowrap;
+}
+.mc-node-label-right {
+  left: auto;
+  right: 8px;
+  color: var(--text-2);
+}
+.mc-lead {
+  width: min(760px, 100%);
+  --rc: var(--role-lead);
+  border-color: color-mix(in srgb, var(--role-lead) 50%, var(--mc-line));
+}
+.mc-lead.is-placeholder {
+  text-align: center;
+  color: var(--text-2);
+  padding: 16px 12px;
+}
+.mc-lead-phases {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin: 0 0 8px;
+  color: var(--text-2);
+}
+.mc-phase {
+  color: var(--text-1);
+}
+.mc-phase-mark {
+  margin-right: 4px;
+}
+.mc-phase.is-done .mc-phase-mark {
+  color: var(--ok);
+}
+.mc-phase.is-active .mc-phase-mark {
+  color: var(--role-builder);
+}
+.mc-phase.is-needs .mc-phase-mark {
+  color: var(--accent);
+}
+.mc-assign {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+  margin-top: 8px;
+}
+.mc-assign select {
+  font-family: var(--font-mono);
+  font-size: var(--mc-fs);
+  background: var(--bg-2);
+  color: var(--text-0);
+  border: 1px solid var(--mc-line);
+  border-radius: var(--radius-s);
+  height: 22px;
+}
+
+.mc-lanes {
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 26px 14px;
+  align-items: start;
+}
+@media (min-width: 900px) {
+  .mc-node.is-wide {
+    grid-column: span 2;
+  }
+}
+.mc-lane-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+  color: var(--text-2);
+  white-space: nowrap;
+}
+.mc-progress {
+  flex: 1;
+  height: 4px;
+  min-width: 40px;
+  background: var(--bg-3);
+  position: relative;
+}
+.mc-progress > span {
+  position: absolute;
+  inset: 0 auto 0 0;
+  background: var(--ok);
+}
+.mc-lane-stats {
+  display: inline-flex;
+  gap: 8px;
+}
+.mc-lane-stats .is-working {
+  color: var(--role-builder);
+}
+.mc-lane-stats .is-needs {
+  color: var(--accent);
+}
+.mc-lane-stats .is-err {
+  color: var(--err);
+}
+.mc-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 6px;
+}
+.mc-empty {
+  color: var(--text-2);
+  padding: 6px 2px;
+}
+
+/* session mini card */
+.mc-card {
+  --rc: var(--role-custom);
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 6px 7px 5px 9px;
+  border: 1px dashed var(--mc-line);
+  border-radius: var(--radius-s);
+  background: var(--bg-0);
+  cursor: pointer;
+  min-width: 0;
+  outline: none;
+}
+.mc-card::before {
+  content: "";
+  position: absolute;
+  left: -1px;
+  top: 4px;
+  bottom: 4px;
+  width: 2px;
+  background: var(--rc);
+}
+.mc-card.is-live {
+  border-style: solid;
+}
+.mc-card.is-needs {
+  border: 1px solid var(--accent);
+}
+.mc-card.is-error {
+  border: 1px solid color-mix(in srgb, var(--err) 70%, transparent);
+}
+.mc-card:hover {
+  background: var(--bg-2);
+}
+.mc-card.is-selected,
+.mc-card:focus-visible {
+  background: var(--bg-2);
+  box-shadow: 0 0 0 1px var(--accent-ring);
+}
+.mc-card-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  white-space: nowrap;
+}
+.mc-card-name {
+  color: var(--text-0);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+  flex: 1;
+}
+.mc-card-glyph {
+  display: inline-flex;
+  color: var(--text-2);
+}
+.mc-card-meta {
+  color: var(--text-2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+.mc-card-meta .is-working {
+  color: var(--role-builder);
+}
+.mc-card-meta .is-waiting {
+  color: var(--accent);
+}
+.mc-card-meta .is-error {
+  color: var(--err);
+}
+.mc-card-meta .is-done {
+  color: var(--ok);
+}
+.mc-account {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  color: var(--text-1);
+  max-width: 90px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.mc-account-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.mc-spark {
+  flex: 1;
+  min-width: 40px;
+  height: 14px;
+  color: var(--rc);
+}
+.mc-spark-none {
+  flex: 1;
+  color: var(--text-2);
+  font-size: var(--mc-fs-micro);
+}
+.mc-out {
+  color: var(--text-1);
+  min-width: 62px;
+  text-align: right;
+}
+.mc-res {
+  color: var(--text-2);
+}
+
+/* sign-off */
+.mc-signoff {
+  width: min(760px, 100%);
+  --rc: var(--ok);
+}
+.mc-signoff-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.mc-chip {
+  --rc: var(--role-custom);
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 20px;
+  padding: 0 7px;
+  border: 1px solid var(--mc-line);
+  border-radius: var(--radius-s);
+  background: var(--bg-0);
+  color: var(--text-1);
+  font-family: var(--font-mono);
+  font-size: var(--mc-fs);
+  cursor: pointer;
+}
+.mc-chip:hover {
+  color: var(--text-0);
+  border-color: var(--text-2);
+}
+.mc-chip.is-waiting {
+  border-color: var(--accent);
+}
+.mc-chip-sq {
+  width: 6px;
+  height: 6px;
+  background: var(--rc);
+}
+
+/* ---- activity river ------------------------------------------------------------------------ */
+
+.mc-river {
+  position: relative;
+  height: 86px;
+  flex-shrink: 0;
+  border-top: 1px solid var(--border);
+  background: var(--bg-0);
+}
+.mc-river canvas {
+  position: absolute;
+  inset: 18px 0 14px 0;
+  width: 100%;
+  height: calc(100% - 32px);
+}
+.mc-river-label {
+  position: absolute;
+  top: 4px;
+  left: 12px;
+}
+.mc-river-axis {
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  bottom: 2px;
+  display: flex;
+  justify-content: space-between;
+  color: var(--text-2);
+  font-size: var(--mc-fs-micro);
+}
+.mc-river-note {
+  position: absolute;
+  top: 4px;
+  right: 12px;
+}
+
+/* ---- session log --------------------------------------------------------------------------- */
+
+.mc-log {
+  display: flex;
+  flex-direction: column;
+  height: 190px;
+  flex-shrink: 0;
+  border-top: 1px solid var(--border);
+  background: var(--bg-1);
+}
+.mc-log-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 5px 12px;
+  border-bottom: 1px solid var(--border);
+}
+.mc-seg {
+  display: inline-flex;
+  border: 1px solid var(--mc-line);
+  border-radius: var(--radius-s);
+  overflow: hidden;
+}
+.mc-seg button {
+  border: 0;
+  background: transparent;
+  color: var(--text-2);
+  font-family: var(--font-mono);
+  font-size: var(--mc-fs-micro);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 2px 8px;
+  cursor: pointer;
+}
+.mc-seg button + button {
+  border-left: 1px solid var(--mc-line);
+}
+.mc-seg button[aria-checked="true"] {
+  color: var(--text-0);
+  background: var(--bg-3);
+}
+.mc-log-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 3px 0;
+  user-select: text;
+}
+.mc-log-row {
+  display: grid;
+  grid-template-columns: 64px 150px 1fr auto;
+  gap: 10px;
+  padding: 1px 12px;
+  line-height: 17px;
+  white-space: nowrap;
+}
+.mc-log-row:hover {
+  background: var(--bg-2);
+}
+.mc-log-time {
+  color: var(--text-2);
+}
+.mc-log-who {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--rc, var(--text-1));
+}
+.mc-log-msg {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--text-1);
+}
+.mc-log-res {
+  color: var(--text-2);
+  text-align: right;
+}
+.mc-log-row.is-ok .mc-log-res {
+  color: var(--ok);
+}
+.mc-log-row.is-needs .mc-log-res,
+.mc-log-row.is-needs .mc-log-msg {
+  color: var(--accent);
+}
+.mc-log-row.is-error .mc-log-res,
+.mc-log-row.is-error .mc-log-msg {
+  color: var(--err);
+}
+.mc-log-empty {
+  padding: 10px 12px;
+  color: var(--text-2);
+}
+.mc-log-jump {
+  margin-left: auto;
+}
+
+/* ---- status line --------------------------------------------------------------------------- */
+
+.mc-status {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 4px 12px;
+  border-top: 1px solid var(--border);
+  background: var(--bg-1);
+  white-space: nowrap;
+  overflow: hidden;
+  color: var(--text-2);
+}
+.mc-status .mc-spacer {
+  flex: 1;
+}
+.mc-status b {
+  color: var(--text-0);
+  font-weight: 600;
+}
+.mc-status .is-needs b {
+  color: var(--accent);
+}
+.mc-status .is-working b {
+  color: var(--role-builder);
+}
+
+/* ---- formation dialog ---------------------------------------------------------------------- */
+
+.fm-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+  gap: 6px;
+}
+.fm-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  text-align: left;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-m);
+  background: var(--bg-1);
+  cursor: pointer;
+}
+.fm-card:hover {
+  border-color: var(--border-strong);
+}
+.fm-card.is-selected {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+.fm-card-name {
+  color: var(--text-0);
+  font-weight: 600;
+  font-size: var(--fs-s);
+}
+.fm-card-desc {
+  color: var(--text-2);
+  font-size: var(--fs-xs);
+  line-height: 1.35;
+}
+.fm-card-del {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+}
+.fm-plan {
+  margin: 0;
+  max-height: 220px;
+  overflow: auto;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-s);
+  background: var(--bg-0);
+  color: var(--text-1);
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  line-height: 1.5;
+  white-space: pre;
+  user-select: text;
+}
+.fm-roles {
+  display: grid;
+  grid-template-columns: 110px 1fr;
+  gap: 6px 10px;
+  align-items: center;
+}
+.fm-role-name {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.fm-textarea {
+  width: 100%;
+  min-height: 44px;
+  resize: vertical;
+  font-family: var(--font-mono);
+  font-size: var(--fs-s);
+  padding: 5px 7px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-s);
+  background: var(--bg-0);
+  color: var(--text-0);
+}
+.fm-msgs {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: var(--fs-xs);
+}
+.fm-msg-warn {
+  color: var(--warn);
+}
+.fm-msg-err {
+  color: var(--err);
+}
+.fm-row {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.fm-save {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+  margin-right: auto;
+}
