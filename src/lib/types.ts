@@ -6,7 +6,9 @@ export type AgentKind = "powershell" | "claude" | "codex" | "generic";
 export type ResumeMode =
   | { mode: "none" }
   | { mode: "continue" }
-  | { mode: "session"; id: string };
+  | { mode: "session"; id: string }
+  /** The agent's own interactive picker (claude --resume, codex resume). */
+  | { mode: "pick" };
 
 export interface EnvVar {
   key: string;

@@ -45,6 +45,10 @@ impl AgentAdapter for CodexAdapter {
             ResumeMode::Continue => {
                 plan.arg("resume").arg("--last");
             }
+            ResumeMode::Pick => {
+                // Interactive picker (cwd-filtered): used when several panes would otherwise share --last.
+                plan.arg("resume");
+            }
             ResumeMode::Session { id } => {
                 validate_session_id(id)?;
                 plan.arg("resume").arg(id.clone());

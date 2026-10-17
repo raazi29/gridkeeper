@@ -226,8 +226,15 @@ export async function restoreSessions() {
   const inGroups = new Set(persisted.workspaces.flatMap((w) => w.groups.flatMap((g) => g.sessionIds)));
   const toStart = persisted.sessions.filter((m) => m.autoStart && inGroups.has(m.id));
   // Stagger launches slightly so many agents don't all hit the disk/network in the same tick.
+  // Codex can't pin a conversation id up front, so `resume --last` in a folder shared by several Codex
+  // panes would make them all resume the SAME conversation. Those panes get Codex's picker instead.
+  const codexPerCwd = new Map<string, number>();
+  for (const m of toStart)
+    if (m.agent === "codex" && m.resumeOnRestore.mode === "continue")
+      codexPerCwd.set(m.cwd.toLowerCase(), (codexPerCwd.get(m.cwd.toLowerCase()) ?? 0) + 1);
   for (const m of toStart) {
-    void startSession(m.id, m.resumeOnRestore);
+    const shared = m.agent === "codex" && m.resumeOnRestore.mode === "continue" && (codexPerCwd.get(m.cwd.toLowerCase()) ?? 0) > 1;
+    void startSession(m.id, shared ? { mode: "pick" } : m.resumeOnRestore);
     await new Promise((r) => setTimeout(r, 120));
   }
 }

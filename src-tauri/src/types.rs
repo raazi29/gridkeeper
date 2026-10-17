@@ -80,6 +80,8 @@ pub enum ResumeMode {
     Continue,
     /// Resume a specific conversation id.
     Session { id: String },
+    /// Open the agent's own interactive conversation picker (claude --resume, codex resume).
+    Pick,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

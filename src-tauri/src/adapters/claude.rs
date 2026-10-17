@@ -108,6 +108,10 @@ impl AgentAdapter for ClaudeAdapter {
             ResumeMode::Continue => {
                 plan.arg("--continue");
             }
+            ResumeMode::Pick => {
+                // Interactive picker of this profile's conversations.
+                plan.arg("--resume");
+            }
             ResumeMode::Session { id } => {
                 validate_session_id(id)?;
                 let exists = config_root.as_deref().map(|r| transcript_exists(r, id)).unwrap_or(false);
