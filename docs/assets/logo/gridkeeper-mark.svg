@@ -1,0 +1,3 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="172 172 680 680"><title>Gridkeeper</title>
+<path d="M196 358V250a54 54 0 0 1 54-54h108M666 196h108a54 54 0 0 1 54 54v108M828 666v108a54 54 0 0 1-54 54H666M358 828H250a54 54 0 0 1-54-54V666" fill="none" stroke="#e7ecf4" stroke-width="42" stroke-linecap="round" stroke-linejoin="round"/><rect x="290" y="290" width="200" height="200" rx="40" fill="#e7ecf4"/><rect x="534" y="290" width="200" height="200" rx="40" fill="#4cc2ff"/><rect x="290" y="534" width="200" height="200" rx="40" fill="#e7ecf4" fill-opacity="0.5"/><rect x="534" y="534" width="200" height="200" rx="40" fill="#e7ecf4" fill-opacity="0.5"/>
+</svg>

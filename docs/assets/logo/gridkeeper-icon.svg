@@ -1,0 +1,96 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <title>Gridkeeper</title>
+  <!-- Gridkeeper app icon, full detail (use at 48 px and up; see gridkeeper-icon-small.svg below that).
+       Deep-space tile, HUD corner brackets, a 2x2 grid of panes; one pane lit with the keeper's signal. -->
+  <defs>
+    <clipPath id="tileClip">
+      <rect x="40" y="40" width="944" height="944" rx="208"/>
+    </clipPath>
+
+    <!-- Tile: cool deep-space falloff, lightest just behind the lit pane. -->
+    <radialGradient id="tileFill" cx="600" cy="420" r="720" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#132036"/>
+      <stop offset="0.45" stop-color="#0b111c"/>
+      <stop offset="1" stop-color="#05070b"/>
+    </radialGradient>
+    <radialGradient id="vignette" cx="512" cy="512" r="700" gradientUnits="userSpaceOnUse">
+      <stop offset="0.55" stop-color="#000" stop-opacity="0"/>
+      <stop offset="1" stop-color="#000" stop-opacity="0.55"/>
+    </radialGradient>
+    <linearGradient id="rim" x1="0" y1="40" x2="0" y2="984" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#b9d6f5" stop-opacity="0.42"/>
+      <stop offset="0.5" stop-color="#9cc4ee" stop-opacity="0.12"/>
+      <stop offset="1" stop-color="#9cc4ee" stop-opacity="0.22"/>
+    </linearGradient>
+
+    <!-- Ink: the theme's text colour with a little top light. -->
+    <linearGradient id="ink" x1="0" y1="290" x2="0" y2="734" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#f5f8fc"/>
+      <stop offset="1" stop-color="#d3dbe7"/>
+    </linearGradient>
+    <linearGradient id="bracket" x1="0" y1="176" x2="0" y2="848" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#e7ecf4"/>
+      <stop offset="1" stop-color="#a9b7cb"/>
+    </linearGradient>
+
+    <!-- Lit pane: ion blue rim into a cyan-white core. -->
+    <radialGradient id="litFill" cx="672" cy="336" r="250" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#d4faff"/>
+      <stop offset="0.3" stop-color="#84ebff"/>
+      <stop offset="0.72" stop-color="#43c6ff"/>
+      <stop offset="1" stop-color="#2b8de6"/>
+    </radialGradient>
+    <linearGradient id="litEdge" x1="0" y1="290" x2="0" y2="490" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0.7"/>
+      <stop offset="1" stop-color="#ffffff" stop-opacity="0"/>
+    </linearGradient>
+
+    <filter id="glowNear" x="290" y="40" width="694" height="700" filterUnits="userSpaceOnUse">
+      <feGaussianBlur stdDeviation="38"/>
+    </filter>
+    <filter id="glowFar" x="40" y="40" width="944" height="944" filterUnits="userSpaceOnUse">
+      <feGaussianBlur stdDeviation="120"/>
+    </filter>
+  </defs>
+
+  <!-- Tile -->
+  <rect x="40" y="40" width="944" height="944" rx="208" fill="url(#tileFill)"/>
+
+  <g clip-path="url(#tileClip)">
+    <!-- ambient signal light spilling onto the tile -->
+    <rect x="534" y="290" width="200" height="200" rx="40" fill="#3fb8ff" opacity="0.38" filter="url(#glowFar)"/>
+
+    <!-- faint star specks, kept outside the brackets -->
+    <g fill="#d6e8ff">
+      <circle cx="132" cy="214" r="3.5" opacity="0.45"/>
+      <circle cx="176" cy="612" r="2.5" opacity="0.3"/>
+      <circle cx="318" cy="128" r="3" opacity="0.35"/>
+      <circle cx="884" cy="430" r="3" opacity="0.4"/>
+      <circle cx="702" cy="902" r="2.5" opacity="0.3"/>
+      <circle cx="120" cy="840" r="3" opacity="0.25"/>
+      <circle cx="902" cy="782" r="4" opacity="0.35"/>
+      <circle cx="610" cy="118" r="2.5" opacity="0.3"/>
+    </g>
+
+    <rect x="40" y="40" width="944" height="944" fill="url(#vignette)"/>
+  </g>
+
+  <!-- top-lit rim -->
+  <rect x="42" y="42" width="940" height="940" rx="206" fill="none" stroke="url(#rim)" stroke-width="4"/>
+
+  <!-- HUD corner brackets -->
+  <path d="M196 358V250a54 54 0 0 1 54-54h108M666 196h108a54 54 0 0 1 54 54v108M828 666v108a54 54 0 0 1-54 54H666M358 828H250a54 54 0 0 1-54-54V666"
+        fill="none" stroke="url(#bracket)" stroke-width="42" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <!-- the keeper's signal: glow under the lit pane -->
+  <rect x="534" y="290" width="200" height="200" rx="40" fill="#41c8ff" opacity="0.8" filter="url(#glowNear)"/>
+
+  <!-- 2x2 panes -->
+  <rect x="290" y="290" width="200" height="200" rx="40" fill="url(#ink)"/>
+  <rect x="290" y="534" width="200" height="200" rx="40" fill="url(#ink)" opacity="0.46"/>
+  <rect x="534" y="534" width="200" height="200" rx="40" fill="url(#ink)" opacity="0.46"/>
+  <rect x="534" y="290" width="200" height="200" rx="40" fill="url(#litFill)"/>
+  <rect x="536" y="292" width="196" height="196" rx="38" fill="none" stroke="url(#litEdge)" stroke-width="4"/>
+  <!-- the waiting prompt: this pane's agent is asking for you -->
+  <path d="M586 354l36 36-36 36M640 428h50" fill="none" stroke="#03121c" stroke-opacity="0.82" stroke-width="19" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>
