@@ -1453,7 +1453,7 @@ dependencies = [
 
 [[package]]
 name = "gridkeeper"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "anyhow",
  "base64 0.22.1",
@@ -1479,7 +1479,9 @@ dependencies = [
  "tracing-appender",
  "tracing-subscriber",
  "uuid",
+ "webview2-com",
  "which",
+ "windows-core",
  "windows-sys 0.61.2",
 ]
 

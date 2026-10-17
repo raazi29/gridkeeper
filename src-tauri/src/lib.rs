@@ -11,6 +11,7 @@
 //! - `ports`       LISTENING TCP ports per session process tree
 //! - `browser`     browser panes: URL validation, embeddability probe, pop-out windows
 //! - `logging` / `redact` structured logs with secret redaction
+//! - `webview_guard` reload / rebuild the main window when a WebView2 process dies
 
 pub mod accounts;
 pub mod adapters;
@@ -27,6 +28,7 @@ pub mod pty;
 pub mod redact;
 pub mod state;
 pub mod types;
+pub mod webview_guard;
 
 use tauri::Manager;
 
@@ -36,7 +38,7 @@ pub fn run() {
     // Benchmark runs (GRIDKEEPER_BENCH) may run beside a normal instance, so they skip the single-instance lock.
     if std::env::var_os("GRIDKEEPER_BENCH").is_none() {
         builder = builder.plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
-            if let Some(w) = app.get_webview_window("main") {
+            if let Some(w) = app.get_webview_window(webview_guard::MAIN) {
                 let _ = w.unminimize();
                 let _ = w.set_focus();
             }
@@ -50,6 +52,9 @@ pub fn run() {
         .setup(|app| {
             let ctx = state::AppCtx::init(app.handle())?;
             app.manage(ctx);
+            if let Some(w) = app.get_webview_window(webview_guard::MAIN) {
+                webview_guard::install(&w);
+            }
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -97,12 +102,17 @@ pub fn run() {
         ])
         .build(tauri::generate_context!())
         .unwrap_or_else(|e| fatal_startup_error(&e.to_string()))
-        .run(|app, event| {
-            if let tauri::RunEvent::Exit = event {
+        .run(|app, event| match event {
+            // Destroying a crashed main window leaves no windows for a moment; that is not a quit.
+            tauri::RunEvent::ExitRequested { code: None, api, .. } if webview_guard::rebuilding() => {
+                api.prevent_exit();
+            }
+            tauri::RunEvent::Exit => {
                 if let Some(ctx) = app.try_state::<state::AppCtx>() {
                     ctx.shutdown();
                 }
             }
+            _ => {}
         });
 }
 

@@ -3,7 +3,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/raazi29/gridkeeper/releases/latest"><img alt="Release v0.1.1" src="https://img.shields.io/badge/release-v0.1.1-4cc2ff?style=flat-square&labelColor=0b1220" /></a>
+  <a href="https://github.com/raazi29/gridkeeper/releases/latest"><img alt="Release v0.1.2" src="https://img.shields.io/badge/release-v0.1.2-4cc2ff?style=flat-square&labelColor=0b1220" /></a>
   <img alt="Platform: Windows 10 | 11" src="https://img.shields.io/badge/platform-Windows%2010%20%7C%2011-4cc2ff?style=flat-square&labelColor=0b1220" />
   <a href="LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-3ddc84?style=flat-square&labelColor=0b1220" /></a>
   <img alt="Built with Tauri 2" src="https://img.shields.io/badge/Tauri-2.12-24c8db?style=flat-square&labelColor=0b1220&logo=tauri&logoColor=white" />
@@ -116,7 +116,7 @@ dependency (WSL-only on Windows).
 
 ## Install
 
-Download **`Gridkeeper_0.1.1_x64-setup.exe`** (≈6 MB, per-user install, no admin needed) from the
+Download **`Gridkeeper_0.1.2_x64-setup.exe`** (≈6 MB, per-user install, no admin needed) from the
 [latest release](https://github.com/raazi29/gridkeeper/releases/latest), or build it yourself (see *Build from
 source* below). Windows 10 1809+ / Windows 11. The WebView2 runtime is preinstalled on Windows 11; the installer
 bootstraps it elsewhere.

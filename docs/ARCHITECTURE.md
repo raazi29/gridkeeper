@@ -103,6 +103,7 @@ gridkeeper.exe  (Tauri host: Rust backend, main/UI thread, tokio runtime)
 
 - **One host process.** `tauri-plugin-single-instance` makes a second launch focus and unminimize the existing window instead of starting a second instance (`src-tauri/src/lib.rs`).
 - **WebView2** runs its usual multi-process architecture. All UI and all terminals share one page, which means one renderer process and one GPU process.
+- **WebView2 crash recovery** (`src-tauri/src/webview_guard.rs`): Windows can kill WebView2 processes when virtual memory runs out. A `ProcessFailed` handler reloads the page when the renderer exits (or stays unresponsive), and destroys and rebuilds the `main` window from the config when the browser process exits. Sessions live in the host, and `boot()` re-attaches to running ones, so agents keep running through a recovery. Recoveries back off (up to 30 s) when they repeat within a minute.
 - **Per session:**
   - one pseudoconsole (`conhost.exe` with the system ConPTY);
   - the session's root process, assigned right after spawn to its own Job Object created with `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE` and no breakaway flags (`pty/job.rs`). Every descendant stays in the job, so terminating the job (or closing its last handle, including when Gridkeeper exits or crashes) kills exactly that session's tree.

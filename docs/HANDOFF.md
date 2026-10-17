@@ -187,6 +187,9 @@ gh release create v0.1.1 "src-tauri\target\release\bundle\nsis\Gridkeeper_0.1.1_
 
 - **Run cargo only from PowerShell.** Git Bash's `/usr/bin/link.exe` shadows the MSVC linker.
 - **Low RAM / rustc stack overflow:** `$env:RUST_MIN_STACK='16777216'; $env:CARGO_BUILD_JOBS=2`.
+- **WebView2 `0x8007139F` flooding the log mid-session:** the WebView2 browser process died, usually because the
+  machine ran out of commit (System log event 2004). Before 0.1.2 this left a black window; `webview_guard` now
+  rebuilds the window. Look for `WebView2 process failed` in the log.
 - **WebView2 `0x8007139F` at startup:** another instance holds the default WebView2 user-data folder with different
   browser arguments (for example a normal instance while you start one with `--remote-debugging-port`). Close it or
   set `WEBVIEW2_USER_DATA_FOLDER` to a separate folder (`scripts/bench/run-all.ps1` does this per scenario).
