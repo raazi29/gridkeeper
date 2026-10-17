@@ -157,7 +157,6 @@ body,
   color: var(--text-0);
   font-family: var(--font-ui);
   font-size: var(--fs-m);
-  font-feature-settings: "ss01", "cv11";
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
   user-select: none;

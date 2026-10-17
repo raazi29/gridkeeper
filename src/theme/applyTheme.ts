@@ -37,9 +37,27 @@ export function themeScopeStyle(t: Theme): CSSProperties {
 }
 
 let appliedVars: string[] = [];
+let appliedId: string | null = null;
+
+// Last applied theme id, cached per machine so the first paint (before the state file loads) already
+// uses it: no dark flash on launch for light-theme users. Settings remain the source of truth.
+const LS_THEME = "gridkeeper.ui.theme";
+function readCachedTheme(): string | null {
+  try {
+    return globalThis.localStorage?.getItem(LS_THEME) ?? null;
+  } catch {
+    return null;
+  }
+}
 
 export function applyTheme(t: Theme): void {
   if (typeof document === "undefined") return;
+  appliedId = t.id;
+  try {
+    globalThis.localStorage?.setItem(LS_THEME, t.id);
+  } catch {
+    /* storage unavailable */
+  }
   const root = document.documentElement;
   const vars = themeVars(t);
   // Clear overrides from the previous theme that this one does not set (optional derived tokens).
@@ -78,15 +96,15 @@ export function installAppearance(): void {
   if (installed || typeof document === "undefined") return;
   installed = true;
   let prev = useApp.getState().persisted.settings;
-  applyTheme(getTheme(prev.theme));
+  applyTheme(getTheme(useApp.getState().loaded ? prev.theme : (readCachedTheme() ?? prev.theme)));
   applyModes(prev);
 
   useApp.subscribe((st) => {
     const s = st.persisted.settings;
     if (s === prev) return;
-    const themeChanged = s.theme !== prev.theme;
     prev = s;
-    if (themeChanged) applyTheme(getTheme(s.theme));
+    const t = getTheme(s.theme);
+    if (t.id !== appliedId) applyTheme(t);
     applyModes(s);
   });
   let prevUi = useUi.getState();
@@ -103,7 +121,7 @@ export function installAppearance(): void {
     if (e.key !== "Escape" || e.defaultPrevented || e.ctrlKey || e.altKey || e.shiftKey || e.metaKey) return;
     if (!useUi.getState().focusMode || isKeyCaptureSuspended()) return;
     const t = e.target as HTMLElement | null;
-    if (t?.closest?.(".xterm, input, textarea, select, [role=menu], .menu, .pane-menu")) return;
+    if (t?.closest?.(".xterm, input, textarea, select, [role=menu], .menu, .pane-menu, [role=dialog], [aria-modal]")) return;
     useUi.getState().setFocusMode(false);
   });
 }
