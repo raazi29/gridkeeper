@@ -2,6 +2,7 @@
 // one-time welcome sheet. Renders nothing visible by itself.
 
 import { useEffect } from "react";
+import { ipc } from "../lib/ipc";
 import { useApp } from "../store/appStore";
 import { useUi } from "../store/uiStore";
 import { ErrorBoundary } from "./ErrorBoundary";
@@ -14,11 +15,22 @@ export function ExperienceLayer() {
 
   useEffect(() => {
     if (!loaded || loadError || hasBeenWelcomed()) return;
-    // Let the shell paint first; never stack over a dialog the user already opened.
+    let cancelled = false;
+    // Let the shell paint first; never stack over a dialog the user already opened, and never in bench
+    // mode (a modal would suspend shortcuts and skew measurements).
     const t = window.setTimeout(() => {
-      if (!useUi.getState().dialog) useUi.getState().openDialog({ kind: "welcome" });
+      void ipc
+        .appInfo()
+        .catch(() => null)
+        .then((info) => {
+          if (cancelled || info?.bench || useUi.getState().dialog) return;
+          useUi.getState().openDialog({ kind: "welcome" });
+        });
     }, 350);
-    return () => window.clearTimeout(t);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(t);
+    };
   }, [loaded, loadError]);
 
   return (

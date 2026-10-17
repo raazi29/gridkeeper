@@ -93,7 +93,9 @@ export function previewTheme(t: Theme | null): void {
   if (t) {
     if (previewing && themeKey(previewing) === themeKey(t)) return;
     previewing = t;
-    setThemeVars(t);
+    // The terminal area keeps the committed palette (xterm canvases are not re-themed during a preview),
+    // so pane padding / viewport strips never mismatch the canvas — e.g. dark → Ice Planet.
+    setThemeVars({ ...t, terminal: resolveTheme(useApp.getState().persisted.settings).terminal });
   } else {
     if (!previewing) return;
     previewing = null;
