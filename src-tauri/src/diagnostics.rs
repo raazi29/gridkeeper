@@ -11,6 +11,9 @@
 //! CPU% = process CPU-time delta / wall-clock delta between successive
 //! snapshots (percent of ONE logical core, summed over processes). A process
 //! seen for the first time reports 0 CPU.
+//!
+//! GPU: `crate::gpu` reads the Windows GPU counters with one long-lived PDH
+//! query and attributes them with the same PID sets (~5-6 ms per snapshot).
 
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::io::{Read, Seek, SeekFrom};
@@ -145,6 +148,7 @@ type CpuHistory = HashMap<u32, (u64, u64, Instant)>;
 pub struct DiagSampler {
     sys: Mutex<System>,
     history: Mutex<CpuHistory>,
+    gpu: Mutex<crate::gpu::GpuSampler>,
 }
 
 impl Default for DiagSampler {
@@ -234,7 +238,7 @@ impl DiagSampler {
         let mut sys = System::new();
         sys.refresh_cpu_list(CpuRefreshKind::nothing());
         sys.refresh_memory_specifics(MemoryRefreshKind::nothing().with_ram());
-        Self { sys: Mutex::new(sys), history: Mutex::new(HashMap::new()) }
+        Self { sys: Mutex::new(sys), history: Mutex::new(HashMap::new()), gpu: Mutex::new(crate::gpu::GpuSampler::new()) }
     }
 
     pub fn snapshot(&self, roots: &[(SessionId, u32)]) -> Diagnostics {
@@ -286,6 +290,10 @@ impl DiagSampler {
         *history = acc.next;
         drop(history);
 
+        // GPU counters, attributed with the PID sets computed above (no second process walk).
+        let webview_set: HashSet<u32> = webview.iter().copied().collect();
+        let gpu = self.gpu.lock().sample(&crate::gpu::Attribution { host, webview: &webview_set, sessions: &counted });
+
         let mut sys = self.sys.lock();
         sys.refresh_memory_specifics(MemoryRefreshKind::nothing().with_ram());
         let logical_cores = match sys.cpus().len() {
@@ -302,6 +310,7 @@ impl DiagSampler {
             system_memory_total: sys.total_memory(),
             system_memory_used: sys.used_memory(),
             running_sessions: roots.len() as u32,
+            gpu: Some(gpu),
         }
     }
 

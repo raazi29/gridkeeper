@@ -7,6 +7,7 @@ import type { SessionId } from "../lib/types";
 import { selectSessionMeta, useApp } from "../store/appStore";
 import { TerminalView } from "../terminal/TerminalView";
 import { disposeTerminal, focusTerminal } from "../terminal/registry";
+import { PaneFindBar } from "../components/FindBar";
 import { PaneHeader, useRuntimeView } from "./PaneHeader";
 import { currentPaneDrag, endPaneDrag } from "./paneDrag";
 
@@ -140,6 +141,7 @@ export const Pane = memo(function Pane({ sessionId, groupId, index, count, visib
       <PaneHeader sessionId={sessionId} groupId={groupId} index={index} count={count} maximized={maximized} />
       <div className="pane-body">
         {!hidden && <TerminalView sessionId={sessionId} visible={visible} />}
+        {!hidden && <PaneFindBar sessionId={sessionId} />}
         {overlay}
       </div>
       {rt.state === "exited" && !hidden && (

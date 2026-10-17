@@ -24,11 +24,18 @@ export interface ConfirmOptions {
   confirmLabel?: string;
   cancelLabel?: string;
   danger?: boolean;
+  /** Optional checkbox label (e.g. "Don't ask again"); its state is returned by confirmDialogEx. */
+  checkbox?: string;
+}
+
+export interface ConfirmResult {
+  ok: boolean;
+  checked: boolean;
 }
 
 interface ConfirmRequest extends ConfirmOptions {
   id: number;
-  resolve: (ok: boolean) => void;
+  resolve: (r: ConfirmResult) => void;
 }
 
 export interface ActionToast {
@@ -150,19 +157,24 @@ export const useUi = create<UiStore>()((set) => ({
 
 let confirmSeq = 1;
 
-/** In-app replacement for window.confirm. Resolves true on confirm, false on cancel / Esc. */
-export function confirmDialog(opts: ConfirmOptions): Promise<boolean> {
+/** Like confirmDialog, also reporting the optional checkbox state. */
+export function confirmDialogEx(opts: ConfirmOptions): Promise<ConfirmResult> {
   return new Promise((resolve) => {
     const id = confirmSeq++;
     useUi.setState((s) => ({ confirms: [...s.confirms, { ...opts, id, resolve }] }));
   });
 }
+
+/** In-app replacement for window.confirm. Resolves true on confirm, false on cancel / Esc. */
+export function confirmDialog(opts: ConfirmOptions): Promise<boolean> {
+  return confirmDialogEx(opts).then((r) => r.ok);
+}
 export { confirmDialog as confirm };
 
-export function resolveConfirm(id: number, ok: boolean) {
+export function resolveConfirm(id: number, ok: boolean, checked = false) {
   const req = useUi.getState().confirms.find((c) => c.id === id);
   useUi.setState((s) => ({ confirms: s.confirms.filter((c) => c.id !== id) }));
-  req?.resolve(ok);
+  req?.resolve({ ok, checked: ok && checked });
 }
 
 // ---- toasts with an action button (notify() has no action slot) --------------
@@ -219,6 +231,11 @@ async function pollOnce() {
   } finally {
     inflight = false;
   }
+}
+
+/** True while some view holds the poll, i.e. `diag` is fresh (at most ~2 s old). */
+export function isDiagnosticsLive(): boolean {
+  return holders > 0;
 }
 
 export function acquireDiagnostics(): () => void {

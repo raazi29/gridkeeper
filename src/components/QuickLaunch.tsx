@@ -9,6 +9,7 @@ import { selectActiveGroup, selectActiveWorkspace, useApp } from "../store/appSt
 import { useUi } from "../store/uiStore";
 import { useShortcut, withShortcut } from "./hooks";
 import { IconPlus } from "./icons";
+import { MemoryPressureNotice, memoryPressureNow } from "./ResourceWarnings";
 import { useContextMenu, type MenuItem } from "./ui/Menu";
 
 interface LaunchOption {
@@ -91,7 +92,9 @@ export function QuickLaunchButton({ groupId, variant = "primary", label = "New s
   ];
   const open = (e: { currentTarget: HTMLElement; stopPropagation: () => void }) => {
     e.stopPropagation();
-    menu.openAt(e.currentTarget, items);
+    // Non-blocking memory warning at the top of the menu (read when it opens).
+    const pressure = memoryPressureNow();
+    menu.openAt(e.currentTarget, pressure ? [{ label: pressure, disabled: true, onSelect: () => {} }, "separator", ...items] : items);
   };
   return (
     <>
@@ -121,6 +124,7 @@ export function QuickLaunchPanel() {
   const hasFolder = useApp((s) => !!selectActiveWorkspace(s)?.projectDir);
   return (
     <div className="quick-panel">
+      <MemoryPressureNotice poll={false} />
       <div className="quick-panel-grid">
         {options.map((o) => (
           <button key={o.key} type="button" className="quick-card" disabled={o.disabled} onClick={() => quickLaunch(o)}>

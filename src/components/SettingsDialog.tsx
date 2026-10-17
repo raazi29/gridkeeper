@@ -209,6 +209,7 @@ function TerminalSection() {
   const [fontSize, setFontSize] = useSetting("fontSize");
   const [lineHeight, setLineHeight] = useSetting("lineHeight");
   const [blink, setBlink] = useSetting("cursorBlink");
+  const [pasteWarning, setPasteWarning] = useSetting("pasteWarning");
   const [renderer, setRenderer] = useSetting("renderer");
   const [layout, setLayout] = useSetting("defaultLayout");
   return (
@@ -267,6 +268,12 @@ function TerminalSection() {
         />
       </Field>
       <Toggle checked={blink} onChange={setBlink} label="Cursor blink" />
+      <Toggle
+        checked={pasteWarning}
+        onChange={setPasteWarning}
+        label="Confirm large pastes"
+        hint="Ask before pasting more than 20 lines or 64 KiB into a program that has not enabled bracketed paste. Programs that enable it (e.g. Claude Code, Codex) are never asked."
+      />
       <div className="row-end">
         <Button
           variant="ghost"
