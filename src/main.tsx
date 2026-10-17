@@ -16,8 +16,10 @@ if (import.meta.env.DEV) {
     import("./actions/sessions"),
     import("./terminal/registry"),
     import("./lib/ipc"),
-  ]).then(([store, sessions, registry, ipcMod]) => {
-    (window as unknown as { __gridkeeper: unknown }).__gridkeeper = { store, sessions, registry, ipc: ipcMod.ipc };
+    import("./store/mission"),
+    import("./actions/commands"),
+  ]).then(([store, sessions, registry, ipcMod, mission, commands]) => {
+    (window as unknown as { __gridkeeper: unknown }).__gridkeeper = { store, sessions, registry, ipc: ipcMod.ipc, mission, commands };
   });
 }
 
