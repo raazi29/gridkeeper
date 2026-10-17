@@ -3,6 +3,7 @@ name = "gridkeeper"
 version = "0.1.0"
 description = "Gridkeeper — GPU-accelerated multi-agent terminal workspace"
 authors = ["Gridkeeper"]
+license = "MIT"
 edition = "2024"
 
 [lib]
