@@ -9,7 +9,47 @@ Documentation:
 - [docs/RESEARCH.md](docs/RESEARCH.md): research questions, evidence and sources
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md): process model, data flow, state, security
 - [docs/TECHNICAL_DECISIONS.md](docs/TECHNICAL_DECISIONS.md): ADRs
-- `docs/PERFORMANCE.md`: measurements (written by a separate step)
+- [docs/PERFORMANCE.md](docs/PERFORMANCE.md): measured CPU/RAM/GPU on the target machine
+
+## Why Gridkeeper
+
+Built because the tools available on Windows kept failing this workflow: high CPU, freezes and crashes, flaky
+cloud agent sessions, no clean way to run several Claude Code accounts at once, and wasted memory.
+
+- **Native Windows, no WSL or tmux.** Real ConPTY sessions; every agent's whole process tree is contained in a
+  Job Object, so quitting never leaves orphans.
+- **Many accounts, truly separate.** One `CLAUDE_CONFIG_DIR` per profile, identity variables stripped per pane,
+  login verified with `claude auth status` without reading credentials.
+- **Built not to burn CPU.** Idle workspaces measured at ≈0.1–0.4 % of the machine (see PERFORMANCE.md); no polling
+  loops; hidden panes stop rendering but keep their state; output flow control never pauses an agent.
+- **GPU where it helps.** WebGL glyph rendering and GPU compositing, with automatic recovery and a software fallback.
+  Agent CPU is always shown separately, so the app's own cost is visible.
+- **Knows when an agent needs you.** Attention lamps, unread badges, Windows notifications, a Comms feed and a
+  Fleet overview — detected from terminal signals and output activity, never by reading your content.
+- **One window for every agent CLI.** Claude Code, Codex, PowerShell, plus Hermes, OpenCode, Gemini CLI, Copilot CLI,
+  Aider, Factory Droid, Kimi, Qwen Code, Cursor Agent, Goose, Crush, Amp and OpenClaw when installed.
+- **Local-first.** No telemetry, no cloud backend, no local HTTP server, secrets redacted from logs and exports.
+
+## How it compares
+
+Based on public information gathered in October 2026 (sources in
+[docs/research-notes/agents-notifications-market.md](docs/research-notes/agents-notifications-market.md));
+features change quickly, so check the projects themselves.
+
+| | Gridkeeper | Terax | Warp | Wave Terminal | Windows Terminal | Claude Squad | Superset / Conductor |
+|---|---|---|---|---|---|---|---|
+| Native Windows | yes | yes | yes | yes | yes | WSL only (tmux) | macOS-first |
+| Grid of many agent panes | yes | single agent | tabs/panes | blocks | panes | yes (TUI) | yes |
+| Several Claude accounts at once | yes, per pane | no | no | no | manual | no | no |
+| Process-tree containment (no orphans) | Job Objects | — | — | — | — | tmux | — |
+| Attention detection + notifications | yes | hooks | yes | — | — | status | yes |
+| Fleet overview / broadcast input | yes | — | — | — | — | — | partial |
+| Footprint | Tauri, 5 MB installer | Tauri, ~8 MB | Rust/GPU | Electron | native | Go TUI | Electron |
+| License | (yours) | Apache-2.0 | proprietary | Apache-2.0 | MIT | AGPL-3.0 | ELv2 / closed |
+
+Known public complaints about alternatives that motivated this design include Warp issues on Windows for high
+idle CPU/GPU and memory growth with Codex/Claude (#5825, #7561, #12472, #8822, #11744), and Claude Squad's tmux
+dependency (WSL-only on Windows).
 
 ---
 
@@ -33,6 +73,21 @@ Documentation:
   - Output is coalesced into raw binary IPC frames with ack-based flow control. A slow view never pauses an agent.
   - Hidden terminals don't render.
   - Visible terminals get WebGL (up to 12 contexts), with DOM as the fallback.
+- **Attention & notifications:** per-pane lamps (working / needs you / done / error), unread badges on panes, tabs
+  and workspaces, `(N)` in the window title, Windows notifications plus taskbar flash when the app is in the
+  background, and in-app toasts with *Jump*. Signals: BEL, OSC 9/777/99, Claude's OSC 7501 status (when available)
+  and output activity (working → quiet = done).
+- **Comms:** a feed of recent attention events across all workspaces (bell in the status bar).
+- **Fleet (Ctrl+Shift+O):** every session in every workspace as live tiles — state, account, CPU/RAM, last lines of
+  output; filter to *Needs me*, *Working* or *Errors*; Enter jumps to it.
+- **Broadcast (Ctrl+Shift+K):** type once, send to several selected sessions (confirmation for more than 3 targets or
+  other workspaces; never sends on its own).
+- **Next alert (Ctrl+Shift+J):** jump to the next session that needs you.
+- **Quick launch:** *+ New* in the header and one-click agent cards in empty groups start a session in the
+  workspace folder; the full dialog handles worktrees, arguments and launching several at once.
+- **Agent catalog:** Hermes, OpenCode, Gemini CLI, Copilot CLI, Aider, Factory Droid, Kimi, Qwen Code, Cursor Agent,
+  Goose, Crush, Amp and OpenClaw are detected on PATH (broken installs are reported, not listed) with their own
+  continue/resume flags where documented.
 - **Inspector** for the focused session: PID, state, exit code, times, bytes, CPU/RAM of its tree, the command line (redacted), and restore options.
 - **Diagnostics:** CPU/RAM split between the app host, WebView2 and each session's tree, plus GPU renderer status and a redacted export bundle.
 - **Command palette** over commands, sessions in all workspaces, and workspaces.
