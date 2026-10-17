@@ -6,6 +6,7 @@ import { deleteWorkspaceFlow, switchWorkspace } from "../actions/commands";
 import { notify } from "../actions/notify";
 import { isLive, selectActiveWorkspace, useApp, type AppStore } from "../store/appStore";
 import { useUi } from "../store/uiStore";
+import { WorkspaceUnreadBadge } from "./AttentionBits";
 import { useShortcut, withShortcut } from "./hooks";
 import { AppMark, IconActivity, IconChevronLeft, IconChevronRight, IconPlus, IconSettings, IconUsers } from "./icons";
 import { useContextMenu } from "./ui/Menu";
@@ -167,6 +168,7 @@ const WorkspaceRow = memo(function WorkspaceRow({
       >
         <span className="rail-initials">{initials(name)}</span>
         {running > 0 && <span className="dot is-ok rail-dot" />}
+        <WorkspaceUnreadBadge workspaceId={id} compact />
       </button>
     );
   }
@@ -216,6 +218,7 @@ const WorkspaceRow = memo(function WorkspaceRow({
           <span className="ws-name">{name}</span>
         )}
         <span className="ws-meta">
+          <WorkspaceUnreadBadge workspaceId={id} />
           {running > 0 && (
             <span className="ws-running" title={`${running} running`}>
               <span className="dot is-ok" />
