@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24">
+  <!-- Gridkeeper icon, 24 px variant (Windows 11 taskbar at 100 % scale). Pixel-snapped on a
+       24 px grid; same construction as gridkeeper-icon-small.svg. -->
+  <defs>
+    <linearGradient id="tile" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#121a27"/>
+      <stop offset="1" stop-color="#07090d"/>
+    </linearGradient>
+  </defs>
+  <rect width="24" height="24" rx="5.25" fill="url(#tile)"/>
+  <rect x="0.5" y="0.5" width="23" height="23" rx="4.75" fill="none" stroke="#9cc4ee" stroke-opacity="0.26"/>
+  <rect x="3" y="3" width="8" height="8" rx="1.5" fill="#e7ecf4"/>
+  <rect x="13" y="3" width="8" height="8" rx="1.5" fill="#4cc2ff"/>
+  <rect x="3" y="13" width="8" height="8" rx="1.5" fill="#e7ecf4" fill-opacity="0.5"/>
+  <rect x="13" y="13" width="8" height="8" rx="1.5" fill="#e7ecf4" fill-opacity="0.5"/>
+</svg>

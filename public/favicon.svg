@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16">
+  <!-- Gridkeeper icon, small variant. Drawn on a 16 px grid: every edge lands on a whole pixel
+       at 16 and 32 (2x) and 48 (3x). Brackets and glow are dropped; the 2x2 grid with one lit
+       pane carries the silhouette. A faint cool rim keeps the dark tile visible on dark taskbars. -->
+  <defs>
+    <linearGradient id="tile" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#121a27"/>
+      <stop offset="1" stop-color="#07090d"/>
+    </linearGradient>
+  </defs>
+  <rect width="16" height="16" rx="3.5" fill="url(#tile)"/>
+  <rect x="0.5" y="0.5" width="15" height="15" rx="3" fill="none" stroke="#9cc4ee" stroke-opacity="0.26"/>
+  <rect x="2" y="2" width="5" height="5" rx="1" fill="#e7ecf4"/>
+  <rect x="9" y="2" width="5" height="5" rx="1" fill="#4cc2ff"/>
+  <rect x="2" y="9" width="5" height="5" rx="1" fill="#e7ecf4" fill-opacity="0.5"/>
+  <rect x="9" y="9" width="5" height="5" rx="1" fill="#e7ecf4" fill-opacity="0.5"/>
+</svg>
