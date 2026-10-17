@@ -292,9 +292,10 @@
   padding: 0 22px 10px;
 }
 .welcome-tip {
-  display: flex;
-  align-items: flex-start;
-  gap: 9px;
+  display: grid;
+  grid-template-columns: 26px minmax(0, 1fr);
+  align-items: start;
+  gap: 6px 9px;
   padding: 10px;
   border: 1px solid var(--border);
   border-radius: var(--radius-m);
@@ -326,8 +327,8 @@
   color: var(--text-0);
 }
 .welcome-tip .kbd {
-  flex: none;
-  margin-top: 2px;
+  grid-column: 2;
+  justify-self: start;
 }
 .welcome-note {
   display: flex;

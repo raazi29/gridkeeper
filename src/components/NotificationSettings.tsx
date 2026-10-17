@@ -79,7 +79,7 @@ export function NotificationSettings() {
         ? `Quiet hours until ${n.quietHours.end} — alerts collect silently in Comms.`
         : n.delivery === "off"
           ? "Comms feed only — no toasts."
-          : "On";
+          : "On.";
 
   return (
     <div className="notif-settings">
