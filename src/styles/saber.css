@@ -1,0 +1,315 @@
+/* Saber effects (every theme, strongest in Saber Duel).
+   :root[data-saber="subtle|full"] (absent when off or under reduced motion); blade colours in
+   --saber / --saber-core / --saber-rival (theme/saberFx.ts, applied by theme/applyTheme.ts).
+   Event-driven only: the blade animates transform + opacity for <= 400 ms when a pane gains focus or a
+   session starts / exits (layout/saberBlade.ts sets data-anim); nothing loops. The blade is absolutely
+   positioned inside the pane border, so nothing reflows and xterm never refits. */
+
+/* ---- pane blade -------------------------------------------------------------------------- */
+
+.pane-blade {
+  display: none;
+}
+:root[data-saber] .pane-blade {
+  display: block;
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  z-index: 8; /* over the theme's focus hairline (6); the pane clips it to its rounded border */
+  pointer-events: none;
+  border-radius: 0 2px 2px 0;
+  background: linear-gradient(to bottom, var(--saber-core) 0 50%, var(--saber) 50%);
+  box-shadow: 0 0 4px color-mix(in srgb, var(--saber) 75%, transparent);
+  transform-origin: left center;
+  opacity: 0;
+  transition: opacity 160ms var(--ease);
+}
+:root[data-saber="full"] .pane-blade {
+  height: 3px;
+  background: linear-gradient(to bottom, var(--saber) 0 30%, var(--saber-core) 30% 70%, var(--saber) 70%);
+  box-shadow:
+    0 0 5px 1px color-mix(in srgb, var(--saber) 70%, transparent),
+    0 1px 10px color-mix(in srgb, var(--saber) 26%, transparent);
+}
+:root[data-saber][data-kind="light"] .pane-blade {
+  box-shadow: 0 0 3px var(--saber);
+}
+/* Full: the lit blade IS the focus indicator while the focused pane has something running. */
+:root[data-saber="full"] .pane[data-focused][data-alive] .pane-blade {
+  opacity: 1;
+}
+
+:root[data-saber] .pane-blade[data-anim] {
+  will-change: transform, opacity;
+}
+/* Ignite, then hand over to the theme's own focus line (subtle mode, unfocused / idle panes). */
+:root[data-saber] .pane-blade[data-anim="ignite"] {
+  animation: gk-saber-ignite-settle 400ms linear;
+}
+/* Ignite and stay lit (full mode, focused, running). */
+:root[data-saber="full"] .pane[data-focused][data-alive] .pane-blade[data-anim="ignite"] {
+  animation: gk-saber-ignite 260ms linear;
+}
+:root[data-saber] .pane-blade[data-anim="retract"] {
+  animation: gk-saber-retract 180ms cubic-bezier(0.55, 0, 0.9, 0.45);
+}
+
+/* Extend from the hilt (left), a tiny thickness overshoot + flicker as it locks, then settle. */
+@keyframes gk-saber-ignite {
+  0% {
+    transform: scale(0, 1);
+    opacity: 1;
+    animation-timing-function: cubic-bezier(0.2, 0.75, 0.3, 1);
+  }
+  72% {
+    transform: scale(1, 1.8);
+    opacity: 1;
+  }
+  81% {
+    transform: scale(1, 1.2);
+    opacity: 0.7;
+  }
+  89% {
+    transform: scale(1, 1.5);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(1, 1);
+    opacity: 1;
+  }
+}
+@keyframes gk-saber-ignite-settle {
+  0% {
+    transform: scale(0, 1);
+    opacity: 1;
+    animation-timing-function: cubic-bezier(0.2, 0.75, 0.3, 1);
+  }
+  58% {
+    transform: scale(1, 1.8);
+    opacity: 1;
+  }
+  64% {
+    transform: scale(1, 1.2);
+    opacity: 0.7;
+  }
+  70% {
+    transform: scale(1, 1.5);
+    opacity: 1;
+  }
+  76% {
+    transform: scale(1, 1);
+    opacity: 1;
+    animation-timing-function: ease-in;
+  }
+  100% {
+    transform: scale(1, 1);
+    opacity: 0;
+  }
+}
+/* Back into the hilt. */
+@keyframes gk-saber-retract {
+  0% {
+    transform: scale(1, 1);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(0, 0.7);
+    opacity: 0.5;
+  }
+}
+
+/* ---- dividers ---------------------------------------------------------------------------- */
+/* Full: thin blades between panes, brighter on hover, blazing while dragged.
+   Subtle: only the divider being dragged lights up as a blade. */
+
+:root[data-saber="full"] .grid-sep::after {
+  background: var(--saber-core);
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--saber) 55%, transparent),
+    0 0 6px color-mix(in srgb, var(--saber) 40%, transparent);
+  opacity: 0.3;
+  transition: opacity 140ms var(--ease);
+}
+:root[data-saber="full"] .grid-row > .grid-sep::after {
+  left: calc(50% - 0.5px);
+  width: 1px;
+}
+:root[data-saber="full"] .grid-rows > .grid-sep::after {
+  top: calc(50% - 0.5px);
+  height: 1px;
+}
+:root[data-saber="full"] .grid-sep[data-separator="hover"]::after,
+:root[data-saber="full"] .grid-sep[data-separator="focus"]::after {
+  background: var(--saber-core);
+  opacity: 0.8;
+}
+:root[data-saber] .grid-sep[data-separator="active"]::after {
+  background: var(--saber-core);
+  opacity: 1;
+  box-shadow:
+    0 0 0 1px var(--saber),
+    0 0 10px 1px color-mix(in srgb, var(--saber) 65%, transparent);
+}
+
+/* ---- duel -------------------------------------------------------------------------------- */
+/* Two blades cross for 600 ms above the bell when two sessions of one group finish together. */
+
+.saber-duel {
+  position: fixed;
+  z-index: 900;
+  width: 46px;
+  height: 26px;
+  pointer-events: none;
+}
+.saber-duel-blade,
+.saber-duel-flash {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  opacity: 0;
+  will-change: transform, opacity;
+}
+.saber-duel-blade {
+  width: 30px;
+  height: 2px;
+  margin: -1px 0 0 -15px;
+  border-radius: 1px;
+  background: var(--saber-core);
+  box-shadow:
+    0 0 0 1px var(--saber),
+    0 0 6px 1px color-mix(in srgb, var(--saber) 70%, transparent);
+  animation: gk-duel-a 600ms cubic-bezier(0.2, 0.7, 0.3, 1);
+}
+.saber-duel-blade--rival {
+  background: color-mix(in srgb, var(--saber-rival) 30%, #ffffff);
+  box-shadow:
+    0 0 0 1px var(--saber-rival),
+    0 0 6px 1px color-mix(in srgb, var(--saber-rival) 70%, transparent);
+  animation-name: gk-duel-b;
+}
+.saber-duel-flash {
+  width: 10px;
+  height: 10px;
+  margin: -5px 0 0 -5px;
+  border-radius: 50%;
+  background: radial-gradient(circle, #ffffff 0 25%, color-mix(in srgb, var(--saber) 60%, transparent) 45%, transparent 70%);
+  animation: gk-duel-flash 600ms ease-out;
+}
+@keyframes gk-duel-a {
+  0% {
+    transform: translateX(-14px) rotate(-75deg) scaleX(0.2);
+    opacity: 0;
+  }
+  35% {
+    transform: translateX(0) rotate(-35deg) scaleX(1);
+    opacity: 1;
+  }
+  75% {
+    transform: rotate(-35deg);
+    opacity: 1;
+  }
+  100% {
+    transform: rotate(-35deg);
+    opacity: 0;
+  }
+}
+@keyframes gk-duel-b {
+  0% {
+    transform: translateX(14px) rotate(75deg) scaleX(0.2);
+    opacity: 0;
+  }
+  35% {
+    transform: translateX(0) rotate(35deg) scaleX(1);
+    opacity: 1;
+  }
+  75% {
+    transform: rotate(35deg);
+    opacity: 1;
+  }
+  100% {
+    transform: rotate(35deg);
+    opacity: 0;
+  }
+}
+@keyframes gk-duel-flash {
+  0%,
+  30% {
+    transform: scale(0.4);
+    opacity: 0;
+  }
+  40% {
+    transform: scale(1.3);
+    opacity: 1;
+  }
+  70% {
+    transform: scale(1);
+    opacity: 0;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+/* ---- settings preview -------------------------------------------------------------------- */
+
+.saber-test {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.saber-preview {
+  position: relative;
+  width: 132px;
+  height: 22px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-m);
+  background: var(--term-bg);
+  overflow: hidden;
+}
+.saber-preview::before {
+  /* hilt */
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 6px;
+  height: 3px;
+  background: var(--text-2);
+}
+.saber-preview-blade {
+  position: absolute;
+  top: 0;
+  left: 6px;
+  right: 0;
+  height: 3px;
+  border-radius: 0 2px 2px 0;
+  background: linear-gradient(to bottom, var(--saber) 0 30%, var(--saber-core) 30% 70%, var(--saber) 70%);
+  box-shadow: 0 0 5px 1px color-mix(in srgb, var(--saber) 70%, transparent);
+  transform-origin: left center;
+}
+.saber-preview-blade[data-anim="ignite"] {
+  will-change: transform, opacity;
+  animation: gk-saber-ignite 260ms linear;
+}
+
+/* ---- reduced motion (data-saber is already absent; belt and braces) ---------------------- */
+
+:root[data-reduce-motion] .pane-blade,
+:root[data-reduce-motion] .saber-duel {
+  display: none !important;
+}
+:root[data-reduce-motion] .saber-preview-blade {
+  animation: none !important;
+}
+@media (prefers-reduced-motion: reduce) {
+  .pane-blade,
+  .saber-duel {
+    display: none !important;
+  }
+  .saber-preview-blade {
+    animation: none !important;
+  }
+}

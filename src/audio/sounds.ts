@@ -1,5 +1,5 @@
 // Tiny WebAudio synth for alert sounds: no audio files, no samples — every sound is a few oscillator
-// notes with short envelopes. Note sequences come from a pure function (unit-tested); playback is
+// notes with short envelopes (plus the saber ignite / retract: a filtered oscillator sweep). Note sequences come from a pure function (unit-tested); playback is
 // best-effort and the AudioContext is suspended shortly after each sound so it costs nothing when idle.
 
 import type { SoundSet } from "../lib/types";
@@ -75,8 +75,101 @@ export function soundLength(notes: Note[]): number {
   return notes.reduce((m, n) => Math.max(m, n.start + n.dur), 0);
 }
 
+// ---- saber blade ---------------------------------------------------------------------------
+
+export type SaberCue = "ignite" | "retract";
+
+/** One blade sound: detuned sawtooth pair + a sine an octave up, swept in pitch through a swept lowpass. */
+export interface SaberVoice {
+  /** Seconds. */
+  dur: number;
+  attack: number;
+  /** Pitch sweep, Hz. */
+  f0: number;
+  f1: number;
+  /** Lowpass cutoff sweep, Hz. */
+  cutoff0: number;
+  cutoff1: number;
+  q: number;
+  /** ± detune of the two saws, cents. */
+  detune: number;
+  /** Relative loudness 0–1. */
+  gain: number;
+}
+
+/** Ignite: a quick rising sweep that opens up (~250 ms). Retract: softer, falling and closing (~170 ms). */
+export function saberVoice(cue: SaberCue): SaberVoice {
+  return cue === "ignite"
+    ? { dur: 0.25, attack: 0.012, f0: 72, f1: 148, cutoff0: 260, cutoff1: 2400, q: 6, detune: 9, gain: 0.9 }
+    : { dur: 0.17, attack: 0.006, f0: 150, f1: 64, cutoff0: 1700, cutoff1: 220, q: 3, detune: 7, gain: 0.55 };
+}
+
 let ctx: AudioContext | null = null;
 let suspendTimer: ReturnType<typeof setTimeout> | undefined;
+
+/** The shared context plus a master gain at `volume` (0–100); the caller schedules its nodes into it. */
+function openOutput(volume: number): { c: AudioContext; master: GainNode } {
+  ctx ??= new AudioContext();
+  // Created outside a user gesture it may start suspended; we also suspend it between sounds.
+  if (ctx.state === "suspended") void ctx.resume();
+  const master = ctx.createGain();
+  // Perceptual curve; the ceiling is deliberately low — these are background cues.
+  master.gain.value = 0.16 * Math.pow(Math.min(100, volume) / 100, 1.6);
+  master.connect(ctx.destination);
+  return { c: ctx, master };
+}
+
+/** Suspend the device shortly after the last scheduled sound ends (costs nothing while idle). */
+function suspendAfter(seconds: number) {
+  clearTimeout(suspendTimer);
+  suspendTimer = setTimeout(() => void ctx?.suspend().catch(() => {}), (seconds + 0.6) * 1000);
+}
+
+/** Play a blade ignite / retract (no-op at volume 0 / no WebAudio). `volume` 0–100. */
+export function playSaber(cue: SaberCue, volume: number): void {
+  if (volume <= 0) return;
+  const v = saberVoice(cue);
+  try {
+    const { c, master } = openOutput(volume);
+    const t0 = c.currentTime + 0.008;
+    const end = t0 + v.dur;
+    const filter = c.createBiquadFilter();
+    filter.type = "lowpass";
+    filter.Q.value = v.q;
+    filter.frequency.setValueAtTime(v.cutoff0, t0);
+    filter.frequency.exponentialRampToValueAtTime(v.cutoff1, end);
+    const env = c.createGain();
+    env.gain.setValueAtTime(0.0001, t0);
+    env.gain.exponentialRampToValueAtTime(v.gain, t0 + v.attack);
+    env.gain.setValueAtTime(v.gain, t0 + v.dur * 0.45);
+    env.gain.exponentialRampToValueAtTime(0.0001, end);
+    filter.connect(env).connect(master);
+    const voices: [OscillatorType, number, number, number][] = [
+      // type, pitch ratio, detune (cents), level — saws are loud, so they sit low in the mix
+      ["sawtooth", 1, v.detune, 0.3],
+      ["sawtooth", 1, -v.detune, 0.3],
+      ["sine", 2, 0, 0.55],
+    ];
+    let last: OscillatorNode | null = null;
+    for (const [type, ratio, detune, level] of voices) {
+      const osc = c.createOscillator();
+      const g = c.createGain();
+      osc.type = type;
+      osc.detune.value = detune;
+      osc.frequency.setValueAtTime(v.f0 * ratio, t0);
+      osc.frequency.exponentialRampToValueAtTime(v.f1 * ratio, end);
+      g.gain.value = level;
+      osc.connect(g).connect(filter);
+      osc.start(t0);
+      osc.stop(end + 0.02);
+      last = osc;
+    }
+    if (last) last.onended = () => master.disconnect();
+    suspendAfter(v.dur);
+  } catch {
+    /* audio unavailable */
+  }
+}
 
 /** Play a sound (no-op for "none" / volume 0 / no WebAudio). `volume` 0–100. */
 export function playSound(set: SoundSet, ev: SoundEvent, volume: number): void {
@@ -84,13 +177,7 @@ export function playSound(set: SoundSet, ev: SoundEvent, volume: number): void {
   const notes = soundNotes(set, ev);
   if (notes.length === 0) return;
   try {
-    ctx ??= new AudioContext();
-    // Created outside a user gesture it may start suspended; we also suspend it between sounds.
-    if (ctx.state === "suspended") void ctx.resume();
-    const master = ctx.createGain();
-    // Perceptual curve; the ceiling is deliberately low — these are background cues.
-    master.gain.value = 0.16 * Math.pow(Math.min(100, volume) / 100, 1.6);
-    master.connect(ctx.destination);
+    const { c: ctx, master } = openOutput(volume);
     const t0 = ctx.currentTime + 0.012;
     let lastOsc: OscillatorNode | null = null;
     for (const n of notes) {
@@ -112,8 +199,7 @@ export function playSound(set: SoundSet, ev: SoundEvent, volume: number): void {
       lastOsc = osc;
     }
     if (lastOsc) lastOsc.onended = () => master.disconnect();
-    clearTimeout(suspendTimer);
-    suspendTimer = setTimeout(() => void ctx?.suspend().catch(() => {}), (soundLength(notes) + 0.6) * 1000);
+    suspendAfter(soundLength(notes));
   } catch {
     /* audio unavailable */
   }

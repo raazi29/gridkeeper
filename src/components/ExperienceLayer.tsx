@@ -1,5 +1,5 @@
-// Mount point for the "experience" layer, rendered once by Shell: the hyperspace jump watcher and the
-// one-time welcome sheet. Renders nothing visible by itself.
+// Mount point for the "experience" layer, rendered once by Shell: the hyperspace jump watcher, the saber
+// duel watcher and the one-time welcome sheet. Renders nothing visible by itself.
 
 import { useEffect } from "react";
 import { ipc } from "../lib/ipc";
@@ -7,6 +7,7 @@ import { useApp } from "../store/appStore";
 import { useUi } from "../store/uiStore";
 import { ErrorBoundary } from "./ErrorBoundary";
 import { HyperspaceJump } from "./HyperspaceJump";
+import { SaberDuel } from "./SaberDuel";
 import { hasBeenWelcomed } from "./Welcome";
 
 export function ExperienceLayer() {
@@ -36,6 +37,7 @@ export function ExperienceLayer() {
   return (
     <ErrorBoundary scope="Effects">
       <HyperspaceJump />
+      <SaberDuel />
     </ErrorBoundary>
   );
 }
