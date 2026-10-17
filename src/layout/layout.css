@@ -1,0 +1,564 @@
+/* Terminal + pane layout styles (owner: terminal/layout). Uses tokens from styles/tokens.css. */
+
+/* ---- grid -------------------------------------------------------------------------------- */
+
+.group-grid {
+  position: relative;
+  display: flex;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  padding: 6px;
+  background: var(--bg-0);
+}
+
+.grid-rows,
+.grid-row {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+}
+
+.grid-cell {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+
+.grid-maximized {
+  flex: 1 1 auto;
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+}
+
+/* Separators: a 6px gutter whose centre line lights up on hover / drag. */
+.grid-sep {
+  position: relative;
+  flex: 0 0 auto;
+  background: transparent;
+  outline: none;
+}
+.grid-row > .grid-sep {
+  width: 6px;
+}
+.grid-rows > .grid-sep {
+  height: 6px;
+}
+.grid-sep::after {
+  content: "";
+  position: absolute;
+  background: transparent;
+  border-radius: 1px;
+  transition: background-color var(--dur) var(--ease);
+}
+.grid-row > .grid-sep::after {
+  top: 6px;
+  bottom: 6px;
+  left: 2px;
+  width: 2px;
+}
+.grid-rows > .grid-sep::after {
+  left: 6px;
+  right: 6px;
+  top: 2px;
+  height: 2px;
+}
+.grid-sep[data-separator="hover"]::after,
+.grid-sep[data-separator="focus"]::after {
+  background: var(--border-strong);
+}
+.grid-sep[data-separator="active"]::after {
+  background: var(--accent-ring);
+}
+
+/* ---- empty state ------------------------------------------------------------------------- */
+
+.grid-empty {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  color: var(--text-2);
+  user-select: none;
+}
+.grid-empty-title {
+  color: var(--text-1);
+  font-size: var(--fs-m);
+}
+.grid-empty-hint {
+  font-size: var(--fs-s);
+  margin-bottom: 6px;
+}
+.grid-empty kbd {
+  display: inline-block;
+  min-width: 18px;
+  padding: 1px 5px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-s);
+  background: var(--bg-1);
+  color: var(--text-1);
+  font-family: var(--font-ui);
+  font-size: var(--fs-xs);
+  text-align: center;
+}
+
+/* ---- pane -------------------------------------------------------------------------------- */
+
+.pane {
+  position: relative;
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  background: var(--bg-0);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-m);
+  overflow: hidden;
+  transition: border-color var(--dur) var(--ease);
+}
+.pane[data-focused] {
+  border-color: rgba(123, 97, 255, 0.45);
+}
+
+.pane-body {
+  position: relative;
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  background: var(--bg-0);
+}
+
+/* ---- terminal ---------------------------------------------------------------------------- */
+
+.terminal-view {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  background: var(--bg-0);
+}
+.altera-term {
+  width: 100%;
+  height: 100%;
+}
+.altera-term .xterm {
+  height: 100%;
+  padding: 4px 0 0 8px;
+}
+/* xterm.css paints the viewport #000; the strip below the last row must match the theme. */
+.altera-term .xterm .xterm-viewport {
+  background-color: var(--bg-0);
+}
+
+/* ---- header ------------------------------------------------------------------------------ */
+
+.pane-header {
+  flex: 0 0 var(--pane-header-h);
+  height: var(--pane-header-h);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 4px 0 8px;
+  background: var(--bg-1);
+  border-bottom: 1px solid var(--border);
+  color: var(--text-1);
+  font-size: var(--fs-s);
+  line-height: 1;
+  user-select: none;
+  cursor: default;
+  min-width: 0;
+}
+.pane[data-focused] .pane-header {
+  color: var(--text-0);
+}
+
+.pane-title-area {
+  flex: 1 1 auto;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.pane-dot {
+  flex: 0 0 auto;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--text-2);
+  transition: background-color var(--dur) var(--ease);
+}
+.pane-dot--running {
+  background: var(--ok);
+}
+.pane-dot--pending {
+  background: var(--warn);
+}
+.pane-dot--idle {
+  background: var(--text-2);
+}
+.pane-dot--error {
+  background: var(--err);
+}
+
+.pane-glyph {
+  flex: 0 0 auto;
+  display: inline-flex;
+  color: var(--text-2);
+}
+.pane[data-focused] .pane-glyph {
+  color: var(--text-1);
+}
+
+.pane-name {
+  flex: 0 1 auto;
+  min-width: 24px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 500;
+}
+
+.pane-rename {
+  flex: 0 1 180px;
+  min-width: 60px;
+  height: 18px;
+  padding: 0 5px;
+  border: 1px solid var(--accent-ring);
+  border-radius: var(--radius-s);
+  background: var(--bg-0);
+  color: var(--text-0);
+  font: inherit;
+  font-weight: 500;
+  outline: none;
+  user-select: text;
+}
+
+.pane-chip {
+  flex: 0 1 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 160px;
+  height: 16px;
+  padding: 0 6px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-s);
+  color: var(--text-2);
+  font-size: var(--fs-xs);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+.pane-chip svg {
+  flex: 0 0 auto;
+}
+.pane-chip-dot {
+  flex: 0 0 auto;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+}
+.pane-chip--warn {
+  color: var(--warn);
+  border-color: rgba(210, 153, 34, 0.35);
+}
+
+.pane-cwd {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-2);
+  font-size: var(--fs-xs);
+}
+
+.pane-actions {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 1px;
+  opacity: 0;
+  transition: opacity var(--dur) var(--ease);
+}
+.pane:hover .pane-actions,
+.pane[data-focused] .pane-actions,
+.pane-actions:focus-within {
+  opacity: 1;
+}
+
+.pane-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-s);
+  background: transparent;
+  color: var(--text-2);
+  cursor: pointer;
+  transition:
+    background-color var(--dur) var(--ease),
+    color var(--dur) var(--ease);
+}
+.pane-icon-btn:hover,
+.pane-icon-btn.is-active {
+  background: var(--bg-3);
+  color: var(--text-0);
+}
+.pane-icon-btn:active {
+  background: var(--bg-4);
+}
+
+/* ---- menu -------------------------------------------------------------------------------- */
+
+.pane-menu {
+  position: fixed;
+  z-index: 1000;
+  min-width: 168px;
+  padding: 4px;
+  background: var(--bg-2);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-m);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+  font-size: var(--fs-s);
+}
+.pane-menu-item {
+  display: block;
+  width: 100%;
+  height: 26px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: var(--radius-s);
+  background: transparent;
+  color: var(--text-0);
+  text-align: left;
+  cursor: pointer;
+  outline: none;
+}
+.pane-menu-item:hover:not(:disabled),
+.pane-menu-item:focus-visible {
+  background: var(--bg-3);
+}
+.pane-menu-item:disabled {
+  color: var(--text-2);
+  cursor: default;
+}
+.pane-menu-item--danger {
+  color: var(--err);
+}
+.pane-menu-sep {
+  height: 1px;
+  margin: 4px 2px;
+  background: var(--border);
+}
+
+/* ---- overlays ---------------------------------------------------------------------------- */
+
+.pane-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 16px;
+  background: var(--bg-0);
+  color: var(--text-1);
+  font-size: var(--fs-s);
+  text-align: center;
+}
+.pane-overlay--dim {
+  background: rgba(11, 11, 14, 0.82);
+}
+.pane-overlay--delayed {
+  animation: pane-fade-in var(--dur) var(--ease) 180ms both;
+}
+@keyframes pane-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+.pane-overlay-text {
+  color: var(--text-2);
+}
+.pane-overlay-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: center;
+}
+
+.pane-error {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  max-width: min(460px, 100%);
+  padding: 14px 16px;
+  background: var(--bg-1);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-m);
+}
+.pane-error-title {
+  color: var(--err);
+  font-weight: 500;
+}
+.pane-error-message {
+  color: var(--text-1);
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  line-height: 1.45;
+  white-space: pre-wrap;
+  word-break: break-word;
+  user-select: text;
+  max-height: 120px;
+  overflow: auto;
+  margin-bottom: 4px;
+}
+
+.pane-exitbar {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 24px;
+  padding: 0 10px;
+  border-top: 1px solid var(--border);
+  background: var(--bg-1);
+  color: var(--text-2);
+  font-size: var(--fs-xs);
+  white-space: nowrap;
+  overflow: hidden;
+}
+.pane-exitbar-label.is-error {
+  color: var(--err);
+}
+.pane-exitbar-sep {
+  color: var(--text-2);
+  opacity: 0.6;
+}
+.pane-link {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--text-1);
+  font-size: inherit;
+  cursor: pointer;
+  transition: color var(--dur) var(--ease);
+}
+.pane-link:hover {
+  color: var(--accent);
+}
+
+.pane-drop-indicator {
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+  pointer-events: none;
+  border: 1px solid var(--accent-ring);
+  border-radius: var(--radius-m);
+  background: var(--accent-soft);
+}
+
+/* ---- buttons (layout-local) -------------------------------------------------------------- */
+
+.lay-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 26px;
+  padding: 0 12px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-s);
+  background: var(--bg-2);
+  color: var(--text-0);
+  font-size: var(--fs-s);
+  cursor: pointer;
+  transition:
+    background-color var(--dur) var(--ease),
+    border-color var(--dur) var(--ease),
+    color var(--dur) var(--ease);
+}
+.lay-btn:hover {
+  background: var(--bg-3);
+}
+.lay-btn--primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+.lay-btn--primary:hover {
+  background: var(--accent-3);
+  border-color: var(--accent-3);
+}
+.lay-btn--ghost {
+  background: transparent;
+  border-color: var(--border);
+  color: var(--text-1);
+}
+.lay-btn--ghost:hover {
+  background: var(--bg-3);
+  color: var(--text-0);
+}
+.lay-btn--danger {
+  background: rgba(248, 81, 73, 0.12);
+  border-color: rgba(248, 81, 73, 0.45);
+  color: #ff7b72;
+}
+.lay-btn--danger:hover {
+  background: rgba(248, 81, 73, 0.2);
+}
+
+/* ---- confirm dialog ---------------------------------------------------------------------- */
+
+.confirm-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 2000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.5);
+  animation: pane-fade-in var(--dur) var(--ease) both;
+}
+.confirm-dialog {
+  width: min(400px, calc(100vw - 32px));
+  padding: 16px;
+  background: var(--bg-2);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-m);
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.5);
+  color: var(--text-0);
+  font-family: var(--font-ui);
+}
+.confirm-title {
+  font-size: var(--fs-m);
+  font-weight: 600;
+  margin-bottom: 6px;
+}
+.confirm-message {
+  color: var(--text-1);
+  font-size: var(--fs-s);
+  line-height: 1.5;
+  margin-bottom: 16px;
+}
+.confirm-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
