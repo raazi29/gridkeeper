@@ -5,8 +5,9 @@ import { runCommand } from "../actions/commands";
 import { ipc } from "../lib/ipc";
 import type { GitInfo, LayoutPreset } from "../lib/types";
 import { selectActiveGroup, selectActiveWorkspace, useApp } from "../store/appStore";
+import { useUi } from "../store/uiStore";
 import { useShortcut, withShortcut } from "./hooks";
-import { IconBranch, IconColumns, IconFolder, IconGrid, IconInspector, IconRows } from "./icons";
+import { IconBranch, IconColumns, IconFocus, IconFolder, IconGrid, IconInspector, IconRows } from "./icons";
 import { QuickLaunchButton } from "./QuickLaunch";
 import { IconButton } from "./ui/Button";
 import { pickFolder, revealPath } from "./util/pick";
@@ -19,6 +20,8 @@ export function WorkspaceHeader() {
   const preset = useApp((s) => selectActiveGroup(s)?.layout.preset ?? "grid");
   const inspectorOpen = useApp((s) => s.persisted.settings.inspectorOpen);
   const scInspector = useShortcut("view.toggleInspector");
+  const scFocus = useShortcut("view.focusMode");
+  const focusMode = useUi((s) => s.focusMode);
 
   const [git, setGit] = useState<GitInfo | null>(null);
   const [gitBusy, setGitBusy] = useState(false);
@@ -111,6 +114,9 @@ export function WorkspaceHeader() {
         <span className="divider-v" />
         <IconButton label={withShortcut(inspectorOpen ? "Hide inspector" : "Show inspector", scInspector)} active={inspectorOpen} onClick={() => runCommand("view.toggleInspector")}>
           <IconInspector size={15} />
+        </IconButton>
+        <IconButton label={withShortcut(focusMode ? "Exit focus mode (Esc)" : "Focus mode", scFocus)} active={focusMode} onClick={() => runCommand("view.focusMode")}>
+          <IconFocus size={15} />
         </IconButton>
       </div>
     </header>

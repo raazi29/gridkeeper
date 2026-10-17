@@ -153,6 +153,7 @@ export interface Diagnostics {
 export const STATE_VERSION = 1;
 export type RendererPref = "auto" | "webgl" | "dom";
 export type LayoutPreset = "grid" | "columns" | "rows";
+export type UiDensity = "compact" | "comfortable";
 
 export interface AgentPaths {
   claude: string | null;
@@ -174,6 +175,11 @@ export interface Settings {
   inspectorOpen: boolean;
   statusBarDiagnostics: boolean;
   keybindings: Record<string, string>;
+  /** Theme id (src/theme/themes.ts); unknown ids fall back to the default theme. */
+  theme: string;
+  /** Disable UI animation and effects (also honoured when the OS asks for reduced motion). */
+  reduceMotion: boolean;
+  uiDensity: UiDensity;
   notifications: NotificationSettings;
 }
 
@@ -260,5 +266,8 @@ export const DEFAULT_SETTINGS: Settings = {
   inspectorOpen: false,
   statusBarDiagnostics: true,
   keybindings: {},
+  theme: "deep-space",
+  reduceMotion: false,
+  uiDensity: "compact",
   notifications: { enabled: true, onIdle: true, onBell: true, sound: false },
 };

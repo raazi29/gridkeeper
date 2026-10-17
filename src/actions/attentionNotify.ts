@@ -2,6 +2,7 @@
 // clearing on focus, window title badge, in-app / Windows toasts, taskbar flash and optional sound.
 // `installAttention()` is called once (AttentionLayer) and returns a full cleanup.
 
+import { APP_NAME } from "../lib/brand";
 import { errorMessage, ipc, onSessionAttention, onSessionState } from "../lib/ipc";
 import { DEFAULT_SETTINGS, type NotificationSettings, type SessionId, type SessionInfo } from "../lib/types";
 import { selectActiveGroup, useApp } from "../store/appStore";
@@ -9,7 +10,7 @@ import { countUnread, useAttention, type Alert } from "../store/attention";
 import { actionToast } from "../store/uiStore";
 import { jumpToSession } from "./commands";
 
-const BASE_TITLE = "Altera";
+const BASE_TITLE = APP_NAME;
 
 // ---- window focus (synchronous; DOM events, not the async window API) ----------------
 

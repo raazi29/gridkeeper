@@ -7,6 +7,7 @@ import { notify } from "../actions/notify";
 import { isLive, selectActiveWorkspace, useApp, type AppStore } from "../store/appStore";
 import { useUi } from "../store/uiStore";
 import { WorkspaceUnreadBadge } from "./AttentionBits";
+import { APP_NAME } from "../lib/brand";
 import { useShortcut, withShortcut } from "./hooks";
 import { AppMark, IconActivity, IconChevronLeft, IconChevronRight, IconPlus, IconSettings, IconUsers } from "./icons";
 import { useContextMenu } from "./ui/Menu";
@@ -42,9 +43,9 @@ export function Sidebar() {
   return (
     <aside className={`sidebar${collapsed ? " is-collapsed" : ""}`} aria-label="Workspaces">
       <div className="sidebar-top">
-        <div className="app-mark" title="Altera">
-          <AppMark size={15} />
-          {!collapsed && <span className="wordmark">Altera</span>}
+        <div className="app-mark" title={APP_NAME}>
+          <AppMark size={18} />
+          {!collapsed && <span className="wordmark">{APP_NAME}</span>}
         </div>
         {!collapsed && (
           <button type="button" className="icon-btn icon-btn-sm" aria-label="Collapse sidebar" title={withShortcut("Collapse sidebar", scSidebar)} onClick={toggle}>

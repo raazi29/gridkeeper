@@ -1,5 +1,6 @@
 // Claude account profiles: list, check status, add, edit, remove (entry only).
 
+import { APP_NAME } from "../lib/brand";
 import { memo, useState } from "react";
 import { notify } from "../actions/notify";
 import { errorMessage, ipc } from "../lib/ipc";
@@ -43,7 +44,7 @@ export function ProfilesDialog({ onClose }: { onClose: () => void }) {
     >
       <p className="explain explain-top">
         Each profile is a separate Claude Code config folder (<span className="mono">CLAUDE_CONFIG_DIR</span>) with its own login, settings and history. Sessions using
-        different profiles run side by side as different accounts. Altera never reads or copies credentials.
+        different profiles run side by side as different accounts. {APP_NAME} never reads or copies credentials.
       </p>
       {adding && <AddProfileForm onDone={() => setAdding(false)} />}
       <div className="profile-list">
@@ -93,7 +94,7 @@ const ProfileRow = memo(function ProfileRow({ profile }: { profile: ClaudeProfil
     const ok = await confirmDialog({
       title: `Remove profile “${profile.name}”?`,
       message:
-        "Removes the entry from Altera only. The config folder — including its login and history — is NOT deleted." +
+        `Removes the entry from ${APP_NAME} only. The config folder — including its login and history — is NOT deleted.` +
         (inUse ? ` ${inUse} session definition${inUse === 1 ? " uses" : "s use"} it and will fall back to the default login on next start.` : ""),
       detail: profile.configDir ?? undefined,
       confirmLabel: "Remove entry",

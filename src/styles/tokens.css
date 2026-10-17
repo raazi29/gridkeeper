@@ -1,41 +1,144 @@
-/* Design tokens. Deep neutral dark palette with restrained purple accents. */
+/* Design tokens.
+   Base colour tokens are set per theme by src/theme/applyTheme.ts (inline on :root). The values below are
+   the default theme ("Deep Space") so the first paint, before JS runs, already matches.
+   Derived tokens (hover shades, tints, rings) are computed from the base tokens with color-mix(); they are
+   declared on [data-theme-scope] too, so a theme preview card that sets base tokens inline recomputes them. */
 :root {
-  --bg-0: #0b0b0e;        /* app background / terminal background */
-  --bg-1: #111116;        /* sidebar, status bar */
-  --bg-2: #17171d;        /* raised surfaces, pane headers */
-  --bg-3: #1e1e26;        /* hover */
-  --bg-4: #262630;        /* active / pressed */
-  --border: #24242c;
-  --border-strong: #32323d;
-  --text-0: #ececf1;      /* primary */
-  --text-1: #a9a9b6;      /* secondary */
-  --text-2: #6f6f7d;      /* muted */
-  --accent: #7b61ff;
-  --accent-2: #8b5cf6;
-  --accent-3: #6d5bff;
-  --accent-soft: rgba(123, 97, 255, 0.14);
-  --accent-ring: rgba(123, 97, 255, 0.55);
-  --ok: #3fb950;
-  --warn: #d29922;
-  --err: #f85149;
-  --info: #58a6ff;
-
+  /* ---- base (theme-owned) ---- */
+  --bg-0: #07090d;
+  --bg-1: #0c0f15;
+  --bg-2: #12161e;
+  --bg-3: #192029;
+  --bg-4: #212935;
+  --border: #1a212b;
+  --border-strong: #29323f;
+  --text-0: #e7ecf4;
+  --text-1: #a2acbd;
+  --text-2: #6c7689;
+  --accent: #4cc2ff;
+  --accent-2: #8b9dff;
+  --accent-fg: #7dd3ff;
+  --on-accent: #03121c;
+  --ok: #3ddc97;
+  --warn: #f5b84a;
+  --err: #ff5c6c;
+  --info: #6aa8ff;
+  --ok-fg: #5fe3aa;
+  --warn-fg: #f7c56b;
+  --err-fg: #ff8691;
+  --shadow: rgba(0, 0, 0, 0.55);
+  --backdrop: rgba(3, 5, 9, 0.62);
   --radius-s: 4px;
-  --radius-m: 6px;
-  --radius-l: 8px;
-  --font-ui: "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
-  --font-mono: "Cascadia Mono", "Cascadia Code", Consolas, monospace;
+  --radius-m: 5px;
+  --radius-l: 7px;
+  --term-bg: #07090d;
+  --term-fg: #d5dbe6;
+
+  /* ---- type ---- */
+  --font-ui: "Geist Variable", "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+  --font-mono: "Geist Mono Variable", "Cascadia Mono", Consolas, monospace;
+  --font-display: "Space Grotesk Variable", "Geist Variable", "Segoe UI", sans-serif;
+  --fs-2xs: 10px;
   --fs-xs: 11px;
   --fs-s: 12px;
   --fs-m: 13px;
   --fs-l: 15px;
-  --sidebar-w: 232px;
+  --label-tracking: 0.11em;
+
+  /* ---- geometry (density-dependent) ---- */
+  --sidebar-w: 236px;
   --sidebar-w-collapsed: 48px;
-  --statusbar-h: 24px;
+  --ws-header-h: 36px;
+  --tabs-h: 30px;
   --pane-header-h: 26px;
+  --statusbar-h: 24px;
+  --row-h: 26px;
+  --control-h: 28px;
+  --control-h-sm: 24px;
+  --modal-header-h: 42px;
+  --gutter: 6px;
+
+  /* ---- motion ---- */
   --ease: cubic-bezier(0.2, 0, 0, 1);
   --dur: 120ms;
+  --dur-slow: 150ms;
   color-scheme: dark;
+}
+
+/* ---- derived (recomputed wherever base tokens change) ---- */
+:root,
+[data-theme-scope] {
+  --accent-3: color-mix(in srgb, var(--accent) 86%, var(--text-0));
+  --accent-soft: color-mix(in srgb, var(--accent) 13%, transparent);
+  --accent-ring: color-mix(in srgb, var(--accent) 60%, transparent);
+  --accent-line: color-mix(in srgb, var(--accent) 42%, var(--border-strong));
+  --scroll-thumb: color-mix(in srgb, var(--text-0) 12%, transparent);
+  --scroll-thumb-hover: color-mix(in srgb, var(--text-0) 22%, transparent);
+  --selection: color-mix(in srgb, var(--accent) 30%, transparent);
+  --ok-soft: color-mix(in srgb, var(--ok) 11%, transparent);
+  --warn-soft: color-mix(in srgb, var(--warn) 11%, transparent);
+  --err-soft: color-mix(in srgb, var(--err) 11%, transparent);
+  --ok-line: color-mix(in srgb, var(--ok) 34%, transparent);
+  --warn-line: color-mix(in srgb, var(--warn) 34%, transparent);
+  --err-line: color-mix(in srgb, var(--err) 38%, transparent);
+  /* 1px top highlight that makes controls read as physical keys */
+  --bevel: inset 0 1px 0 color-mix(in srgb, var(--text-0) 5%, transparent);
+  --elev-1: 0 1px 2px var(--shadow);
+  --elev-2: 0 10px 28px -6px var(--shadow), 0 0 0 1px color-mix(in srgb, var(--text-0) 3%, transparent);
+  --elev-3: 0 24px 64px -12px var(--shadow), 0 0 0 1px color-mix(in srgb, var(--text-0) 3%, transparent);
+}
+
+/* ---- density ---- */
+:root[data-density="comfortable"] {
+  --fs-xs: 11.5px;
+  --fs-s: 12.5px;
+  --fs-m: 13.5px;
+  --ws-header-h: 42px;
+  --tabs-h: 34px;
+  --pane-header-h: 30px;
+  --statusbar-h: 26px;
+  --row-h: 30px;
+  --control-h: 32px;
+  --control-h-sm: 26px;
+  --modal-header-h: 46px;
+  --gutter: 8px;
+  --sidebar-w: 252px;
+}
+
+/* ---- presentation mode: bigger UI without CSS zoom (zoom breaks xterm hit-testing) ---- */
+:root[data-presentation] {
+  --fs-2xs: 11.5px;
+  --fs-xs: 12.5px;
+  --fs-s: 14px;
+  --fs-m: 15px;
+  --fs-l: 17px;
+  --ws-header-h: 46px;
+  --tabs-h: 38px;
+  --pane-header-h: 34px;
+  --statusbar-h: 30px;
+  --row-h: 34px;
+  --control-h: 36px;
+  --control-h-sm: 30px;
+  --sidebar-w: 280px;
+  --gutter: 8px;
+}
+
+/* ---- reduced motion: setting or OS preference ---- */
+:root[data-reduce-motion] *,
+:root[data-reduce-motion] *::before,
+:root[data-reduce-motion] *::after {
+  animation-duration: 0.001ms !important;
+  animation-delay: 0ms !important;
+  transition-duration: 0.001ms !important;
+}
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-delay: 0ms !important;
+    transition-duration: 0.001ms !important;
+  }
 }
 
 *,
@@ -55,7 +158,12 @@ body,
   font-family: var(--font-ui);
   font-size: var(--fs-m);
   -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
   user-select: none;
+}
+
+::selection {
+  background: var(--selection);
 }
 
 button {
@@ -64,7 +172,7 @@ button {
 }
 
 :focus-visible {
-  outline: 1px solid var(--accent-ring);
+  outline: 1px solid var(--accent);
   outline-offset: 1px;
 }
 
@@ -73,12 +181,18 @@ button {
   height: 10px;
 }
 ::-webkit-scrollbar-thumb {
-  background: #2a2a33;
+  background: var(--scroll-thumb);
   border-radius: 6px;
+  border: 3px solid transparent;
+  background-clip: padding-box;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--scroll-thumb-hover);
   border: 2px solid transparent;
   background-clip: padding-box;
 }
-::-webkit-scrollbar-track {
+::-webkit-scrollbar-track,
+::-webkit-scrollbar-corner {
   background: transparent;
 }
 

@@ -1,5 +1,6 @@
 // Settings section: attention notifications (persisted in settings.notifications).
 
+import { APP_NAME } from "../lib/brand";
 import { DEFAULT_SETTINGS, type NotificationSettings as Notif } from "../lib/types";
 import { useApp } from "../store/appStore";
 import { Toggle } from "./ui/Field";
@@ -22,7 +23,7 @@ export function NotificationSettings() {
         checked={n.enabled}
         onChange={(enabled) => set({ enabled })}
         label="Notify me when a session needs attention"
-        hint="Windows notification while Altera is in the background (the taskbar button flashes too); an in-app toast with a Jump button when the session is off screen."
+        hint={`Windows notification while ${APP_NAME} is in the background (the taskbar button flashes too); an in-app toast with a Jump button when the session is off screen.`}
       />
       <Toggle
         checked={n.onBell}
@@ -42,7 +43,7 @@ export function NotificationSettings() {
       <p className="hint attn-settings-note">
         Agents only ring the bell when asked to: for Claude Code set <span className="mono">preferredNotifChannel</span> to{" "}
         <span className="mono">terminal_bell</span>; for Codex set <span className="mono">tui.notification_condition = "always"</span>.
-        Without that, Altera still notices when output goes quiet.
+        Without that, {APP_NAME} still notices when output goes quiet.
       </p>
     </div>
   );

@@ -206,9 +206,27 @@ export const IconKeyboard = (p: P) => (
 );
 
 /** The app mark: a precise, small glyph — two offset panes. */
+/** Focus mode: four corner brackets (frame the terminal, drop the chrome). */
+export const IconFocus = (p: P) => (
+  <Svg {...p}>
+    <path d="M2.5 6V3.5a1 1 0 0 1 1-1H6M10 2.5h2.5a1 1 0 0 1 1 1V6M13.5 10v2.5a1 1 0 0 1-1 1H10M6 13.5H3.5a1 1 0 0 1-1-1V10" />
+  </Svg>
+);
+
+/**
+ * Brand mark: a 2x2 grid of panes held inside HUD corner brackets: the keeper watching the grid.
+ * One cell is lit in the theme's signal colour (the pane that needs you); the rest follow the ink.
+ */
 export const AppMark = ({ size = 16 }: { size?: number }) => (
-  <svg width={size} height={size} viewBox="0 0 16 16" aria-hidden="true" focusable="false">
-    <rect x="1.5" y="1.5" width="8.5" height="8.5" rx="2" fill="none" stroke="var(--accent)" strokeWidth="1.5" />
-    <rect x="6" y="6" width="8.5" height="8.5" rx="2" fill="var(--accent)" opacity="0.9" />
+  <svg width={size} height={size} viewBox="0 0 18 18" aria-hidden="true" focusable="false" fill="none" strokeLinecap="round" strokeLinejoin="round">
+    <path
+      d="M1.6 5.2V2.6a1 1 0 0 1 1-1h2.6M12.8 1.6h2.6a1 1 0 0 1 1 1v2.6M16.4 12.8v2.6a1 1 0 0 1-1 1h-2.6M5.2 16.4H2.6a1 1 0 0 1-1-1v-2.6"
+      stroke="var(--text-0)"
+      strokeWidth="1.4"
+    />
+    <rect x="4.9" y="4.9" width="3.5" height="3.5" rx="0.9" fill="var(--text-0)" />
+    <rect x="9.6" y="4.9" width="3.5" height="3.5" rx="0.9" fill="var(--accent)" />
+    <rect x="4.9" y="9.6" width="3.5" height="3.5" rx="0.9" fill="var(--text-0)" opacity="0.55" />
+    <rect x="9.6" y="9.6" width="3.5" height="3.5" rx="0.9" fill="var(--text-0)" opacity="0.55" />
   </svg>
 );

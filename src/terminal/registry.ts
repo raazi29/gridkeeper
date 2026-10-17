@@ -36,7 +36,8 @@ import { ipc } from "../lib/ipc";
 import { FRAME_DATA, FRAME_RESET, type SessionId, type SessionInfo, type Settings } from "../lib/types";
 import { isLive, useApp } from "../store/appStore";
 import { AckBatcher } from "./ackBatcher";
-import { terminalTheme } from "./theme";
+import { useUi } from "../store/uiStore";
+import { PRESENTATION_FONT_BOOST, getSearchDecorations, getTerminalTheme } from "./theme";
 import { MAX_WEBGL, allocateWebgl, type WebglCandidate } from "./webglBudget";
 import { splitForWrite } from "./writeChunks";
 
@@ -150,7 +151,11 @@ function probeGpu() {
 
 // ---- helpers --------------------------------------------------------------------------------
 
-const settings = (): Settings => useApp.getState().persisted.settings;
+/** Effective terminal settings: persisted settings plus the presentation-mode font boost. */
+const settings = (): Settings => {
+  const s = useApp.getState().persisted.settings;
+  return useUi.getState().presentation ? { ...s, fontSize: s.fontSize + PRESENTATION_FONT_BOOST } : s;
+};
 
 function log(level: "info" | "warn" | "error", msg: string) {
   void ipc.log(level, `[terminal] ${msg}`);
@@ -386,8 +391,15 @@ function applyCheapSettings(e: Entry, s: Settings) {
   if (o.cursorBlink !== blink) o.cursorBlink = blink;
 }
 
+let appliedThemeId: string | null = null;
+
 function onSettingsChanged(s: Settings) {
+  // Theme: applies to parked terminals too (no measuring needed); the WebGL addon rebuilds its atlas.
+  const themeChanged = s.theme !== appliedThemeId;
+  appliedThemeId = s.theme;
+  const theme = themeChanged ? getTerminalTheme(s) : null;
   for (const e of entries.values()) {
+    if (theme) e.term.options.theme = theme;
     applyCheapSettings(e, s);
     // Font metrics can only be measured while visible; parked terminals pick them up when shown.
     if (isShown(e)) {
@@ -409,7 +421,7 @@ function ensureStoreSubscription() {
   storeUnsub = useApp.subscribe((s) => {
     if (s.persisted.settings !== prevSettings) {
       prevSettings = s.persisted.settings;
-      onSettingsChanged(prevSettings);
+      onSettingsChanged(settings());
     }
     if (s.persisted.sessions !== prevSessions) {
       prevSessions = s.persisted.sessions;
@@ -429,6 +441,12 @@ function ensureStoreSubscription() {
       prevFocused = s.focusedSessionId;
       scheduleReconcile(0); // focus affects priority for free WebGL slots
     }
+  });
+  let prevPresentation = useUi.getState().presentation;
+  useUi.subscribe((u) => {
+    if (u.presentation === prevPresentation) return;
+    prevPresentation = u.presentation;
+    onSettingsChanged(settings());
   });
 }
 
@@ -759,6 +777,7 @@ function createEntry(id: SessionId): Entry {
   ensureStoreSubscription();
   probeGpu();
   const s = settings();
+  if (appliedThemeId === null) appliedThemeId = s.theme;
   const term = new Terminal({
     allowProposedApi: true,
     fontFamily: s.fontFamily,
@@ -771,7 +790,7 @@ function createEntry(id: SessionId): Entry {
     windowsPty: { backend: "conpty", buildNumber: windowsBuild },
     macOptionIsMeta: false,
     rightClickSelectsWord: false,
-    theme: terminalTheme,
+    theme: getTerminalTheme(s),
     smoothScrollDuration: 0,
     linkHandler: { activate: (ev, uri) => openLink(ev, uri), allowNonHttpProtocols: false },
   });
@@ -946,12 +965,6 @@ export function writeLocalNotice(id: SessionId, text: string): void {
   if (e) writeNotice(e, text);
 }
 
-const SEARCH_DECORATIONS = {
-  matchBackground: "#3a3350",
-  matchOverviewRuler: "#6f6f7d",
-  activeMatchBackground: "#7b61ff",
-  activeMatchColorOverviewRuler: "#7b61ff",
-};
 
 /** Find `query` in the scrollback. Returns whether a match was found. */
 export function findInTerminal(
@@ -963,7 +976,7 @@ export function findInTerminal(
   const e = entries.get(id);
   if (!e || !query) return false;
   try {
-    const o = { ...opts, decorations: SEARCH_DECORATIONS };
+    const o = { ...opts, decorations: getSearchDecorations(settings()) };
     return dir === "next" ? e.search.findNext(query, o) : e.search.findPrevious(query, o);
   } catch {
     return false; // invalid regex

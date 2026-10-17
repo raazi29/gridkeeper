@@ -19,11 +19,12 @@ import {
 import { nextAttentionTarget, useAttention, useAttentionUi } from "../store/attention";
 import { confirmDialog, useUi } from "../store/uiStore";
 import { focusTerminal } from "../terminal/registry";
+import { THEMES, getTheme } from "../theme/themes";
 
 export interface Command {
   id: string;
   title: string;
-  category: "Session" | "Workspace" | "Group" | "Layout" | "View";
+  category: "Session" | "Workspace" | "Group" | "Layout" | "View" | "Theme";
   run: () => void | Promise<unknown>;
   /** Hidden from the palette (still bindable). */
   hidden?: boolean;
@@ -212,6 +213,29 @@ function toggleDialog(kind: "settings" | "profiles" | "diagnostics") {
   else ui.openDialog({ kind });
 }
 
+// ---- appearance -----------------------------------------------------------------
+
+function setTheme(id: string) {
+  useApp.getState().updateSettings({ theme: id });
+}
+
+function cycleTheme(dir: 1 | -1) {
+  const cur = getTheme(useApp.getState().persisted.settings.theme).id;
+  const i = THEMES.findIndex((t) => t.id === cur);
+  const next = THEMES[(i + dir + THEMES.length) % THEMES.length];
+  setTheme(next.id);
+  notify("info", `Theme: ${next.name}`);
+}
+
+/** Per-theme commands ("Theme: Deep Space", …). Ids: theme.set.<themeId>. */
+export const THEME_COMMAND_PREFIX = "theme.set.";
+const themeCommands: Command[] = THEMES.map((t) => ({
+  id: `${THEME_COMMAND_PREFIX}${t.id}`,
+  title: `Theme: ${t.name}`,
+  category: "Theme" as const,
+  run: () => setTheme(t.id),
+}));
+
 // ---- registry -----------------------------------------------------------------
 
 const focusCommands: Command[] = Array.from({ length: 9 }, (_, i) => ({
@@ -333,6 +357,28 @@ export const COMMANDS: Command[] = [
     },
   },
   { id: "view.settings", title: "Settings", category: "View", run: () => toggleDialog("settings") },
+  {
+    id: "view.focusMode",
+    title: "Toggle focus mode",
+    category: "View",
+    run: () => {
+      const ui = useUi.getState();
+      ui.setFocusMode(!ui.focusMode);
+    },
+  },
+  {
+    id: "view.presentation",
+    title: "Toggle presentation mode",
+    category: "View",
+    run: () => {
+      const ui = useUi.getState();
+      ui.setPresentation(!ui.presentation);
+    },
+  },
+  { id: "view.appearance", title: "Appearance settings…", category: "Theme", run: () => useUi.getState().openDialog({ kind: "settings", section: "appearance" }) },
+  { id: "theme.next", title: "Next theme", category: "Theme", run: () => cycleTheme(1) },
+  { id: "theme.prev", title: "Previous theme", category: "Theme", run: () => cycleTheme(-1) },
+  ...themeCommands,
   { id: "attention.next", title: "Jump to next alert", category: "Session", run: jumpToNextAlert },
   { id: "view.fleet", title: "Fleet overview (all sessions)", category: "View", run: () => toggleOverlay("fleet") },
   { id: "session.broadcast", title: "Broadcast a line to several sessions…", category: "Session", run: () => toggleOverlay("broadcast") },

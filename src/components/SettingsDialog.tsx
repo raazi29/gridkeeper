@@ -1,11 +1,11 @@
 // Settings: terminal, agents, keybindings, interface. Everything persists through updateSettings.
 
 import { memo, useEffect, useState } from "react";
-import { COMMANDS } from "../actions/commands";
+import { COMMANDS, THEME_COMMAND_PREFIX } from "../actions/commands";
 import { notify } from "../actions/notify";
 import { DEFAULT_BINDINGS, displayCombo, eventToCombo, forbiddenReason } from "../keybindings/combo";
 import { errorMessage, ipc } from "../lib/ipc";
-import type { AgentPaths, LayoutPreset, RendererPref, Settings } from "../lib/types";
+import type { AgentPaths, LayoutPreset, RendererPref, Settings, UiDensity } from "../lib/types";
 import { DEFAULT_SETTINGS } from "../lib/types";
 import { useApp } from "../store/appStore";
 import { setKeyRecording, useUi } from "../store/uiStore";
@@ -16,9 +16,13 @@ import { Button } from "./ui/Button";
 import { Field, Input, NumberInput, Segmented, Toggle } from "./ui/Field";
 import { Modal } from "./ui/Modal";
 import { pickExecutable } from "./util/pick";
+import { TERMINAL_FONTS, preloadFont } from "../styles/fonts";
+import { themeScopeStyle } from "../theme/applyTheme";
+import { THEMES, getTheme, type Theme } from "../theme/themes";
 
-type Section = "terminal" | "agents" | "keys" | "interface" | "notifications";
+type Section = "appearance" | "terminal" | "agents" | "keys" | "interface" | "notifications";
 const SECTIONS: { id: Section; label: string }[] = [
+  { id: "appearance", label: "Appearance" },
   { id: "terminal", label: "Terminal" },
   { id: "agents", label: "Agents" },
   { id: "keys", label: "Keybindings" },
@@ -33,7 +37,7 @@ function useSetting<K extends keyof Settings>(key: K): [Settings[K], (v: Setting
 
 export function SettingsDialog({ onClose }: { onClose: () => void }) {
   const initial = useUi((s) => (s.dialog?.kind === "settings" ? s.dialog.section : undefined));
-  const [section, setSection] = useState<Section>((initial as Section) ?? "terminal");
+  const [section, setSection] = useState<Section>((initial as Section) ?? "appearance");
   return (
     <Modal title="Settings" onClose={onClose} width={760} className="settings" footer={<Button onClick={onClose}>Done</Button>}>
       <div className="settings-layout">
@@ -45,6 +49,7 @@ export function SettingsDialog({ onClose }: { onClose: () => void }) {
           ))}
         </nav>
         <div className="settings-content">
+          {section === "appearance" && <AppearanceSection />}
           {section === "terminal" && <TerminalSection />}
           {section === "agents" && <AgentsSection />}
           {section === "keys" && <KeysSection />}
@@ -55,6 +60,147 @@ export function SettingsDialog({ onClose }: { onClose: () => void }) {
     </Modal>
   );
 }
+
+// ---- appearance -----------------------------------------------------------------
+
+function AppearanceSection() {
+  const themeId = getTheme(useApp((s) => s.persisted.settings.theme)).id;
+  const [density, setDensity] = useSetting("uiDensity");
+  const [reduceMotion, setReduceMotion] = useSetting("reduceMotion");
+  const fontFamily = useApp((s) => s.persisted.settings.fontFamily);
+  const scanlines = useUi((s) => s.scanlines);
+  const focusMode = useUi((s) => s.focusMode);
+  const presentation = useUi((s) => s.presentation);
+  const theme = getTheme(themeId);
+  const fontPreset = TERMINAL_FONTS.find((f) => f.value === fontFamily)?.value ?? "custom";
+
+  return (
+    <div className="appearance">
+      <section className="appearance-group">
+        <div className="micro-label">Theme</div>
+        <div className="theme-grid" role="radiogroup" aria-label="Theme">
+          {THEMES.map((t) => (
+            <ThemeCard key={t.id} theme={t} selected={t.id === themeId} onSelect={() => useApp.getState().updateSettings({ theme: t.id })} />
+          ))}
+        </div>
+      </section>
+
+      <section className="appearance-group form">
+        <div className="micro-label">Interface</div>
+        <Field label="Density">
+          <Segmented<UiDensity>
+            ariaLabel="Density"
+            value={density}
+            onChange={setDensity}
+            options={[
+              { value: "compact", label: "Compact" },
+              { value: "comfortable", label: "Comfortable" },
+            ]}
+          />
+        </Field>
+        <Field label="Terminal font" hint={fontPreset === "custom" ? "Custom font set in Terminal settings" : "Bundled fonts work offline"}>
+          <Segmented<string>
+            ariaLabel="Terminal font"
+            value={fontPreset}
+            onChange={async (v) => {
+              await preloadFont(v);
+              useApp.getState().updateSettings({ fontFamily: v });
+            }}
+            options={TERMINAL_FONTS.map((f) => ({ value: f.value, label: f.label }))}
+          />
+        </Field>
+        <Toggle checked={reduceMotion} onChange={setReduceMotion} label="Reduce motion" hint="Turns off transitions, lamp pulses and the CRT overlay. Also follows the Windows animation setting." />
+        {theme.effects?.scanlines && (
+          <Toggle checked={scanlines} onChange={(v) => useUi.getState().setScanlines(v)} disabled={reduceMotion} label="CRT scanlines" hint={`Static scanline overlay on panes (${theme.name} only).`} />
+        )}
+      </section>
+
+      <section className="appearance-group">
+        <div className="micro-label">Modes</div>
+        <div className="mode-row">
+          <Button size="sm" className={focusMode ? "is-on" : undefined} onClick={() => useUi.getState().setFocusMode(!focusMode)}>
+            {focusMode ? "Exit focus mode" : "Focus mode"}
+          </Button>
+          <Button size="sm" onClick={() => useUi.getState().setPresentation(!presentation)}>
+            {presentation ? "Exit presentation mode" : "Presentation mode"}
+          </Button>
+        </div>
+        <p className="explain">Focus hides the sidebar, tabs and status bar (Esc outside a terminal exits). Presentation enlarges terminal text by 3 pt and scales the interface. Neither is saved between runs.</p>
+      </section>
+    </div>
+  );
+}
+
+const PREVIEW_LINES = (t: Theme) => {
+  const c = t.terminal;
+  return [
+    [
+      [c.green, "❯ "],
+      [c.blue, "claude "],
+      [c.brightBlack, "--continue"],
+    ],
+    [
+      [c.yellow, "● "],
+      [c.foreground, "edit "],
+      [c.cyan, "app.ts "],
+      [c.brightBlack, "+12 −3"],
+    ],
+    [
+      [c.green, "✓ 41 "],
+      [c.red, "✗ 1 "],
+      [c.magenta, "0.8s "],
+      [c.brightBlack, "vitest"],
+    ],
+  ] as [string, string][][];
+};
+
+const ThemeCard = memo(function ThemeCard({ theme, selected, onSelect }: { theme: Theme; selected: boolean; onSelect: () => void }) {
+  return (
+    <button
+      type="button"
+      role="radio"
+      aria-checked={selected}
+      className={`theme-card${selected ? " is-selected" : ""}`}
+      style={themeScopeStyle(theme)}
+      data-theme-scope={theme.id}
+      data-autofocus={selected || undefined}
+      onClick={onSelect}
+      title={theme.description}
+    >
+      <span className="tcp" aria-hidden="true">
+        <span className="tcp-side">
+          <i className="is-on" />
+          <i />
+          <i />
+        </span>
+        <span className="tcp-main">
+          <span className="tcp-pane">
+            <span className="tcp-head">
+              <b />
+              <i />
+            </span>
+            <span className="tcp-term">
+              {PREVIEW_LINES(theme).map((line, i) => (
+                <span key={i} style={{ display: "block" }}>
+                  {line.map(([color, text], j) => (
+                    <span key={j} style={{ color }}>
+                      {text}
+                    </span>
+                  ))}
+                </span>
+              ))}
+            </span>
+          </span>
+        </span>
+      </span>
+      <span className="theme-card-meta">
+        <span className="theme-card-name">{theme.name}</span>
+        <span className="theme-card-kind">{theme.kind}</span>
+      </span>
+      <span className="theme-card-desc">{theme.description}</span>
+    </button>
+  );
+});
 
 function TerminalSection() {
   const [scrollback, setScrollback] = useSetting("scrollbackLines");
@@ -237,7 +383,8 @@ function KeysSection() {
   const [recording, setRecording] = useState<string | null>(null);
   const [message, setMessage] = useState<{ id: string; text: string; tone: "err" | "info" } | null>(null);
   const titles = Object.fromEntries(COMMANDS.map((c) => [c.id, c.title]));
-  const ids = COMMANDS.map((c) => c.id);
+  // Per-theme commands live in the palette; listing nine of them here would bury the real shortcuts.
+  const ids = COMMANDS.filter((c) => !c.id.startsWith(THEME_COMMAND_PREFIX)).map((c) => c.id);
 
   const apply = (id: string, combo: string) => {
     const next: Record<string, string> = { ...useApp.getState().persisted.settings.keybindings, [id]: combo };

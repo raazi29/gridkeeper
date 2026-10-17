@@ -1,5 +1,6 @@
 // Diagnostics modal: per-process resource table, renderer status, export. Polls only while open.
 
+import { APP_NAME } from "../lib/brand";
 import { useState } from "react";
 import { useShallow } from "zustand/react/shallow";
 import { errorMessage, ipc } from "../lib/ipc";
@@ -82,7 +83,7 @@ export function DiagnosticsPanel({ onClose }: { onClose: () => void }) {
           {diag ? (
             <>
               <tr className="row-strong">
-                <td>Altera host</td>
+                <td>{APP_NAME} host</td>
                 <td className="muted">Rust</td>
                 <td className="num muted">—</td>
                 <td className="num">{diag.host.processCount}</td>
