@@ -1,0 +1,175 @@
+/* Signature themes: the structural accents of Holo Comms, Saber Duel and Outer Rim.
+   Rules: CSS only; nothing animates on unfocused panes; the single loop (holo band) is transform-only,
+   pauses while the window is in the background and is removed under reduced motion. */
+
+/* ---------- Holo Comms ---------------------------------------------------------------------- */
+
+/* Focused pane: cyan projector light on the header, a faint interlace and a slow scan band. */
+:root[data-theme="holo-comms"] .pane[data-focused] {
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--border-strong));
+}
+:root[data-theme="holo-comms"] .pane[data-focused] .pane-header {
+  background:
+    repeating-linear-gradient(to bottom, transparent 0 2px, color-mix(in srgb, var(--accent) 5%, transparent) 2px 3px),
+    linear-gradient(to bottom, color-mix(in srgb, var(--accent) 10%, var(--bg-1)), color-mix(in srgb, var(--accent) 4%, var(--bg-1)));
+  border-bottom-color: color-mix(in srgb, var(--accent) 35%, var(--border));
+}
+:root[data-theme="holo-comms"] .pane[data-focused] .pane-name {
+  text-shadow: 0 0 8px color-mix(in srgb, var(--accent) 40%, transparent);
+}
+:root[data-theme="holo-comms"] .pane::before {
+  background: linear-gradient(90deg, transparent, var(--accent) 20%, var(--accent) 80%, transparent);
+}
+:root[data-theme="holo-comms"][data-holo] .pane[data-focused] .pane-header::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 36%;
+  pointer-events: none;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    color-mix(in srgb, var(--accent) 10%, transparent) 40%,
+    color-mix(in srgb, var(--accent) 22%, transparent) 50%,
+    color-mix(in srgb, var(--accent) 10%, transparent) 60%,
+    transparent
+  );
+  transform: translateX(-110%);
+  will-change: transform;
+  animation: gk-holo-sweep 8s linear 0.4s infinite;
+}
+/* One pass in ~2.4 s, then rest off-screen for the remainder of the cycle. */
+@keyframes gk-holo-sweep {
+  0% {
+    transform: translateX(-110%);
+  }
+  30% {
+    transform: translateX(290%);
+  }
+  100% {
+    transform: translateX(290%);
+  }
+}
+:root[data-theme="holo-comms"][data-app-blurred] .pane-header::after {
+  animation-play-state: paused !important;
+}
+:root[data-theme="holo-comms"][data-reduce-motion] .pane-header::after {
+  animation: none !important;
+  display: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  :root[data-theme="holo-comms"] .pane-header::after {
+    animation: none !important;
+    display: none;
+  }
+}
+
+/* Faint interlace on empty states (static). */
+:root[data-theme="holo-comms"] .grid-empty,
+:root[data-theme="holo-comms"] .empty-state {
+  background:
+    repeating-linear-gradient(to bottom, transparent 0 2px, color-mix(in srgb, var(--accent) 4%, transparent) 2px 3px),
+    radial-gradient(60% 50% at 50% 100%, color-mix(in srgb, var(--accent) 8%, transparent), transparent 70%);
+}
+:root[data-theme="holo-comms"] .grid-empty {
+  border-color: color-mix(in srgb, var(--accent) 22%, var(--border));
+}
+:root[data-theme="holo-comms"] .grid-empty-title,
+:root[data-theme="holo-comms"] .wordmark {
+  text-shadow: 0 0 10px color-mix(in srgb, var(--accent) 45%, transparent);
+}
+:root[data-theme="holo-comms"] .modal::before,
+:root[data-theme="holo-comms"] .theme-pop::before {
+  width: 56px;
+  background: linear-gradient(90deg, transparent, var(--accent), transparent);
+}
+
+/* ---------- Saber Duel ---------------------------------------------------------------------- */
+
+/* The focused pane is framed by a blade: a white-hot 1px core (the border) inside a 1px blade-coloured
+   edge (spread shadow, so the pane never changes size and xterm never refits), plus soft light. */
+:root[data-theme="saber-duel"] .pane {
+  transition:
+    border-color 160ms var(--ease),
+    box-shadow 200ms var(--ease);
+}
+:root[data-theme="saber-duel"] .pane::before {
+  display: none;
+}
+:root[data-theme="saber-duel"] .pane[data-focused] {
+  border-color: color-mix(in srgb, var(--accent) 40%, #ffffff);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+:root[data-theme="saber-duel"][data-glow] .pane[data-focused] {
+  box-shadow:
+    0 0 0 1px var(--accent),
+    0 0 9px 1px color-mix(in srgb, var(--accent) 55%, transparent),
+    0 0 22px 2px color-mix(in srgb, var(--accent) 20%, transparent);
+}
+:root[data-theme="saber-duel"] .pane[data-focused] .pane-header {
+  background: color-mix(in srgb, var(--bg-1) 92%, var(--accent));
+}
+:root[data-theme="saber-duel"] .group-tab.is-active::after,
+:root[data-theme="saber-duel"] .modal::before,
+:root[data-theme="saber-duel"] .theme-pop::before {
+  background: color-mix(in srgb, var(--accent) 45%, #ffffff);
+  box-shadow: 0 0 6px var(--accent);
+}
+:root[data-theme="saber-duel"] .wordmark {
+  letter-spacing: 0.04em;
+}
+
+/* ---------- Outer Rim ----------------------------------------------------------------------- */
+
+/* Worn stencil labels: uppercase, wide tracking, display face. */
+:root[data-theme="outer-rim"] .pane-name,
+:root[data-theme="outer-rim"] .ws-header-name,
+:root[data-theme="outer-rim"] .group-tab-name,
+:root[data-theme="outer-rim"] .modal-title,
+:root[data-theme="outer-rim"] .theme-pop-title {
+  font-family: var(--font-display);
+  text-transform: uppercase;
+  letter-spacing: 0.09em;
+  font-weight: 650;
+  font-size: calc(var(--fs-s) - 1px);
+}
+:root[data-theme="outer-rim"] .wordmark,
+:root[data-theme="outer-rim"] .ws-header-name {
+  /* weathering: a static speckle mask eats a little of the paint */
+  -webkit-mask-image: radial-gradient(circle at 20% 30%, transparent 0 0.7px, #000 1.1px), radial-gradient(circle at 70% 60%, transparent 0 0.6px, #000 1px);
+  -webkit-mask-size: 7px 5px, 11px 7px;
+  -webkit-mask-composite: source-in;
+  mask-composite: intersect;
+}
+:root[data-theme="outer-rim"] .wordmark {
+  text-transform: uppercase;
+  letter-spacing: 0.16em;
+}
+:root[data-theme="outer-rim"] .statusbar {
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+/* Hazard trim along the focused pane's top bezel instead of the plain hairline. */
+:root[data-theme="outer-rim"] .pane::before {
+  height: 2px;
+  background: repeating-linear-gradient(135deg, var(--accent) 0 6px, var(--bg-1) 6px 12px);
+}
+:root[data-theme="outer-rim"] .pane[data-focused] {
+  border-color: color-mix(in srgb, var(--accent) 50%, var(--border-strong));
+}
+:root[data-theme="outer-rim"] .pane[data-focused] .pane-header {
+  background: color-mix(in srgb, var(--bg-1) 90%, var(--accent-2));
+}
+:root[data-theme="outer-rim"] .grid-empty {
+  border-style: solid;
+  border-color: var(--border-strong);
+  background: repeating-linear-gradient(135deg, transparent 0 14px, color-mix(in srgb, var(--accent-2) 4%, transparent) 14px 15px);
+}
+:root[data-theme="outer-rim"] .modal::before,
+:root[data-theme="outer-rim"] .theme-pop::before {
+  width: 48px;
+  height: 3px;
+  background: repeating-linear-gradient(135deg, var(--accent) 0 5px, transparent 5px 10px);
+}

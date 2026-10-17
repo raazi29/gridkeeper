@@ -21,6 +21,8 @@ import { confirmAction } from "./confirm";
 import { AgentGlyph, IconBranch, IconClose, IconMaximize, IconMore, IconPlay, IconRestart, IconRestore, IconStop } from "./icons";
 import { beginPaneDrag, endPaneDrag } from "./paneDrag";
 import { AttentionLamp } from "../components/AttentionBits";
+import { MutedGlyph } from "../components/MutedGlyph";
+import { toggleSessionMute, useSessionMuted } from "../actions/notifyPrefs";
 
 export interface PaneHeaderProps {
   sessionId: SessionId;
@@ -176,6 +178,7 @@ export const PaneHeader = memo(function PaneHeader({ sessionId, groupId, index, 
   const profile = useApp((s) => (profileId ? s.profiles.find((p) => p.id === profileId) : undefined));
   const [editing, setEditing] = useState(false);
   const [menuAnchor, setMenuAnchor] = useState<HTMLElement | null>(null);
+  const muted = useSessionMuted(sessionId);
   const inputRef = useRef<HTMLInputElement>(null);
   const renameDone = useRef(false);
 
@@ -246,6 +249,7 @@ export const PaneHeader = memo(function PaneHeader({ sessionId, groupId, index, 
     { label: "Copy output", onSelect: () => void copyOutput(sessionId) },
     { label: "Clear", onSelect: () => void clearSession(sessionId) },
     { label: "Hide view", onSelect: () => hideView(sessionId) },
+    { label: muted ? "Unmute notifications" : "Mute notifications", onSelect: () => toggleSessionMute(sessionId) },
     {
       label: "Restart fresh",
       separatorBefore: true,
@@ -301,6 +305,7 @@ export const PaneHeader = memo(function PaneHeader({ sessionId, groupId, index, 
       <div className="pane-title-area">
         <span className={`pane-dot pane-dot--${status.cls}`} title={status.label} aria-label={status.label} />
         <AttentionLamp sessionId={sessionId} />
+        {muted && <MutedGlyph title="Notifications muted for this session (alerts still reach Comms)" />}
         <span className="pane-glyph" title={meta.agent}>
           <AgentGlyph agent={meta.agent} />
         </span>

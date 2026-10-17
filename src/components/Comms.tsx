@@ -3,28 +3,76 @@
 
 import { useEffect, useMemo, useRef } from "react";
 import { jumpToSession } from "../actions/commands";
+import { toggleDnd, useDnd } from "../actions/notifyPrefs";
 import { useApp } from "../store/appStore";
+import { useUi } from "../store/uiStore";
+import { IconBellOff } from "./MutedGlyph";
+import { useContextMenu } from "./ui/Menu";
 import { countUnread, useAttention, useAttentionUi, type FeedItem } from "../store/attention";
 import { useShortcut, withShortcut } from "./hooks";
 import { IconBell, IconFleet } from "./AttentionBits";
 import "../styles/attention.css";
 
+const HOLD_MS = 550;
+
 export function CommsButton() {
   const unread = useAttention((s) => countUnread(s.sessions));
   const open = useAttentionUi((s) => s.commsOpen);
+  const dnd = useDnd();
+  const menu = useContextMenu();
+  // Click-and-hold toggles Do not disturb; the click that ends the hold must not open the panel.
+  const hold = useRef<{ timer?: number; fired: boolean }>({ fired: false });
+  useEffect(() => () => window.clearTimeout(hold.current.timer), []);
+  const cancelHold = () => window.clearTimeout(hold.current.timer);
+  const openMenu = (e: { clientX: number; clientY: number; preventDefault?: () => void }) =>
+    menu.open(e, [
+      { label: dnd ? "Turn off Do not disturb" : "Do not disturb", hint: "hold the bell", onSelect: () => toggleDnd() },
+      { label: "Mark all read", onSelect: () => useAttention.getState().markAllRead() },
+      "separator",
+      { label: "Notification settings…", onSelect: () => useUi.getState().openDialog({ kind: "settings", section: "notifications" }) },
+    ]);
+  const base = unread ? `Comms — ${unread} session${unread === 1 ? "" : "s"} need${unread === 1 ? "s" : ""} attention` : "Comms — recent alerts";
   return (
-    <button
-      type="button"
-      className={`sb-item sb-btn attn-sb-btn${unread ? " has-unread" : ""}${open ? " is-active" : ""}`}
-      title={unread ? `Comms — ${unread} session${unread === 1 ? "" : "s"} need${unread === 1 ? "s" : ""} attention` : "Comms — recent alerts"}
-      aria-label="Comms"
-      aria-expanded={open}
-      data-comms-toggle=""
-      onClick={() => useAttentionUi.getState().toggleComms()}
-    >
-      <IconBell size={13} />
-      {unread > 0 && <span className="attn-count">{unread}</span>}
-    </button>
+    <>
+      <button
+        type="button"
+        className={`sb-item sb-btn attn-sb-btn${unread ? " has-unread" : ""}${open ? " is-active" : ""}${dnd ? " is-dnd" : ""}`}
+        title={`${base}${dnd ? "\nDo not disturb is on" : ""}\nHold or right-click for Do not disturb`}
+        aria-label={dnd ? "Comms (do not disturb)" : "Comms"}
+        aria-expanded={open}
+        data-comms-toggle=""
+        onPointerDown={(e) => {
+          if (e.button !== 0) return;
+          hold.current.fired = false;
+          cancelHold();
+          hold.current.timer = window.setTimeout(() => {
+            hold.current.fired = true;
+            toggleDnd();
+          }, HOLD_MS);
+        }}
+        onPointerUp={cancelHold}
+        onPointerLeave={cancelHold}
+        onContextMenu={openMenu}
+        onKeyDown={(e) => {
+          if (e.key === "ContextMenu" || (e.shiftKey && e.key === "F10")) {
+            e.preventDefault();
+            const r = e.currentTarget.getBoundingClientRect();
+            openMenu({ clientX: r.left, clientY: r.top - 4 });
+          }
+        }}
+        onClick={() => {
+          if (hold.current.fired) {
+            hold.current.fired = false;
+            return;
+          }
+          useAttentionUi.getState().toggleComms();
+        }}
+      >
+        {dnd ? <IconBellOff size={13} /> : <IconBell size={13} />}
+        {unread > 0 && <span className="attn-count">{unread}</span>}
+      </button>
+      {menu.element}
+    </>
   );
 }
 
@@ -45,6 +93,22 @@ function ago(at: number, now: number): string {
   if (m < 60) return `${m}m`;
   const h = Math.round(m / 60);
   return h < 24 ? `${h}h` : `${Math.round(h / 24)}d`;
+}
+
+function DndChip() {
+  const dnd = useDnd();
+  return (
+    <button
+      type="button"
+      className={`chip attn-dnd-chip${dnd ? " is-on" : ""}`}
+      aria-pressed={dnd}
+      title={dnd ? "Do not disturb is on: alerts collect here silently" : "Do not disturb: collect alerts here without toasts or sounds"}
+      onClick={() => toggleDnd()}
+    >
+      {dnd ? <IconBellOff size={11} /> : <IconBell size={11} />}
+      {dnd ? "DND on" : "DND"}
+    </button>
+  );
 }
 
 const KIND_LABEL: Record<FeedItem["kind"], string> = { waiting: "Needs you", done: "Done", error: "Error" };
@@ -98,6 +162,7 @@ export function CommsPanel() {
         <span className="attn-comms-title">Comms</span>
         <span className="attn-comms-sub">{feed.length ? `${feed.length} recent` : ""}</span>
         <span className="attn-spacer" />
+        <DndChip />
         <button type="button" className="chip" onClick={() => useAttention.getState().markAllRead()}>
           Mark all read
         </button>
@@ -114,7 +179,8 @@ export function CommsPanel() {
               key={f.seq}
               type="button"
               role="listitem"
-              className="attn-feed-row"
+              className={`attn-feed-row${f.muted ? " is-muted" : ""}`}
+              title={f.muted ? `Not notified: ${f.mutedReason ?? "muted"}` : undefined}
               onClick={() => {
                 close();
                 jumpToSession(f.id);
@@ -125,6 +191,12 @@ export function CommsPanel() {
                 <span className="attn-feed-who">
                   <span className="attn-feed-name">{w?.name ?? "Session"}</span>
                   {w?.ws && <span className="attn-feed-ws">{w.ws}</span>}
+                  {f.muted && (
+                    <span className="attn-feed-muted">
+                      <IconBellOff size={10} />
+                      {f.mutedReason ?? "Muted"}
+                    </span>
+                  )}
                 </span>
                 <span className="attn-feed-msg">{f.message}</span>
               </span>

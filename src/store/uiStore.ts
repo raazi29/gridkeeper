@@ -12,7 +12,8 @@ export type DialogState =
   | { kind: "newWorkspace" }
   | { kind: "settings"; section?: string }
   | { kind: "profiles" }
-  | { kind: "diagnostics" };
+  | { kind: "diagnostics" }
+  | { kind: "welcome" };
 
 export type PaletteMode = "all" | "workspaces" | "sessions";
 

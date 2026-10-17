@@ -1,0 +1,642 @@
+/* Experience layer: quick theme switcher, status-bar theme chip, welcome sheet, saber colour picker,
+   notification settings, mute glyphs and the hyperspace canvas. Theme-signature effects (holo band,
+   blade frame, stencil labels) live in signature.css. */
+
+/* ---- theme chip (status bar) ------------------------------------------------------------- */
+
+.theme-chip {
+  gap: 6px;
+  font-family: var(--font-ui);
+  font-size: var(--fs-xs);
+  letter-spacing: 0;
+  color: var(--text-1);
+}
+.theme-chip.is-active {
+  background: var(--bg-3);
+  color: var(--text-0);
+  box-shadow: inset 0 2px 0 var(--accent);
+}
+.theme-chip-swatch {
+  position: relative;
+  width: 14px;
+  height: 10px;
+  flex: none;
+  border-radius: 2px;
+  border: 1px solid var(--border-strong);
+  background: linear-gradient(135deg, var(--sw-bg) 0 48%, var(--sw-accent) 48% 76%, var(--sw-accent-2) 76%);
+}
+.theme-chip-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ---- quick switcher popover -------------------------------------------------------------- */
+
+.theme-pop {
+  position: fixed;
+  z-index: 250;
+  width: min(584px, calc(100vw - 16px));
+  max-height: calc(100vh - 16px);
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-2);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-l);
+  box-shadow: var(--elev-3);
+  overflow: hidden;
+  animation: rise-in var(--dur-slow) var(--ease);
+}
+.theme-pop::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 14px;
+  width: 28px;
+  height: 2px;
+  background: var(--accent);
+}
+.theme-pop-head {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 11px 14px 9px;
+  border-bottom: 1px solid var(--border);
+}
+.theme-pop-title {
+  font-family: var(--font-display);
+  font-size: var(--fs-m);
+  font-weight: 600;
+  color: var(--text-0);
+}
+.theme-pop-now {
+  font-size: var(--fs-xs);
+  color: var(--text-1);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.theme-pop-now b {
+  color: var(--accent-fg);
+  font-weight: 600;
+}
+.theme-pop-hint {
+  margin-left: auto;
+  font-family: var(--font-mono);
+  font-size: var(--fs-2xs);
+  color: var(--text-2);
+  white-space: nowrap;
+}
+.theme-pop-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  padding: 12px 14px;
+  overflow-y: auto;
+}
+.theme-pop-foot {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 40px;
+  padding: 6px 14px;
+  border-top: 1px solid var(--border);
+  background: color-mix(in srgb, var(--bg-0) 40%, var(--bg-2));
+}
+.theme-pop-tip {
+  font-size: var(--fs-xs);
+  color: var(--text-2);
+}
+.theme-pop-saber {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+.theme-pop-more {
+  margin-left: auto;
+  white-space: nowrap;
+}
+
+/* compact theme card (switcher + welcome) */
+.theme-card--compact .tcp {
+  height: 58px;
+}
+.theme-card--compact .tcp-side {
+  width: 22px;
+  padding: 5px 4px;
+  gap: 3px;
+}
+.theme-card--compact .tcp-term {
+  font-size: 7.5px;
+  line-height: 1.35;
+  padding: 3px 5px;
+}
+.theme-card--compact .theme-card-meta {
+  padding: 6px 8px 7px;
+}
+.theme-card--compact .theme-card-name {
+  font-size: var(--fs-xs);
+}
+
+/* ---- saber colour picker ----------------------------------------------------------------- */
+
+.saber-swatches {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.saber-swatch {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: var(--control-h-sm);
+  padding: 0 9px 0 7px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-m);
+  background: var(--bg-2);
+  color: var(--text-1);
+  font-size: var(--fs-xs);
+  cursor: pointer;
+  transition:
+    border-color var(--dur) var(--ease),
+    color var(--dur) var(--ease);
+}
+.saber-swatch:hover {
+  color: var(--text-0);
+  border-color: color-mix(in srgb, var(--blade) 55%, var(--border-strong));
+}
+.saber-swatch.is-selected {
+  color: var(--text-0);
+  border-color: var(--blade);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--blade) 60%, transparent);
+}
+/* a tiny blade: white-hot core, coloured edge, soft light */
+.saber-swatch-beam {
+  width: 18px;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--blade-core);
+  box-shadow:
+    0 0 0 1px var(--blade),
+    0 0 6px 1px color-mix(in srgb, var(--blade) 70%, transparent);
+}
+.saber-swatches--sm .saber-swatch {
+  height: 22px;
+  padding: 0 7px 0 6px;
+}
+.saber-swatches--sm .saber-swatch-name {
+  display: none;
+}
+.saber-swatches--sm .saber-swatch-beam {
+  width: 14px;
+}
+.theme-effects {
+  margin-top: 4px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-l);
+  background: color-mix(in srgb, var(--bg-0) 35%, var(--bg-1));
+}
+
+/* ---- welcome sheet ----------------------------------------------------------------------- */
+
+.welcome .modal-body {
+  padding: 0;
+}
+.welcome .modal-footer {
+  justify-content: space-between;
+}
+.welcome-foot-note {
+  margin-right: auto;
+  font-size: var(--fs-xs);
+  color: var(--text-2);
+}
+.welcome-hero {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 22px 22px 18px;
+  border-bottom: 1px solid var(--border);
+  background:
+    radial-gradient(1px 1px at 82% 30%, var(--accent) 50%, transparent 51%),
+    radial-gradient(1px 1px at 91% 62%, var(--text-2) 50%, transparent 51%),
+    radial-gradient(1px 1px at 70% 76%, var(--accent-2) 50%, transparent 51%),
+    radial-gradient(1px 1px at 96% 18%, var(--text-1) 50%, transparent 51%),
+    radial-gradient(120% 140% at 100% 0%, color-mix(in srgb, var(--accent) 10%, transparent), transparent 60%),
+    var(--bg-1);
+}
+.welcome-mark {
+  display: grid;
+  place-items: center;
+  width: 54px;
+  height: 54px;
+  flex: none;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-l);
+  background: var(--bg-0);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 12%, transparent);
+}
+.welcome-title {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 22px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--text-0);
+}
+.welcome-pitch {
+  margin: 4px 0 0;
+  max-width: 560px;
+  font-size: var(--fs-m);
+  line-height: 1.5;
+  color: var(--text-1);
+}
+.welcome-section {
+  padding: 14px 22px;
+}
+.welcome-section-head {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+.welcome-hint {
+  font-size: var(--fs-xs);
+  color: var(--text-2);
+}
+.welcome-themes {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+.welcome-prefs {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 24px;
+  align-items: start;
+  border-top: 1px solid var(--border);
+}
+.welcome-pref {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.welcome-pref-toggles {
+  gap: 4px;
+}
+.welcome-tips {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  padding: 0 22px 10px;
+}
+.welcome-tip {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-m);
+  background: var(--bg-2);
+}
+.welcome-tip-icon {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  flex: none;
+  border-radius: var(--radius-s);
+  background: var(--accent-soft);
+  color: var(--accent-fg);
+}
+.welcome-tip-body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  flex: 1;
+  font-size: var(--fs-xs);
+  line-height: 1.4;
+  color: var(--text-1);
+}
+.welcome-tip-body b {
+  font-size: var(--fs-s);
+  font-weight: 600;
+  color: var(--text-0);
+}
+.welcome-tip .kbd {
+  flex: none;
+  margin-top: 2px;
+}
+.welcome-note {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  padding: 0 22px 16px;
+  font-size: var(--fs-xs);
+  color: var(--text-2);
+}
+
+/* ---- notification settings --------------------------------------------------------------- */
+
+.notif-settings {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.notif-master {
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-l);
+  background: color-mix(in srgb, var(--bg-0) 35%, var(--bg-1));
+}
+.notif-master.is-on {
+  border-color: var(--accent-line);
+}
+.notif-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  transition: opacity var(--dur) var(--ease);
+}
+.notif-section.is-disabled {
+  opacity: 0.55;
+}
+.notif-section-head {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+.notif-section-hint {
+  font-size: var(--fs-xs);
+  color: var(--text-2);
+}
+.notif-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+}
+.notif-check {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  padding: 8px 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-m);
+  background: var(--bg-2);
+  color: var(--text-1);
+  text-align: left;
+  cursor: pointer;
+  transition:
+    border-color var(--dur) var(--ease),
+    background-color var(--dur) var(--ease);
+}
+.notif-check:hover:not(:disabled) {
+  background: var(--bg-3);
+}
+.notif-check.is-on {
+  border-color: var(--accent-line);
+  background: color-mix(in srgb, var(--accent) 6%, var(--bg-2));
+}
+.notif-check:disabled,
+.notif-agent:disabled {
+  cursor: default;
+}
+.notif-check-box {
+  position: relative;
+  width: 13px;
+  height: 13px;
+  flex: none;
+  margin-top: 1px;
+  border: 1px solid var(--border-strong);
+  border-radius: 3px;
+  background: var(--bg-0);
+}
+.is-on > .notif-check-box {
+  border-color: var(--accent);
+  background: var(--accent);
+}
+.is-on > .notif-check-box::after {
+  content: "";
+  position: absolute;
+  left: 3.5px;
+  top: 0.5px;
+  width: 3.5px;
+  height: 7px;
+  border: solid var(--on-accent);
+  border-width: 0 1.6px 1.6px 0;
+  transform: rotate(45deg);
+}
+.notif-check-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.notif-check-label {
+  font-size: var(--fs-s);
+  font-weight: 550;
+  color: var(--text-0);
+}
+.notif-check-hint {
+  font-size: var(--fs-xs);
+  color: var(--text-2);
+}
+.notif-agents {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.notif-agent {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: var(--control-h-sm);
+  padding: 0 10px 0 8px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-m);
+  background: var(--bg-2);
+  color: var(--text-1);
+  font-size: var(--fs-s);
+  cursor: pointer;
+}
+.notif-agent.is-on {
+  color: var(--text-0);
+  border-color: var(--accent-line);
+}
+.notif-agent .notif-check-box {
+  margin-top: 0;
+}
+.sound-sets {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+  transition: opacity var(--dur) var(--ease);
+}
+.sound-sets.is-dim {
+  opacity: 0.6;
+}
+.sound-set {
+  position: relative;
+  display: flex;
+  align-items: stretch;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-m);
+  background: var(--bg-2);
+}
+.sound-set.is-selected {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+.sound-set-pick {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 7px 10px;
+  border: 0;
+  background: none;
+  text-align: left;
+  cursor: pointer;
+}
+.sound-set-name {
+  font-size: var(--fs-s);
+  font-weight: 550;
+  color: var(--text-0);
+}
+.sound-set-hint {
+  font-size: var(--fs-xs);
+  color: var(--text-2);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.sound-set-play {
+  align-self: center;
+  margin-right: 6px;
+}
+.volume-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: var(--fs-s);
+  color: var(--text-1);
+}
+.volume-row input[type="range"] {
+  flex: 1;
+  max-width: 260px;
+  accent-color: var(--accent);
+}
+.volume-value {
+  width: 40px;
+  color: var(--text-2);
+  font-size: var(--fs-xs);
+}
+.quiet-hours {
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+.quiet-hours .toggle-row {
+  flex: 1 1 260px;
+}
+.quiet-times {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: var(--fs-s);
+  color: var(--text-1);
+}
+.quiet-times label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.quiet-times input {
+  width: 108px;
+  color-scheme: inherit;
+}
+.notif-empty {
+  margin: 0;
+  font-size: var(--fs-s);
+  color: var(--text-2);
+}
+.notif-muted-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-m);
+}
+.notif-muted-list li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 6px 4px 10px;
+  color: var(--text-2);
+}
+.notif-muted-list li + li {
+  border-top: 1px solid var(--border);
+}
+.notif-muted-name {
+  flex: 1;
+  min-width: 0;
+  color: var(--text-0);
+  font-size: var(--fs-s);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.notif-muted-kind {
+  font-family: var(--font-mono);
+  font-size: var(--fs-2xs);
+  text-transform: uppercase;
+  letter-spacing: var(--label-tracking);
+}
+
+/* ---- muted glyphs / DND ------------------------------------------------------------------ */
+
+.muted-glyph {
+  display: inline-flex;
+  flex: none;
+  color: var(--text-2);
+}
+.attn-sb-btn.is-dnd {
+  color: var(--warn-fg);
+}
+.attn-dnd-chip.is-on {
+  color: var(--warn-fg);
+  border-color: var(--warn-line);
+  background: var(--warn-soft);
+}
+.attn-feed-row.is-muted .attn-feed-msg,
+.attn-feed-row.is-muted .attn-feed-name {
+  opacity: 0.7;
+}
+.attn-feed-muted {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 0 5px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-s);
+  color: var(--text-2);
+  font-family: var(--font-mono);
+  font-size: var(--fs-2xs);
+  white-space: nowrap;
+}
+
+/* ---- hyperspace jump canvas -------------------------------------------------------------- */
+
+.hyperspace-canvas {
+  position: fixed;
+  z-index: 50; /* above panes, below menus (200) and modals (100 backdrop sits above it) */
+  pointer-events: none;
+  will-change: opacity;
+}

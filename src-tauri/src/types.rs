@@ -393,24 +393,92 @@ pub struct Settings {
     /// "compact" | "comfortable". A string, not an enum, so an unknown value never fails loading the state file.
     pub ui_density: String,
     pub notifications: NotificationSettings,
+    /// Blade colour preset for the Saber Duel theme (frontend registry; unknown = default blade).
+    pub saber_color: String,
+    /// Workspace-switch star-streak transition: "auto" | "on" | "off" (string so unknown values never fail loading).
+    pub hyperspace_transition: String,
 }
 
-/// Desktop / in-app attention notifications (decided in the frontend).
+/// Desktop / in-app attention notifications (decided in the frontend: src/actions/attentionNotify.ts).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct NotificationSettings {
     pub enabled: bool,
     /// Notify when a session goes quiet after working ("finished").
     pub on_idle: bool,
-    /// Notify on BEL / notification escapes / "waiting for you" status.
+    /// Notify on BEL / notification escapes.
     pub on_bell: bool,
-    /// Short in-app sound with each alert.
+    /// Short in-app sound with each alert (master switch; the set is `sound_set`).
     pub sound: bool,
+    /// An agent is blocked on the user (permission / question / "waiting" status).
+    pub on_input: bool,
+    /// Crashes, failed starts, reported errors.
+    pub on_error: bool,
+    /// "toast" | "inApp" | "off".
+    pub delivery: String,
+    /// "comm" | "console" | "droid" | "none".
+    pub sound_set: String,
+    /// 0-100.
+    pub volume: u8,
+    /// Do not disturb: alerts only reach the in-app feed.
+    pub dnd: bool,
+    pub quiet_hours: QuietHours,
+    pub only_when_unfocused: bool,
+    pub agents: AgentNotifyFilter,
+    pub muted_sessions: Vec<SessionId>,
+    pub muted_workspaces: Vec<String>,
 }
 
 impl Default for NotificationSettings {
     fn default() -> Self {
-        Self { enabled: true, on_idle: true, on_bell: true, sound: false }
+        Self {
+            enabled: true,
+            on_idle: true,
+            on_bell: true,
+            sound: false,
+            on_input: true,
+            on_error: true,
+            delivery: "toast".into(),
+            sound_set: "comm".into(),
+            volume: 50,
+            dnd: false,
+            quiet_hours: QuietHours::default(),
+            only_when_unfocused: false,
+            agents: AgentNotifyFilter::default(),
+            muted_sessions: Vec::new(),
+            muted_workspaces: Vec::new(),
+        }
+    }
+}
+
+/// Daily quiet window ("HH:MM" local time; may cross midnight).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct QuietHours {
+    pub enabled: bool,
+    pub start: String,
+    pub end: String,
+}
+
+impl Default for QuietHours {
+    fn default() -> Self {
+        Self { enabled: false, start: "22:00".into(), end: "07:00".into() }
+    }
+}
+
+/// Which agent kinds may raise notifications.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct AgentNotifyFilter {
+    pub claude: bool,
+    pub codex: bool,
+    pub powershell: bool,
+    pub other: bool,
+}
+
+impl Default for AgentNotifyFilter {
+    fn default() -> Self {
+        Self { claude: true, codex: true, powershell: true, other: true }
     }
 }
 
@@ -434,6 +502,8 @@ impl Default for Settings {
             reduce_motion: false,
             ui_density: "compact".into(),
             notifications: NotificationSettings::default(),
+            saber_color: "blue".into(),
+            hyperspace_transition: "auto".into(),
         }
     }
 }

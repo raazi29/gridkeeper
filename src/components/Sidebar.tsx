@@ -4,6 +4,7 @@ import { memo, useState } from "react";
 import { useShallow } from "zustand/react/shallow";
 import { deleteWorkspaceFlow, switchWorkspace } from "../actions/commands";
 import { notify } from "../actions/notify";
+import { isWorkspaceMuted, toggleWorkspaceMute } from "../actions/notifyPrefs";
 import { isLive, selectActiveWorkspace, useApp, type AppStore } from "../store/appStore";
 import { useUi } from "../store/uiStore";
 import { WorkspaceUnreadBadge } from "./AttentionBits";
@@ -149,6 +150,7 @@ const WorkspaceRow = memo(function WorkspaceRow({
           }
         },
       },
+      { label: isWorkspaceMuted(id) ? "Unmute notifications" : "Mute notifications", hint: "alerts still reach Comms", onSelect: () => toggleWorkspaceMute(id) },
       "separator",
       { label: "Delete workspace…", danger: true, onSelect: () => void deleteWorkspaceFlow(id) },
     ]);

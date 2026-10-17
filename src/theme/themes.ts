@@ -82,7 +82,15 @@ export interface Theme {
   ui: Record<UiToken, string> & Partial<Record<DerivedToken, string>>;
   terminal: TerminalPalette;
   fonts?: ThemeFonts;
-  effects?: { scanlines?: boolean; glow?: boolean };
+  /**
+   * Optional effects the theme offers (each also has a per-machine on/off in Settings › Appearance):
+   *   glow       status lamps / focus frames bloom slightly
+   *   scanlines  static CRT overlay on panes
+   *   holo       holographic scan band across the focused pane header (CSS transform only)
+   */
+  effects?: { scanlines?: boolean; glow?: boolean; holo?: boolean };
+  /** Theme offers a user-selectable accent (Saber Duel blade colour, src/theme/saber.ts). */
+  saber?: boolean;
 }
 
 export const DEFAULT_FONTS: Required<ThemeFonts> = {
@@ -614,7 +622,187 @@ const highContrast: Theme = {
   },
 };
 
-export const THEMES: readonly Theme[] = [deepSpace, twinSuns, carbonite, icePlanet, imperial, rebelSquadron, hyperspace, phosphor, highContrast];
+// ---- signature themes ------------------------------------------------------------------------
+
+const holoComms: Theme = {
+  id: "holo-comms",
+  name: "Holo Comms",
+  description: "Hologram cyan on deep blue-black. A faint scan band sweeps the focused pane.",
+  kind: "dark",
+  ui: {
+    "bg-0": "#050a12",
+    "bg-1": "#08101b",
+    "bg-2": "#0d1724",
+    "bg-3": "#13202f",
+    "bg-4": "#1a2a3c",
+    border: "#13202e",
+    "border-strong": "#213347",
+    "text-0": "#dff4ff",
+    "text-1": "#93b4c8",
+    "text-2": "#62859c",
+    accent: "#3fd8ff",
+    "accent-2": "#7aa8ff",
+    "accent-fg": "#6fe3ff",
+    "on-accent": "#021219",
+    ok: "#46e0a4",
+    warn: "#ffc857",
+    err: "#ff6b7d",
+    info: "#5cc8ff",
+    "ok-fg": "#6ce8b6",
+    "warn-fg": "#ffd57e",
+    "err-fg": "#ff8f9c",
+    shadow: "rgba(0, 4, 10, 0.6)",
+    backdrop: "rgba(2, 8, 16, 0.64)",
+    ...R_SOFT,
+  },
+  terminal: {
+    background: "#050a12",
+    foreground: "#cfeaf7",
+    cursor: "#3fd8ff",
+    cursorAccent: "#050a12",
+    selectionBackground: "rgba(63, 216, 255, 0.24)",
+    black: "#13202e",
+    red: "#ff7a8a",
+    green: "#52e0a6",
+    yellow: "#f4d06f",
+    blue: "#6aaeff",
+    magenta: "#c09bff",
+    cyan: "#4fe0f0",
+    white: "#b9d3e2",
+    brightBlack: "#5a7a90",
+    brightRed: "#ff9ead",
+    brightGreen: "#84ecc2",
+    brightYellow: "#ffe199",
+    brightBlue: "#96c6ff",
+    brightMagenta: "#d5bbff",
+    brightCyan: "#86ecf7",
+    brightWhite: "#eefaff",
+  },
+  effects: { glow: true, holo: true },
+};
+
+const saberDuel: Theme = {
+  id: "saber-duel",
+  name: "Saber Duel",
+  description: "Near-black arena. The focused pane is framed by a glowing blade — pick its colour.",
+  kind: "dark",
+  ui: {
+    "bg-0": "#060607",
+    "bg-1": "#0b0b0d",
+    "bg-2": "#111114",
+    "bg-3": "#19191d",
+    "bg-4": "#222227",
+    border: "#1c1c21",
+    "border-strong": "#2c2c33",
+    "text-0": "#ececf1",
+    "text-1": "#a6a6b2",
+    "text-2": "#74747f",
+    // Default blade (blue). src/theme/saber.ts swaps these four for the chosen preset.
+    accent: "#3d9bff",
+    "accent-2": "#b9d9ff",
+    "accent-fg": "#7ab8ff",
+    "on-accent": "#020a16",
+    ok: "#4cd88a",
+    warn: "#f2bd4b",
+    err: "#ff5a5a",
+    info: "#8aa0c0",
+    "ok-fg": "#6fe2a2",
+    "warn-fg": "#f6cb70",
+    "err-fg": "#ff8484",
+    shadow: "rgba(0, 0, 0, 0.7)",
+    backdrop: "rgba(0, 0, 0, 0.68)",
+    "radius-s": "3px",
+    "radius-m": "3px",
+    "radius-l": "5px",
+  },
+  terminal: {
+    background: "#060607",
+    foreground: "#dcdce3",
+    // Neutral cursor / selection so every blade colour suits the terminal.
+    cursor: "#e8e8ee",
+    cursorAccent: "#060607",
+    selectionBackground: "rgba(170, 178, 204, 0.24)",
+    black: "#1d1d22",
+    red: "#ff6b6b",
+    green: "#5fd68f",
+    yellow: "#f0c464",
+    blue: "#62a8ff",
+    magenta: "#c99bff",
+    cyan: "#56d0e0",
+    white: "#c8c8d0",
+    brightBlack: "#6a6a76",
+    brightRed: "#ff9090",
+    brightGreen: "#88e4ad",
+    brightYellow: "#f7d78c",
+    brightBlue: "#92c2ff",
+    brightMagenta: "#dcbcff",
+    brightCyan: "#86e0ec",
+    brightWhite: "#f6f6fa",
+  },
+  effects: { glow: true },
+  saber: true,
+};
+
+const outerRim: Theme = {
+  id: "outer-rim",
+  name: "Outer Rim",
+  description: "Weathered salvage: rust, olive and bone on charcoal. Stencilled labels, hazard trim.",
+  kind: "dark",
+  ui: {
+    "bg-0": "#121110",
+    "bg-1": "#181614",
+    "bg-2": "#1f1c19",
+    "bg-3": "#29251f",
+    "bg-4": "#332e27",
+    border: "#2a2620",
+    "border-strong": "#3d372e",
+    "text-0": "#ece3d0",
+    "text-1": "#b8ad97",
+    "text-2": "#877d6b",
+    accent: "#d9733f",
+    "accent-2": "#9aa05a",
+    "accent-fg": "#e98d5e",
+    "on-accent": "#1a0d05",
+    ok: "#9fb35a",
+    warn: "#e0b04a",
+    err: "#e0583f",
+    info: "#8fb0b5",
+    "ok-fg": "#b5c77a",
+    "warn-fg": "#ebc46e",
+    "err-fg": "#f08068",
+    shadow: "rgba(0, 0, 0, 0.6)",
+    backdrop: "rgba(10, 8, 5, 0.66)",
+    ...R_HARD,
+  },
+  terminal: {
+    background: "#121110",
+    foreground: "#e3d9c4",
+    cursor: "#d9733f",
+    cursorAccent: "#121110",
+    selectionBackground: "rgba(217, 115, 63, 0.24)",
+    black: "#2b2722",
+    red: "#e8735a",
+    green: "#a9b86a",
+    yellow: "#e3b65a",
+    blue: "#84a9bf",
+    magenta: "#c48fa0",
+    cyan: "#86b8a8",
+    white: "#d2c7b1",
+    brightBlack: "#7d7364",
+    brightRed: "#f29079",
+    brightGreen: "#c2d08a",
+    brightYellow: "#f0cc80",
+    brightBlue: "#a3c1d3",
+    brightMagenta: "#d8aabb",
+    brightCyan: "#a5cdc0",
+    brightWhite: "#f5eedf",
+  },
+  fonts: {
+    display: '"Space Grotesk Variable", "Geist Variable", "Segoe UI", sans-serif',
+  },
+};
+
+export const THEMES: readonly Theme[] = [deepSpace, twinSuns, carbonite, icePlanet, imperial, rebelSquadron, hyperspace, holoComms, saberDuel, outerRim, phosphor, highContrast];
 
 export const DEFAULT_THEME_ID = deepSpace.id;
 

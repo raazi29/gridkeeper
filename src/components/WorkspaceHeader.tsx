@@ -9,6 +9,7 @@ import { useUi } from "../store/uiStore";
 import { useShortcut, withShortcut } from "./hooks";
 import { IconBranch, IconColumns, IconFocus, IconFolder, IconGrid, IconInspector, IconRows } from "./icons";
 import { QuickLaunchButton } from "./QuickLaunch";
+import { ThemeSwitcherButton } from "./ThemeSwitcher";
 import { IconButton } from "./ui/Button";
 import { pickFolder, revealPath } from "./util/pick";
 
@@ -112,6 +113,7 @@ export function WorkspaceHeader() {
           </IconButton>
         </div>
         <span className="divider-v" />
+        <ThemeSwitcherButton />
         <IconButton label={withShortcut(inspectorOpen ? "Hide inspector" : "Show inspector", scInspector)} active={inspectorOpen} onClick={() => runCommand("view.toggleInspector")}>
           <IconInspector size={15} />
         </IconButton>

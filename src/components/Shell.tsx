@@ -13,6 +13,7 @@ import { AttentionLayer } from "./AttentionLayer";
 import { CommandPalette } from "./CommandPalette";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { DialogHost } from "./DialogHost";
+import { ExperienceLayer } from "./ExperienceLayer";
 import { GroupTabs } from "./GroupTabs";
 import { IconClose, IconWarn } from "./icons";
 import { Inspector } from "./Inspector";
@@ -67,6 +68,7 @@ export function Shell() {
       <ConfirmDialog />
       <Toasts />
       <AttentionLayer />
+      <ExperienceLayer />
     </div>
   );
 }

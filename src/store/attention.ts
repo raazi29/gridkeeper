@@ -31,6 +31,8 @@ export interface Alert {
   message: string;
   /** Notification title from the program (OSC 777 / 99 / 7501), if any. */
   title?: string;
+  /** What raised it: lets notification rules tell a BEL / OSC notify from a "waiting for you" status. */
+  source?: "bell" | "notify" | "status" | "idle" | "active" | "exit" | "failed";
 }
 
 export interface Reduction {
@@ -72,7 +74,7 @@ export function reduceAttention(prev: SessionAttn | undefined, input: AttnInput,
   const flag = (unread: boolean) => (seen ? false : unread || base.unread);
   const alertState = (state: AttnState, kind: Alert["kind"], category: Alert["category"], message: string, title?: string): Reduction => ({
     next: { state, unread: flag(true), lastMessage: message, at: now },
-    alert: { category, kind, message, title },
+    alert: { category, kind, message, title, source: input.type === "attention" ? input.ev.kind : input.type === "start" ? undefined : input.type },
   });
   const quiet = (state: AttnState, lastMessage = base.lastMessage): Reduction => ({
     next: state === base.state && lastMessage === base.lastMessage ? base : { ...base, state, lastMessage, at: now },
@@ -152,7 +154,14 @@ export interface FeedItem {
   kind: Alert["kind"];
   message: string;
   at: number;
+  /** The user's notification rules silenced it; still listed so nothing is silently lost. */
+  muted?: boolean;
+  /** Why, e.g. "Session muted", "Quiet hours". */
+  mutedReason?: string;
 }
+
+/** Lets the notifier annotate the feed entry of an alert (e.g. muted) as it is recorded. */
+export type FeedDecorator = (alert: Alert) => Partial<Pick<FeedItem, "muted" | "mutedReason">> | undefined;
 
 export const FEED_LIMIT = 100;
 
@@ -161,7 +170,7 @@ export interface AttentionStore {
   /** Newest last. In-memory only. */
   feed: FeedItem[];
   /** Apply an input; returns the alert (if any) for the notifier. */
-  apply: (id: SessionId, input: AttnInput, seen: boolean, now?: number) => Alert | undefined;
+  apply: (id: SessionId, input: AttnInput, seen: boolean, now?: number, decorate?: FeedDecorator) => Alert | undefined;
   markRead: (id: SessionId) => void;
   markAllRead: () => void;
   clearFeed: () => void;
@@ -174,13 +183,14 @@ let feedSeq = 1;
 export const useAttention = create<AttentionStore>()((set, get) => ({
   sessions: {},
   feed: [],
-  apply: (id, input, seen, now = Date.now()) => {
+  apply: (id, input, seen, now = Date.now(), decorate) => {
     const prev = get().sessions[id];
     const { next, alert } = reduceAttention(prev, input, seen, now);
     if (next === prev && !alert) return undefined;
+    const extra = alert && decorate ? decorate(alert) : undefined;
     set((s) => ({
       sessions: next === prev ? s.sessions : { ...s.sessions, [id]: next },
-      feed: alert ? [...s.feed.slice(-(FEED_LIMIT - 1)), { seq: feedSeq++, id, kind: alert.kind, message: alert.message, at: now }] : s.feed,
+      feed: alert ? [...s.feed.slice(-(FEED_LIMIT - 1)), { seq: feedSeq++, id, kind: alert.kind, message: alert.message, at: now, ...extra }] : s.feed,
     }));
     return alert;
   },
