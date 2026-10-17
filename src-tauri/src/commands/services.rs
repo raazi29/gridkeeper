@@ -42,14 +42,106 @@ pub fn profile_delete(ctx: State<'_, AppCtx>, id: String) -> AppResult<()> {
     ctx.profiles.delete(&id)
 }
 
-/// Runs `claude auth status --json` for the profile (existing dirs only). Never reads credential files.
+/// Runs the account's own status command (`claude auth status --json`, `codex login status`;
+/// existing dirs only). Accepts an account of any agent. Never reads credential files.
 #[tauri::command]
 pub async fn profile_check(ctx: State<'_, AppCtx>, id: String) -> Result<ProfileStatus, AppError> {
-    let profile = ctx.profiles.get(&id).ok_or_else(|| AppError::NotFound(id.clone()))?;
+    let account = ctx.profiles.get_account(&id).ok_or_else(|| AppError::NotFound(id.clone()))?;
     let settings = ctx.store.settings();
-    tauri::async_runtime::spawn_blocking(move || crate::profiles::check_status(&profile, &settings))
+    tauri::async_runtime::spawn_blocking(move || crate::accounts::check_status(&account, &settings))
         .await
         .map_err(|e| AppError::Other(e.to_string()))?
+}
+
+// ---- accounts (all agents) -------------------------------------------------------------------
+// The `profile*` commands above keep their Claude meaning (other features depend on it);
+// `profile_check`, `profile_update` and `profile_delete` also accept any account id.
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AccountsSnapshot {
+    pub accounts: Vec<Account>,
+    /// Homes the user removed (hidden from the scan until restored).
+    pub dismissed: usize,
+}
+
+fn spec_or_err(agent: AgentKind, preset: Option<&str>) -> AppResult<&'static crate::accounts::AccountSpec> {
+    crate::accounts::spec_for(agent, preset)
+        .ok_or_else(|| AppError::Invalid("This agent has no account isolation".into()))
+}
+
+/// Saved accounts of every agent with filename-only status (instant).
+#[tauri::command]
+pub fn accounts_list(ctx: State<'_, AppCtx>) -> AccountsSnapshot {
+    AccountsSnapshot { accounts: ctx.profiles.list_all(), dismissed: ctx.profiles.dismissed_count() }
+}
+
+/// Find new account homes (default + sibling homes per agent, existence checks only), add them
+/// as auto-detected (dismissed ones excepted), then verify every account with the agent's own
+/// status command in parallel (15 s timeout each). Accounts with a live session are not
+/// re-checked. Never reads credential files.
+#[tauri::command]
+pub async fn accounts_scan(ctx: State<'_, AppCtx>) -> Result<AccountsSnapshot, AppError> {
+    let settings = ctx.store.settings();
+    let s2 = settings.clone();
+    let installed = tauri::async_runtime::spawn_blocking(move || crate::accounts::installed_keys(&s2))
+        .await
+        .map_err(|e| AppError::Other(e.to_string()))?;
+    ctx.profiles.merge_detected(&installed)?;
+    let busy: std::collections::HashSet<String> = ctx
+        .sessions
+        .list()
+        .into_iter()
+        .filter(|s| matches!(s.state, SessionState::Starting | SessionState::Running | SessionState::Stopping))
+        .filter_map(|s| s.profile_id)
+        .collect();
+    let list = ctx.profiles.list_all();
+    let accounts = tauri::async_runtime::spawn_blocking(move || crate::accounts::check_all(list, &settings, &busy, &installed))
+        .await
+        .map_err(|e| AppError::Other(e.to_string()))?;
+    Ok(AccountsSnapshot { accounts, dismissed: ctx.profiles.dismissed_count() })
+}
+
+/// Agents with account support (and installed tools without it) for the Accounts dialog.
+#[tauri::command]
+pub async fn accounts_specs(ctx: State<'_, AppCtx>) -> Result<Vec<crate::accounts::AccountAgentInfo>, AppError> {
+    let settings = ctx.store.settings();
+    let env = ctx.profiles.scan_env().clone();
+    tauri::async_runtime::spawn_blocking(move || crate::accounts::agent_infos(&settings, &env))
+        .await
+        .map_err(|e| AppError::Other(e.to_string()))
+}
+
+/// Where "Add account" would create the new home (path preview; listing only).
+#[tauri::command]
+pub fn accounts_plan_home(
+    ctx: State<'_, AppCtx>,
+    agent: AgentKind,
+    preset: Option<String>,
+    name: String,
+) -> AppResult<crate::accounts::PlannedHome> {
+    ctx.profiles.plan_home(spec_or_err(agent, preset.as_deref())?, &name)
+}
+
+/// "Add account": creates an EMPTY home folder (or uses an existing one when `use_existing`)
+/// and the entry. The UI then opens a pane running the agent's own sign-in.
+#[tauri::command]
+pub fn accounts_create(
+    ctx: State<'_, AppCtx>,
+    agent: AgentKind,
+    preset: Option<String>,
+    name: String,
+    use_existing: bool,
+    home_dir: Option<String>,
+    color: Option<String>,
+) -> AppResult<Account> {
+    ctx.profiles.create_new_home(spec_or_err(agent, preset.as_deref())?, name, use_existing, home_dir, color)
+}
+
+/// Forget removed homes so the next scan lists them again.
+#[tauri::command]
+pub fn accounts_restore_dismissed(ctx: State<'_, AppCtx>) -> AppResult<()> {
+    ctx.profiles.restore_dismissed()
 }
 
 #[tauri::command]

@@ -266,7 +266,7 @@ const FleetTile = memo(function FleetTile({
     return "";
   });
   const profile = useApp(useShallow((s) => {
-    const p = meta?.agent === "claude" ? s.profiles.find((x) => x.id === meta.profileId) : undefined;
+    const p = meta?.profileId ? s.accounts.find((x) => x.id === meta.profileId) : undefined;
     return p ? { name: p.name, color: p.color } : null;
   }));
   const rt = useApp((s) => s.runtime[id]);

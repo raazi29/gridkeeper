@@ -1,4 +1,5 @@
 import { useEffect } from "react";
+import { loadAccountAgents, refreshAccounts, scanAccounts } from "./actions/accounts";
 import { maybeAutoRetry, restoreSessions } from "./actions/sessions";
 import { setupBench } from "./bench";
 import { ErrorBoundary } from "./components/ErrorBoundary";
@@ -48,7 +49,14 @@ async function boot() {
   for (const info of await ipc.sessionList().catch(() => [])) useApp.getState().setRuntime(info);
 
   ipc.profilesList().then((p) => useApp.getState().setProfiles(p)).catch(() => {});
-  ipc.agentsDetect().then((a) => useApp.getState().setAgents(a)).catch(() => {});
+  void refreshAccounts();
+  void loadAccountAgents();
+  // Account auto-detection (all agents) after agent detection; status checks skip accounts in use.
+  ipc
+    .agentsDetect()
+    .then((a) => useApp.getState().setAgents(a))
+    .catch(() => {})
+    .finally(() => void scanAccounts());
   await restoreSessions();
 }
 

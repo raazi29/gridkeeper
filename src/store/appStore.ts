@@ -7,6 +7,8 @@ import { ipc } from "../lib/ipc";
 import {
   DEFAULT_SETTINGS,
   STATE_VERSION,
+  type Account,
+  type AccountAgentInfo,
   type AgentAvailability,
   type ClaudeProfile,
   type Group,
@@ -30,7 +32,14 @@ export interface AppStore {
   runtime: Record<SessionId, SessionInfo>;
   /** Sessions whose terminal view the user explicitly hid (process keeps running). */
   hiddenViews: Record<SessionId, true>;
+  /** Claude accounts (historical name). Kept in sync with the Claude rows of `accounts`. */
   profiles: ClaudeProfile[];
+  /** Accounts of every agent (Claude, Codex, Hermes, ...). */
+  accounts: Account[];
+  /** Agents with account support (+ installed tools without it), from the backend. */
+  accountAgents: AccountAgentInfo[];
+  /** Removed homes the automatic scan skips. */
+  dismissedAccounts: number;
   agents: AgentAvailability[];
   focusedSessionId: SessionId | null;
 
@@ -39,6 +48,8 @@ export interface AppStore {
   setRuntime: (info: SessionInfo) => void;
   dropRuntime: (id: SessionId) => void;
   setProfiles: (p: ClaudeProfile[]) => void;
+  setAccounts: (a: Account[], dismissed?: number) => void;
+  setAccountAgents: (a: AccountAgentInfo[]) => void;
   setAgents: (a: AgentAvailability[]) => void;
 
   // --- settings
@@ -85,6 +96,9 @@ export const useApp = create<AppStore>()((set, get) => ({
   runtime: {},
   hiddenViews: {},
   profiles: [],
+  accounts: [],
+  accountAgents: [],
+  dismissedAccounts: 0,
   agents: [],
   focusedSessionId: null,
 
@@ -112,7 +126,27 @@ export const useApp = create<AppStore>()((set, get) => ({
       const { [id]: _, ...rest } = s.runtime;
       return { runtime: rest };
     }),
-  setProfiles: (profiles) => set({ profiles }),
+  // Claude-only list from older code paths (profilesList): splice it into `accounts` so both views agree.
+  setProfiles: (profiles) =>
+    set((s) => {
+      const byId = new Map(s.accounts.map((a) => [a.id, a]));
+      const claude: Account[] = profiles.map((p) => ({
+        agent: "claude",
+        preset: null,
+        autoDetected: false,
+        resolvedDir: null,
+        ...byId.get(p.id),
+        ...p,
+      }));
+      return { profiles, accounts: [...claude, ...s.accounts.filter((a) => a.agent !== "claude")] };
+    }),
+  setAccounts: (accounts, dismissed) =>
+    set((s) => ({
+      accounts,
+      profiles: accounts.filter((a) => a.agent === "claude"),
+      dismissedAccounts: dismissed ?? s.dismissedAccounts,
+    })),
+  setAccountAgents: (accountAgents) => set({ accountAgents }),
   setAgents: (agents) => set({ agents }),
 
   updateSettings: (patch) =>

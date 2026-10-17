@@ -26,6 +26,7 @@ export interface NewSessionOptions {
   agent: AgentKind;
   cwd: string;
   name?: string;
+  /** Account id for the agent (Claude, Codex, or a catalog tool with account support). */
   profileId?: string | null;
   command?: string | null;
   args?: string[];
@@ -33,6 +34,12 @@ export interface NewSessionOptions {
   /** Catalog tool id (agent = "generic"), e.g. "hermes". */
   preset?: string | null;
   start?: boolean;
+  /** Start on workspace restore (default true). */
+  autoStart?: boolean;
+  /** Resume mode on restore (default per agent). */
+  resumeOnRestore?: ResumeMode;
+  /** Never auto-retry this session after an early failure (e.g. a cancelled sign-in). */
+  noAutoRetry?: boolean;
 }
 
 export function newSession(o: NewSessionOptions): SessionId {
@@ -44,18 +51,19 @@ export function newSession(o: NewSessionOptions): SessionId {
     name: o.name?.trim() || `${tool?.label ?? AGENT_LABEL[o.agent]} ${count}`,
     agent: o.agent,
     cwd: o.worktree?.path ?? o.cwd,
-    profileId: o.agent === "claude" ? (o.profileId ?? null) : null,
+    profileId: o.profileId ?? null,
     command: o.command ?? null,
     args: o.args ?? [],
     env: [],
-    autoStart: true,
-    resumeOnRestore: defaultResume(o.agent, !!tool?.supportsResume),
+    autoStart: o.autoStart ?? true,
+    resumeOnRestore: o.resumeOnRestore ?? defaultResume(o.agent, !!tool?.supportsResume),
     preset: o.agent === "generic" ? (o.preset ?? null) : null,
     agentSessionId: null,
     worktree: o.worktree ?? null,
     createdAt: new Date().toISOString(),
     lastExitCode: null,
   };
+  if (o.noAutoRetry) noAutoRetry.add(meta.id);
   s.addSessionMeta(o.groupId, meta);
   s.setFocused(meta.id);
   if (o.start !== false) void startSession(meta.id, { mode: "none" });
@@ -89,6 +97,8 @@ const STARTUP_FAIL_WINDOW_MS = 20_000;
 const lastResume = new Map<SessionId, ResumeMode>();
 const retried = new Set<SessionId>();
 const userStopped = new Set<SessionId>();
+/** Sessions that must never be retried automatically (sign-in panes). */
+const noAutoRetry = new Set<SessionId>();
 
 /** Called for every session-state event (App.tsx). */
 export function maybeAutoRetry(info: SessionInfo) {
@@ -97,6 +107,7 @@ export function maybeAutoRetry(info: SessionInfo) {
   // Agents only: Claude, Codex and catalog agent CLIs (not shells or arbitrary custom commands).
   if (!(info.agent === "claude" || info.agent === "codex" || (info.agent === "generic" && meta?.preset))) return;
   if (userStopped.delete(info.id)) return;
+  if (noAutoRetry.has(info.id)) return;
   if (!info.startedAt || !info.endedAt) return;
   const upMs = Date.parse(info.endedAt) - Date.parse(info.startedAt);
   if (!(upMs >= 0 && upMs < STARTUP_FAIL_WINDOW_MS) || retried.has(info.id)) return;

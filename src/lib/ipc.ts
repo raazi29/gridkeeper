@@ -3,7 +3,12 @@
 import { Channel, invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import type {
+  Account,
+  AccountAgentInfo,
+  AccountsSnapshot,
   AgentAvailability,
+  AgentKind,
+  PlannedHome,
   ClaudeProfile,
   Diagnostics,
   GitInfo,
@@ -53,7 +58,19 @@ export const ipc = {
     invoke<ClaudeProfile>("profile_create", { name, configDir, color }),
   profileUpdate: (profile: ClaudeProfile) => invoke<ClaudeProfile>("profile_update", { profile }),
   profileDelete: (id: string) => invoke<void>("profile_delete", { id }),
+  /** Works for an account of any agent. */
   profileCheck: (id: string) => invoke<ProfileStatus>("profile_check", { id }),
+
+  // Accounts of every agent. profileUpdate / profileDelete / profileCheck accept any account id.
+  accountsList: () => invoke<AccountsSnapshot>("accounts_list"),
+  /** Detect new homes and verify every account with the agent's own status command (slow: up to ~15 s). */
+  accountsScan: () => invoke<AccountsSnapshot>("accounts_scan"),
+  accountsSpecs: () => invoke<AccountAgentInfo[]>("accounts_specs"),
+  accountsPlanHome: (agent: AgentKind, preset: string | null, name: string) =>
+    invoke<PlannedHome>("accounts_plan_home", { agent, preset, name }),
+  accountsCreate: (agent: AgentKind, preset: string | null, name: string, useExisting: boolean, homeDir: string | null, color: string | null) =>
+    invoke<Account>("accounts_create", { agent, preset, name, useExisting, homeDir, color }),
+  accountsRestoreDismissed: () => invoke<void>("accounts_restore_dismissed"),
 
   agentsDetect: () => invoke<AgentAvailability[]>("agents_detect"),
   pathInfo: (path: string) => invoke<PathInfo>("path_info", { path }),

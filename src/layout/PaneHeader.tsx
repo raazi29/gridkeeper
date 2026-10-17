@@ -21,6 +21,7 @@ import { confirmAction } from "./confirm";
 import { AgentGlyph, IconBranch, IconClose, IconMaximize, IconMore, IconPlay, IconRestart, IconRestore, IconStop } from "./icons";
 import { beginPaneDrag, endPaneDrag } from "./paneDrag";
 import { AttentionLamp } from "../components/AttentionBits";
+import { isSignedIn } from "../lib/accounts";
 
 export interface PaneHeaderProps {
   sessionId: SessionId;
@@ -172,8 +173,8 @@ function PaneMenu({ anchor, items, onClose }: { anchor: HTMLElement; items: Menu
 export const PaneHeader = memo(function PaneHeader({ sessionId, groupId, index, count, maximized }: PaneHeaderProps) {
   const meta = useApp(selectSessionMeta(sessionId));
   const rt = useRuntimeView(sessionId);
-  const profileId = meta?.agent === "claude" ? meta.profileId : null;
-  const profile = useApp((s) => (profileId ? s.profiles.find((p) => p.id === profileId) : undefined));
+  const profileId = meta?.profileId ?? null;
+  const profile = useApp((s) => (profileId ? s.accounts.find((p) => p.id === profileId) : undefined));
   const [editing, setEditing] = useState(false);
   const [menuAnchor, setMenuAnchor] = useState<HTMLElement | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -239,7 +240,7 @@ export const PaneHeader = memo(function PaneHeader({ sessionId, groupId, index, 
   const status = statusInfo(rt);
   const cwdBase = basename(meta.cwd);
   const branch = meta.worktree ? (meta.worktree.branch ?? basename(meta.worktree.path)) : null;
-  const profileWarn = !!profile && !profile.status.likelyAuthenticated;
+  const profileWarn = !!profile && !isSignedIn(profile);
 
   const menuItems: MenuItem[] = [
     { label: "Rename", onSelect: () => setEditing(true) },
@@ -334,13 +335,13 @@ export const PaneHeader = memo(function PaneHeader({ sessionId, groupId, index, 
             {meta.name}
           </span>
         )}
-        {meta.agent === "claude" && (
+        {(meta.agent === "claude" || profile) && (
           <span
             className={`pane-chip pane-chip--account${profileWarn ? " pane-chip--warn" : ""}`}
             title={
               profileWarn
-                ? `Claude profile "${profile?.name}" may not be signed in`
-                : `Claude profile: ${profile?.name ?? "Default"}`
+                ? `Account "${profile?.name}" may not be signed in`
+                : `Account: ${profile?.name ?? "Default"}`
             }
           >
             {profile && <span className="pane-chip-dot" style={{ background: profile.color }} />}

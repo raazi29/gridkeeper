@@ -69,11 +69,16 @@ impl AgentAdapter for ClaudeAdapter {
 
         // --- profile -------------------------------------------------------
         let profile = match spec.profile_id.as_deref().filter(|s| !s.is_empty()) {
-            Some(id) => Some(
-                ctx.profiles
-                    .get(id)
-                    .ok_or_else(|| AppError::NotFound(format!("Claude profile {id}")))?,
-            ),
+            Some(id) => {
+                let account = ctx
+                    .profiles
+                    .get_account(id)
+                    .ok_or_else(|| AppError::NotFound(format!("Claude profile {id}")))?;
+                if account.agent != AgentKind::Claude {
+                    return Err(AppError::Invalid(format!("Account {:?} is not a Claude Code account", account.name)));
+                }
+                Some(account.profile)
+            }
             None => ctx.profiles.default_profile(),
         };
         let config_dir = profile.as_ref().and_then(|p| p.config_dir.clone()).filter(|d| !d.trim().is_empty());

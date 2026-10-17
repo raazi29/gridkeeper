@@ -37,3 +37,9 @@ No credential contents were read. Account checks used `claude auth status --json
 - Claude probes XTVERSION, kitty keyboard (CSI ? u), OSC 7501, DA1, DECRQM ?2026. Kitty protocol enabled for allowlisted TERM_PROGRAM; Shift+Enter fragile on Windows without it (#92771). Don't spoof TERM_PROGRAM=windows-terminal (#94873).
 - Fullscreen renderer (alt screen + SGR mouse) default for many users; ConPTY hosts mis-coalesce → `CLAUDE_CODE_ALT_SCREEN_FULL_REPAINT=1` (https://code.claude.com/docs/en/fullscreen). Opt-outs CLAUDE_CODE_DISABLE_ALTERNATE_SCREEN=1, CLAUDE_CODE_DISABLE_MOUSE=1.
 - OSC 8 auto-detected (FORCE_HYPERLINK). OSC 7501 status protocol (v2.1.295+). Bracketed paste used. Backspace: ^H read as Ctrl+Backspace on Windows (CLAUDE_CODE_BS_AS_CTRL_BACKSPACE=0).
+
+## Accounts for other agents — VERIFIED locally (2026-10-17, see src-tauri/src/accounts.rs)
+- Codex 0.162: `codex login status` prints `Logged in using ChatGPT` (exit 0) or `Not logged in` (exit 1). Lines may arrive on stderr after a `WARNING: ...` line. An API-key login prints a masked key fragment after ` - `; only the method word is kept. Run against an EMPTY CODEX_HOME it creates no files. `codex login [--device-auth]` is the official sign-in.
+- Hermes 0.21.3: `hermes_constants.py` → Windows default home `%LOCALAPPDATA%\hermes` (else `~/.hermes`), override `HERMES_HOME`; named profiles are `<root>\profiles\<name>`, each a HERMES_HOME. No single login-status command (`hermes auth status <provider>` is per provider) → existence of auth.json/.env only. Sign-in = `hermes setup` (not exercised end to end).
+- Kimi CLI 0.53: share dir hard-coded `Path.home() / ".kimi"` (kimi_cli/share.py), no env var → no account isolation.
+- OpenCode, Aider, Droid, OpenClaw, Crush: no documented per-home variable found → "installed, no account isolation". Gemini (`GEMINI_CLI_HOME`, semi-verified) / Copilot / Qwen: npm shims present but packages missing on this machine → not enabled.

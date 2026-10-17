@@ -80,7 +80,7 @@ export function Sidebar() {
       </nav>
 
       <div className="sidebar-footer">
-        <FooterButton collapsed={collapsed} label="Profiles" title="Claude account profiles" onClick={() => ui().openDialog({ kind: "profiles" })} icon={<IconUsers size={15} />} />
+        <FooterButton collapsed={collapsed} label="Accounts" title="Agent accounts (Claude, Codex, Hermes)" onClick={() => ui().openDialog({ kind: "profiles" })} icon={<IconUsers size={15} />} />
         <FooterButton collapsed={collapsed} label="Settings" title={withShortcut("Settings", scSettings)} onClick={() => ui().openDialog({ kind: "settings" })} icon={<IconSettings size={15} />} />
         <FooterButton collapsed={collapsed} label="Diagnostics" title={withShortcut("Diagnostics", scDiag)} onClick={() => ui().openDialog({ kind: "diagnostics" })} icon={<IconActivity size={15} />} />
         {collapsed && (

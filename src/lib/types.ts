@@ -20,6 +20,7 @@ export interface SessionSpec {
   name: string;
   agent: AgentKind;
   cwd: string;
+  /** Account id for whichever agent this session runs (historically Claude-only). */
   profileId?: string | null;
   command?: string | null;
   args?: string[];
@@ -97,6 +98,50 @@ export interface ClaudeProfile {
   configDir: string | null;
   color: string;
   status: ProfileStatus;
+}
+
+/**
+ * An account of any agent (Claude: CLAUDE_CONFIG_DIR, Codex: CODEX_HOME, Hermes: HERMES_HOME).
+ * Same fields as ClaudeProfile plus the agent it belongs to. `configDir: null` = the agent's default home.
+ */
+export interface Account extends ClaudeProfile {
+  agent: AgentKind;
+  /** Catalog tool id when agent = "generic" (e.g. "hermes"). */
+  preset: string | null;
+  /** Added by the automatic scan. */
+  autoDetected: boolean;
+  /** Home folder this account resolves to (default home expanded). */
+  resolvedDir: string | null;
+}
+
+export interface AccountsSnapshot {
+  accounts: Account[];
+  /** Number of removed (hidden) homes the scan skips. */
+  dismissed: number;
+}
+
+/** An agent in the Accounts dialog: with verified account isolation, or installed without it. */
+export interface AccountAgentInfo {
+  key: string;
+  agent: AgentKind;
+  preset: string | null;
+  label: string;
+  isolation: "verified" | "none";
+  homeEnv: string | null;
+  defaultHome: string | null;
+  installed: boolean;
+  hasStatusCommand: boolean;
+  loginArgs: string[];
+  deviceLoginArgs: string[] | null;
+  loginHint: string | null;
+  loginVerified: boolean;
+  note: string | null;
+}
+
+export interface PlannedHome {
+  path: string;
+  exists: boolean;
+  empty: boolean;
 }
 
 export interface AgentAvailability {

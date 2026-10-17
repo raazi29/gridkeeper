@@ -98,7 +98,8 @@ pub struct SessionSpec {
     pub name: String,
     pub agent: AgentKind,
     pub cwd: String,
-    /// Claude account profile id (Claude adapter only).
+    /// Account id (see `profiles::ProfileStore`). Historically Claude-only; now the account of
+    /// whichever agent this session runs (Claude, Codex, or a catalog tool with account support).
     #[serde(default)]
     pub profile_id: Option<String>,
     /// Executable override (all adapters) / required executable (generic).
@@ -215,15 +216,22 @@ pub mod frame {
 }
 
 // ---------------------------------------------------------------------------
-// Claude profiles
+// Accounts (historically "Claude profiles")
 // ---------------------------------------------------------------------------
 
+/// Agent kind of records written before accounts existed (all were Claude profiles).
+pub fn default_account_agent() -> AgentKind {
+    AgentKind::Claude
+}
+
+/// A Claude Code account profile (unchanged shape; see [`Account`] for every agent).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ClaudeProfile {
     pub id: String,
     pub name: String,
     /// `None` = Claude Code's default config location (no CLAUDE_CONFIG_DIR set).
+    /// For an [`Account`] of another agent: that agent's default home.
     pub config_dir: Option<String>,
     /// Hex accent used for the account badge.
     pub color: String,
@@ -232,16 +240,52 @@ pub struct ClaudeProfile {
     pub status: ProfileStatus,
 }
 
+/// One agent account: a name + an isolated home directory for one agent CLI
+/// (Claude: `CLAUDE_CONFIG_DIR`, Codex: `CODEX_HOME`, Hermes: `HERMES_HOME`).
+/// Serialized flat: the `ClaudeProfile` fields plus the ones below.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Account {
+    #[serde(flatten)]
+    pub profile: ClaudeProfile,
+    /// Which agent this account belongs to. Missing = Claude.
+    #[serde(default = "default_account_agent")]
+    pub agent: AgentKind,
+    /// Catalog tool id when `agent` is Generic (e.g. "hermes").
+    #[serde(default)]
+    pub preset: Option<String>,
+    /// Added by the automatic scan rather than by the user.
+    #[serde(default)]
+    pub auto_detected: bool,
+    /// Resolved home directory (default home expanded). Computed on read; never persisted.
+    #[serde(default)]
+    pub resolved_dir: Option<String>,
+}
+
+impl std::ops::Deref for Account {
+    type Target = ClaudeProfile;
+    fn deref(&self) -> &ClaudeProfile {
+        &self.profile
+    }
+}
+
+impl std::ops::DerefMut for Account {
+    fn deref_mut(&mut self) -> &mut ClaudeProfile {
+        &mut self.profile
+    }
+}
+
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ProfileStatus {
     pub dir_exists: bool,
     /// Best-effort: a credentials file is present (checked by filename only, never read).
     pub likely_authenticated: bool,
-    /// True when `claude auth status` was actually run (vs. filename heuristic only).
+    /// True when the agent's own status command (`claude auth status`, `codex login status`)
+    /// actually ran (vs. filename heuristic only).
     pub verified: bool,
     pub logged_in: Option<bool>,
-    /// e.g. "claude.ai", "api_key", "none". Never a token.
+    /// e.g. "claude.ai", "chatgpt", "api_key", "none". Never a token.
     pub auth_method: Option<String>,
     /// Account e-mail for UI display only; never logged or persisted.
     pub account: Option<String>,

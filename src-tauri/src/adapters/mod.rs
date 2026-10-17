@@ -31,7 +31,7 @@ pub use discovery::Executable;
 pub struct Capabilities {
     /// Can continue / resume a previous conversation.
     pub supports_resume: bool,
-    /// Uses Claude account profiles (CLAUDE_CONFIG_DIR).
+    /// Uses accounts (`SessionSpec.profile_id`: CLAUDE_CONFIG_DIR / CODEX_HOME).
     pub supports_profiles: bool,
 }
 
@@ -237,7 +237,16 @@ pub fn resolve_launch(spec: &SessionSpec, profiles: &ProfileStore, settings: &Se
 
     let ctx = LaunchContext { spec, profiles, settings };
     match preset {
-        Some(entry) => plan.args.extend(catalog::launch_args(entry, &spec.resume)?),
+        Some(entry) => {
+            plan.args.extend(catalog::launch_args(entry, &spec.resume)?);
+            // Catalog tools with account support (e.g. Hermes → HERMES_HOME).
+            if let Some(id) = spec.profile_id.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
+                let acct_spec = crate::accounts::spec_for(AgentKind::Generic, Some(entry.id))
+                    .ok_or_else(|| AppError::Invalid(format!("{} has no account isolation", entry.name)))?;
+                let account = crate::accounts::resolve_account(profiles, acct_spec, id)?;
+                crate::accounts::apply_launch_env(acct_spec, &account, &mut plan)?;
+            }
+        }
         None => adapter.configure(&ctx, &exe, &mut plan)?,
     }
     plan.args.extend(spec.args.iter().cloned());
