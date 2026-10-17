@@ -5,6 +5,8 @@ import { errorMessage, ipc } from "../lib/ipc";
 import type { AgentKind, ResumeMode, SessionId, SessionInfo, SessionMeta, SessionSpec, WorktreeRef } from "../lib/types";
 import { isLive, shouldApplyStartResult, uid, useApp } from "../store/appStore";
 import { clearTerminal, getTerminalSize, writeLocalNotice } from "../terminal/registry";
+import { autoStartable, isBrowserMeta } from "../lib/browserPanes";
+import { dropNav, getNav } from "../browser/nav";
 import { notify } from "./notify";
 
 const AGENT_LABEL: Record<AgentKind, string> = {
@@ -47,7 +49,7 @@ export interface NewSessionOptions {
 export function newSession(o: NewSessionOptions): SessionId {
   const s = useApp.getState();
   const tool = o.preset ? s.agents.find((a) => a.preset === o.preset) : undefined;
-  const count = s.persisted.sessions.filter((m) => m.agent === o.agent && (m.preset ?? null) === (o.preset ?? null)).length + 1;
+  const count = s.persisted.sessions.filter((m) => !isBrowserMeta(m) && m.agent === o.agent && (m.preset ?? null) === (o.preset ?? null)).length + 1;
   const meta: SessionMeta = {
     id: uid(),
     name: o.name?.trim() || `${tool?.label ?? AGENT_LABEL[o.agent]} ${count}`,
@@ -129,7 +131,8 @@ export async function startSession(
   opts: { keepRetryBudget?: boolean } = {},
 ): Promise<boolean> {
   const meta0 = useApp.getState().persisted.sessions.find((m) => m.id === id);
-  if (!meta0) return false;
+  // Browser panes have no process.
+  if (!meta0 || isBrowserMeta(meta0)) return false;
   if (isLive(useApp.getState().runtime[id])) return true;
   lastResume.set(id, resume);
   if (!opts.keepRetryBudget) retried.delete(id);
@@ -198,6 +201,7 @@ export async function startSession(
 }
 
 export async function stopSession(id: SessionId, force = false) {
+  if (isBrowserMeta(useApp.getState().persisted.sessions.find((m) => m.id === id))) return;
   userStopped.add(id);
   try {
     await ipc.sessionStop(id, force);
@@ -238,6 +242,13 @@ export async function restartSession(id: SessionId, resume: ResumeMode = { mode:
 
 /** Close a pane: stops the process (caller confirms if live), forgets the session. */
 export async function closeSession(id: SessionId) {
+  if (isBrowserMeta(useApp.getState().persisted.sessions.find((m) => m.id === id))) {
+    const popout = getNav(id)?.popout;
+    if (popout) void ipc.browserCloseWindow(popout).catch(() => {});
+    dropNav(id);
+    useApp.getState().removeSessionMeta(id);
+    return;
+  }
   if (isLive(useApp.getState().runtime[id])) {
     await stopSession(id, false);
     if (!(await waitForExit(id, 4000))) await stopSession(id, true);
@@ -279,7 +290,8 @@ export function renameSession(id: SessionId, name: string) {
 export async function restoreSessions() {
   const { persisted } = useApp.getState();
   const inGroups = new Set(persisted.workspaces.flatMap((w) => w.groups.flatMap((g) => g.sessionIds)));
-  const toStart = persisted.sessions.filter((m) => m.autoStart && inGroups.has(m.id));
+  // Terminal panes only: browser panes have no process (their URL reopens when the pane mounts).
+  const toStart = autoStartable(persisted.sessions).filter((m) => inGroups.has(m.id));
   // Stagger launches slightly so many agents don't all hit the disk/network in the same tick.
   // Codex can't pin a conversation id up front, so `resume --last` in a folder shared by several Codex
   // panes would make them all resume the SAME conversation. Those panes get Codex's picker instead.

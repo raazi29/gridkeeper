@@ -45,7 +45,8 @@ export function DiagnosticsPanel({ onClose }: { onClose: () => void }) {
         ui: {
           workspaces: s.persisted.workspaces.length,
           groups: s.persisted.workspaces.reduce((n, w) => n + w.groups.length, 0),
-          sessions: s.persisted.sessions.length,
+          sessions: s.persisted.sessions.filter((m) => (m.kind ?? "terminal") === "terminal").length,
+          browserPanes: s.persisted.sessions.filter((m) => m.kind === "browser").length,
           liveSessions: Object.values(s.runtime).filter((r) => r.state.state === "running" || r.state.state === "starting").length,
           hiddenViews: Object.keys(s.hiddenViews).length,
           settings: { ...s.persisted.settings, keybindings: undefined },

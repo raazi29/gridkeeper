@@ -23,6 +23,7 @@ import { Links, type LinkSpec } from "./Links";
 import { roleStyle } from "./RoleTag";
 import { SessionCard } from "./SessionCard";
 import { SessionLog } from "./SessionLog";
+import { processSessionIds } from "../../lib/browserPanes";
 import "../../styles/attention.css";
 import "../../styles/mission.css";
 
@@ -47,7 +48,11 @@ export function MissionControl() {
       const ws = selectActiveWorkspace(s);
       if (!ws) return [] as string[];
       const roles = new Map(s.persisted.sessions.map((m) => [m.id, m.role ?? ""]));
-      return ws.groups.map((g) => `${g.id}${SEP}${g.name}${SEP}${g.sessionIds.map((id) => `${id}=${roles.get(id) ?? ""}`).join(",")}`);
+      // Team members are processes: browser panes are not part of the team view.
+      const metas = new Map(s.persisted.sessions.map((m) => [m.id, m]));
+      return ws.groups.map(
+        (g) => `${g.id}${SEP}${g.name}${SEP}${processSessionIds(g.sessionIds, metas).map((id) => `${id}=${roles.get(id) ?? ""}`).join(",")}`,
+      );
     }),
   );
   const runtime = useApp((s) => s.runtime);

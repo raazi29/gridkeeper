@@ -33,6 +33,8 @@
   --radius-l: 7px;
   --term-bg: #07090d;
   --term-fg: #d5dbe6;
+  /* Canvas behind embedded web pages (browser panes): web content expects white, like any browser. */
+  --browser-canvas: #ffffff;
 
   /* ---- type ---- */
   --font-ui: "Geist Variable", "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;

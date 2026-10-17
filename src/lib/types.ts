@@ -170,6 +170,58 @@ export interface GitInfo {
   worktrees: WorktreeInfo[];
 }
 
+/** One changed path from `git status --porcelain=v2` (read-only Changes panel). */
+export interface ChangedFile {
+  /** Repository-relative, forward slashes. */
+  path: string;
+  origPath: string | null;
+  /** Staged status letter ("." = unchanged). */
+  index: string;
+  /** Work-tree status letter ("?" = untracked). */
+  worktree: string;
+  kind: "changed" | "renamed" | "unmerged" | "untracked";
+}
+
+export interface RepoChanges {
+  isRepo: boolean;
+  root: string | null;
+  branch: string | null;
+  upstream: string | null;
+  ahead: number;
+  behind: number;
+  files: ChangedFile[];
+  truncated: boolean;
+}
+
+export interface FileDiff {
+  text: string;
+  truncated: boolean;
+  binary: boolean;
+}
+
+/** A TCP port a session's process tree listens on. */
+export interface SessionPort {
+  port: number;
+  pid: number;
+  addresses: string[];
+}
+
+export interface SessionPorts {
+  id: SessionId;
+  ports: SessionPort[];
+}
+
+/** Result of the embeddability probe for a browser pane URL. */
+export interface FrameProbe {
+  reachable: boolean;
+  status: number | null;
+  /** false: the site forbids framing; null: unknown. */
+  frameable: boolean | null;
+  reason: string | null;
+  title: string | null;
+  error: string | null;
+}
+
 export interface PathInfo {
   exists: boolean;
   isDir: boolean;
@@ -345,11 +397,20 @@ export interface WorktreeRef {
   branch: string | null;
 }
 
+/** What a pane shows. Missing (older state files) = "terminal". Use paneKind() from lib/paneKind. */
+export type PaneKind = "terminal" | "browser";
+
 export interface SessionMeta {
   id: SessionId;
   name: string;
   agent: AgentKind;
   cwd: string;
+  /** Terminal (default) or browser pane. Browser panes have no process. */
+  kind?: PaneKind;
+  /** Browser panes: page to (re)open (http / https / file, <= 2048 chars). Always null for terminals. */
+  url?: string | null;
+  /** Browser panes: the pane name follows the page title. */
+  titleAsName?: boolean;
   profileId: string | null;
   command: string | null;
   args: string[];

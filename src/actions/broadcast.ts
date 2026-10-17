@@ -5,6 +5,7 @@ import { errorMessage, ipc } from "../lib/ipc";
 import type { AgentKind, SessionId, Workspace } from "../lib/types";
 import { isLive, type AppStore } from "../store/appStore";
 import { recordBroadcast } from "../store/activity";
+import { isTerminalMeta } from "../lib/browserPanes";
 
 export interface BroadcastCandidate {
   id: SessionId;
@@ -27,7 +28,8 @@ export function broadcastCandidates(s: Pick<AppStore, "persisted" | "runtime">):
     for (const g of w.groups)
       for (const id of g.sessionIds) {
         const m = metas.get(id);
-        if (!m || !isLive(s.runtime[id])) continue;
+        // Processes only: browser panes never receive keystrokes.
+        if (!m || !isTerminalMeta(m) || !isLive(s.runtime[id])) continue;
         out.push({ id, name: m.name, agent: m.agent, workspaceId: w.id, workspaceName: w.name, groupId: g.id, groupName: g.name });
       }
   return out;

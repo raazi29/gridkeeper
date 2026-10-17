@@ -6,6 +6,7 @@
 import { runCommand } from "../actions/commands";
 import { useMemo } from "react";
 import { newSession } from "../actions/sessions";
+import { openBrowserPane, promptOpenUrl } from "../actions/browser";
 import { launchOptions, type LaunchOption } from "../lib/accounts";
 import { selectActiveGroup, selectActiveWorkspace, useApp } from "../store/appStore";
 import { useUi } from "../store/uiStore";
@@ -62,6 +63,7 @@ export function QuickLaunchButton({ groupId, variant = "primary", label = "New s
   const options = useLaunchOptions();
   const menu = useContextMenu();
   const scNew = useShortcut("session.new");
+  const scUrl = useShortcut("browser.open");
   const items: MenuItem[] = [
     ...options.map(
       (o): MenuItem => ({
@@ -71,6 +73,9 @@ export function QuickLaunchButton({ groupId, variant = "primary", label = "New s
         onSelect: () => quickLaunch(o, groupId),
       }),
     ),
+    "separator",
+    { label: "Browser", onSelect: () => void openBrowserPane({ groupId: target(groupId).group?.id }) },
+    { label: "Open URL…", hint: scUrl || undefined, onSelect: () => promptOpenUrl(target(groupId).group?.id) },
     "separator",
     { label: "More options…", hint: scNew ?? undefined, onSelect: () => openFullDialog(groupId) },
     { label: "Launch formation…", onSelect: () => runCommand("formation.launch") },
@@ -122,6 +127,14 @@ export function QuickLaunchPanel() {
             )}
           </button>
         ))}
+        <button type="button" className="quick-card quick-card--browser" onClick={() => void openBrowserPane({})} title="A browser pane with your sessions' dev-server ports">
+          <span className="quick-card-title">Browser</span>
+          <span className="quick-card-hint">dev servers, docs, PRs</span>
+        </button>
+        <button type="button" className="quick-card quick-card--browser" onClick={() => promptOpenUrl()}>
+          <span className="quick-card-title">Open URL…</span>
+          <span className="quick-card-hint">localhost:5173, https://…</span>
+        </button>
       </div>
       <button type="button" className="link-btn quick-panel-more" onClick={() => openFullDialog()}>
         {hasFolder ? "More options (worktree, arguments, several at once)…" : "Choose a folder and options…"}
