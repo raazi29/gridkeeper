@@ -71,6 +71,8 @@ export function FleetOverlay() {
   useLayoutEffect(() => {
     const id = pushModal();
     const prev = document.activeElement as HTMLElement | null;
+    // Fallback focus target (no tiles yet / empty filter) so Esc and arrows work.
+    panel.current?.focus();
     return () => {
       popModal(id);
       if (prev?.isConnected && !useUi.getState().dialog) requestAnimationFrame(() => prev.focus());

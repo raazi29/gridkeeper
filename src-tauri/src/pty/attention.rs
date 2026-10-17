@@ -58,6 +58,8 @@ pub fn win32_input_encode(text: &[u8]) -> Vec<u8> {
     // not resume a sequence split across two reads, so the events must tile
     // those reads exactly.
     for unit in s.encode_utf16() {
+        // Fixed width needs UTF-16 units <= 9999 (the probe reply is ASCII).
+        debug_assert!(unit <= 9999, "win32_input_encode: unit {unit} too wide");
         let vk = if unit == 0x1b { 27 } else { 0 };
         for kd in [1, 0] {
             out.extend_from_slice(format!("\x1b[{vk:02};;{unit:04};{kd};;1_").as_bytes());
@@ -622,8 +624,9 @@ impl HubShared {
 }
 
 fn monitor_loop(weak: Weak<HubShared>) {
+    // The thread keeps the shared state alive; `AttentionHub::drop` sets
+    // `shutdown` and wakes it, which ends the loop and releases it.
     let Some(shared) = weak.upgrade() else { return };
-    // Hold only a weak reference while parked so dropping the hub ends us.
     drop(weak);
     let mut st = shared.st.lock();
     loop {

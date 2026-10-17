@@ -155,6 +155,8 @@ let audio: AudioContext | null = null;
 function playBlip(kind: Alert["kind"]) {
   try {
     audio ??= new AudioContext();
+    // Created outside a user gesture it may start suspended.
+    if (audio.state === "suspended") void audio.resume();
     const t = audio.currentTime;
     const osc = audio.createOscillator();
     const gain = audio.createGain();
