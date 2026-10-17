@@ -17,7 +17,7 @@ import { IconBack, IconCode, IconExternal, IconForward, IconPopout, IconRestart 
 
 const DEVTOOLS = import.meta.env.DEV;
 
-export const BrowserPane = memo(function BrowserPane({ sessionId, groupId, index, count, maximized }: PaneProps) {
+export const BrowserPane = memo(function BrowserPane({ sessionId, groupId, index, count, visible, maximized }: PaneProps) {
   const focused = useApp((s) => s.focusedSessionId === sessionId);
   const { dropTarget, onDragOver, onDragLeave, onDrop } = usePaneDrop(sessionId, groupId);
 
@@ -41,7 +41,7 @@ export const BrowserPane = memo(function BrowserPane({ sessionId, groupId, index
       <AddressBar sessionId={sessionId} />
       <div className="pane-body browser-body">
         <BrowserHost sessionId={sessionId} />
-        <BrowserCards sessionId={sessionId} />
+        <BrowserCards sessionId={sessionId} visible={visible} />
       </div>
       {dropTarget && <div className="pane-drop-indicator" />}
     </div>
@@ -145,7 +145,7 @@ function hostName(url: string | null): string {
   }
 }
 
-const BrowserCards = memo(function BrowserCards({ sessionId }: { sessionId: SessionId }) {
+const BrowserCards = memo(function BrowserCards({ sessionId, visible }: { sessionId: SessionId; visible: boolean }) {
   const n = useBrowserNav((s) => s.panes[sessionId]);
   const view = viewOf(n, ownOrigin());
   const url = n?.url ?? null;
@@ -154,7 +154,7 @@ const BrowserCards = memo(function BrowserCards({ sessionId }: { sessionId: Sess
     case "frame":
       return null;
     case "start":
-      return <StartPage sessionId={sessionId} />;
+      return <StartPage sessionId={sessionId} visible={visible} />;
     case "refused":
       return (
         <div className="pane-overlay browser-card">
@@ -220,7 +220,8 @@ const BrowserCards = memo(function BrowserCards({ sessionId }: { sessionId: Sess
   }
 });
 
-function StartPage({ sessionId }: { sessionId: SessionId }) {
+/** `visible`: the pane's group is on screen — the ports poll runs only then. */
+function StartPage({ sessionId, visible }: { sessionId: SessionId; visible: boolean }) {
   const [value, setValue] = useState("");
   const [error, setError] = useState(false);
   const go = (raw: string | null) => {
@@ -258,7 +259,7 @@ function StartPage({ sessionId }: { sessionId: SessionId }) {
           </button>
         </form>
         <div className="section-label">Dev servers started by your sessions</div>
-        <PortsList onPick={(port) => go(urlForPort(port))} />
+        <PortsList onPick={(port) => go(urlForPort(port))} poll={visible} />
         <div className="browser-card-hint">
           Pages run sandboxed: no access to Gridkeeper or your sessions. Sites that refuse embedding open in a pop-out window.
         </div>

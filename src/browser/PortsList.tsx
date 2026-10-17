@@ -15,10 +15,12 @@ export interface PortsListProps {
   onPick?: (port: number) => void;
   emptyText?: string;
   compact?: boolean;
+  /** Hold the 3 s ports poll (default true). False while the list is mounted but off screen. */
+  poll?: boolean;
 }
 
-export function PortsList({ sessionId, onPick, emptyText = "No session is listening on a TCP port yet.", compact }: PortsListProps) {
-  usePortsPoll(true);
+export function PortsList({ sessionId, onPick, emptyText = "No session is listening on a TCP port yet.", compact, poll = true }: PortsListProps) {
+  usePortsPoll(poll);
   const bySession = usePorts((s) => s.bySession);
   const error = usePorts((s) => s.error);
   const names = useApp(useShallow((s) => Object.fromEntries(s.persisted.sessions.map((m) => [m.id, m.name]))));

@@ -213,6 +213,8 @@ pub fn probe(url: &str) -> AppResult<FrameProbe> {
     cmd.args([
         "-q", "-sS", "-i", "-L", "--max-redirs", "5", "--connect-timeout", "3", "--max-time", "6",
         "--proto", "=http,https", "--proto-redir", "=http,https",
+        // A corporate HTTP(S)_PROXY must not swallow local dev servers.
+        "--noproxy", "localhost,127.0.0.1,::1,.localhost",
         "-A", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Gridkeeper",
         "-H", "Accept: text/html,application/xhtml+xml;q=0.9,*/*;q=0.8",
     ])
