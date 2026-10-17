@@ -193,6 +193,10 @@ pub(crate) struct Session {
     exited: Mutex<bool>,
     exit_cv: Condvar,
     events: EventSink,
+    /// Held across snapshot + callback in [`Session::emit`] so state events
+    /// from the launch, reader and waiter threads are delivered in the order
+    /// their snapshots were taken (a stale `Running` can never follow `Exited`).
+    emit_lock: Mutex<()>,
 }
 
 fn short_label(id: &str) -> String {
@@ -235,6 +239,7 @@ impl Session {
             exited: Mutex::new(false),
             exit_cv: Condvar::new(),
             events,
+            emit_lock: Mutex::new(()),
         })
     }
 
@@ -265,7 +270,10 @@ impl Session {
         self.meta.lock().pid
     }
 
+    /// Report the current state. Lock order: `emit_lock` → `meta`; callers
+    /// must not hold `meta`. The sink must not block or call back into the session.
     pub fn emit(&self) {
+        let _ordered = self.emit_lock.lock();
         let info = self.info();
         (self.events)(&info);
     }
