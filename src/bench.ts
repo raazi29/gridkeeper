@@ -5,6 +5,7 @@
 //   mode=lines     print `count` lines once, then stay at a prompt
 //   mode=sustained continuous output at `rate` lines/s for `seconds`
 //   mode=unicode / garbage  rendering-robustness checks
+//   renderer=dom|webgl  override the renderer preference for this run
 
 import { newSession } from "./actions/sessions";
 import type { AppInfo } from "./lib/ipc";
@@ -28,6 +29,7 @@ export function setupBench(info: AppInfo): boolean {
   const scripts = info.benchScriptsDir;
   const cwd = scripts ?? "C:\\";
   const app = useApp.getState();
+  if (cfg.renderer === "dom" || cfg.renderer === "webgl") app.updateSettings({ renderer: cfg.renderer });
   const wsId = app.createWorkspace(`Bench ${n}× ${mode}`, cwd);
   const ws = useApp.getState().persisted.workspaces.find((w) => w.id === wsId)!;
   const groupId = ws.groups[0].id;
