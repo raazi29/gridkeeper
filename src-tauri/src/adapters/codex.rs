@@ -2,6 +2,15 @@
 //!
 //! The alternate screen is deliberately left ON (no `--no-alt-screen`):
 //! inline mode loses history in xterm.js (openai/codex#27644).
+//!
+//! Accounts: each Codex account is a `CODEX_HOME` directory (documented; it must exist when
+//! set). With an account: a named account sets `CODEX_HOME` (the folder must exist), the
+//! default account REMOVES an inherited `CODEX_HOME` so `~/.codex` is used. Without an account
+//! id (sessions created before accounts) the environment is left untouched.
+//! `OPENAI_API_KEY` / `CODEX_API_KEY` are removed for NAMED accounts only (a global key must not
+//! silently replace that account's login); the default account keeps the user's environment.
+//! Status checks always strip them (see `accounts::check_status`). A user can re-add either
+//! through the session's own environment, which is applied last.
 
 use super::discovery::{self, Executable};
 use super::{validate_session_id, AgentAdapter, Capabilities, LaunchContext, PlanBuilder};
@@ -17,7 +26,7 @@ impl AgentAdapter for CodexAdapter {
         "Codex"
     }
     fn capabilities(&self) -> Capabilities {
-        Capabilities { supports_resume: true, supports_profiles: false }
+        Capabilities { supports_resume: true, supports_profiles: true }
     }
     fn settings_override<'s>(&self, settings: &'s Settings) -> Option<&'s str> {
         settings.agent_paths.codex.as_deref()
@@ -40,6 +49,11 @@ impl AgentAdapter for CodexAdapter {
     }
 
     fn configure(&self, ctx: &LaunchContext<'_>, _exe: &Executable, plan: &mut PlanBuilder) -> AppResult<()> {
+        if let Some(id) = ctx.spec.profile_id.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
+            let spec = crate::accounts::spec_for(AgentKind::Codex, None).expect("codex account spec");
+            let account = crate::accounts::resolve_account(ctx.profiles, spec, id)?;
+            crate::accounts::apply_launch_env(spec, &account, plan)?;
+        }
         match &ctx.spec.resume {
             ResumeMode::None => {}
             ResumeMode::Continue => {

@@ -260,6 +260,85 @@ fn generic_requires_command_and_handles_batch() {
 }
 
 #[test]
+fn codex_account_sets_or_removes_codex_home() {
+    let f = fixture();
+    let codex = crate::accounts::spec_for(AgentKind::Codex, None).unwrap();
+
+    // No account id (sessions created before accounts): environment untouched.
+    let plan = resolve_launch(&spec(AgentKind::Codex, &f.cwd), &f.profiles, &f.settings).unwrap();
+    assert!(env(&plan, "CODEX_HOME").is_none() && !removed(&plan, "CODEX_HOME"));
+    assert!(!removed(&plan, "OPENAI_API_KEY"));
+
+    // Named account → CODEX_HOME set, identity keys stripped.
+    let work = f.profiles.create_new_home(codex, "work".into(), false, None, None).unwrap();
+    let mut s = spec(AgentKind::Codex, &f.cwd);
+    s.profile_id = Some(work.id.clone());
+    s.resume = ResumeMode::Continue;
+    let plan = resolve_launch(&s, &f.profiles, &f.settings).unwrap();
+    assert_eq!(env(&plan, "CODEX_HOME").map(PathBuf::from), Some(f.home.join(".codex-work")));
+    assert!(removed(&plan, "OPENAI_API_KEY") && removed(&plan, "CODEX_API_KEY"));
+    assert_eq!(plan.args, vec!["resume", "--last"]);
+
+    // The user's own session env still wins (applied last).
+    s.env = vec![EnvVar { key: "OPENAI_API_KEY".into(), value: "x".into() }];
+    assert_eq!(env(&resolve_launch(&s, &f.profiles, &f.settings).unwrap(), "OPENAI_API_KEY"), Some("x"));
+    s.env.clear();
+
+    // Default account → inherited CODEX_HOME removed, user env kept.
+    let default = f.profiles.create_in(codex, "Default".into(), None, None).unwrap();
+    s.profile_id = Some(default.id.clone());
+    let plan = resolve_launch(&s, &f.profiles, &f.settings).unwrap();
+    assert!(removed(&plan, "CODEX_HOME") && env(&plan, "CODEX_HOME").is_none());
+    assert!(!removed(&plan, "OPENAI_API_KEY"));
+
+    // Missing folder → Invalid; a Claude account → Invalid; unknown → NotFound.
+    std::fs::remove_dir(f.home.join(".codex-work")).unwrap();
+    s.profile_id = Some(work.id.clone());
+    assert!(matches!(resolve_launch(&s, &f.profiles, &f.settings), Err(AppError::Invalid(_))));
+    s.profile_id = Some(crate::profiles::DEFAULT_PROFILE_ID.into());
+    assert!(matches!(resolve_launch(&s, &f.profiles, &f.settings), Err(AppError::Invalid(_))));
+    s.profile_id = Some("nope".into());
+    assert!(matches!(resolve_launch(&s, &f.profiles, &f.settings), Err(AppError::NotFound(_))));
+
+    // A Codex account can never be launched as a Claude profile.
+    let mut c = spec(AgentKind::Claude, &f.cwd);
+    c.profile_id = Some(default.id.clone());
+    assert!(matches!(resolve_launch(&c, &f.profiles, &f.settings), Err(AppError::Invalid(_))));
+}
+
+#[test]
+fn preset_account_sets_hermes_home() {
+    let f = fixture();
+    let hermes = crate::accounts::spec_for(AgentKind::Generic, Some("hermes")).unwrap();
+    let acct = f.profiles.create_new_home(hermes, "side".into(), false, None, None).unwrap();
+    let mut s = spec(AgentKind::Generic, &f.cwd);
+    s.preset = Some("hermes".into());
+    s.command = Some(f.fake_bin.join("tool.exe").to_string_lossy().into());
+    s.profile_id = Some(acct.id.clone());
+    s.args = vec!["setup".into()];
+    let plan = resolve_launch(&s, &f.profiles, &f.settings).unwrap();
+    assert_eq!(
+        env(&plan, "HERMES_HOME").map(PathBuf::from),
+        Some(f.home.join(r"AppData\Local\hermes\profiles\side"))
+    );
+    assert_eq!(plan.args, vec!["setup"]);
+
+    // Default Hermes account: HERMES_HOME set explicitly to the platform default (Hermes asks for it).
+    let default = f.profiles.create_in(hermes, "Default".into(), None, None).unwrap();
+    s.profile_id = Some(default.id.clone());
+    let plan = resolve_launch(&s, &f.profiles, &f.settings).unwrap();
+    assert_eq!(env(&plan, "HERMES_HOME").map(PathBuf::from), Some(f.home.join(r"AppData\Local\hermes")));
+    assert!(!removed(&plan, "HERMES_HOME"));
+
+    // Tools without account isolation refuse an account id.
+    s.preset = Some("kimi".into());
+    match resolve_launch(&s, &f.profiles, &f.settings).unwrap_err() {
+        AppError::Invalid(m) => assert!(m.contains("no account isolation"), "{m}"),
+        e => panic!("{e:?}"),
+    }
+}
+
+#[test]
 fn display_is_redacted() {
     let d = display_command(Path::new(r"C:\bin\x.exe"), &["--api-key".into(), "sk-ant-api03-abcdefghijklmnop".into()]);
     assert!(!d.contains("abcdefghijklmnop"), "{d}");

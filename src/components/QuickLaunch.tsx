@@ -1,10 +1,12 @@
 // One-click session launch: "+ New" dropdown in the workspace header and the agent buttons shown in an
-// empty group. Starts immediately in the active group using the workspace's project folder; anything
-// more specific (worktree, args, count) goes through the full New Session dialog.
+// empty group (one entry per signed-in account per agent, see lib/accounts.ts). Starts immediately in
+// the active group using the workspace's project folder; anything more specific (worktree, args, count)
+// goes through the full New Session dialog.
 
 import { runCommand } from "../actions/commands";
+import { useMemo } from "react";
 import { newSession } from "../actions/sessions";
-import type { AgentKind } from "../lib/types";
+import { launchOptions, type LaunchOption } from "../lib/accounts";
 import { selectActiveGroup, selectActiveWorkspace, useApp } from "../store/appStore";
 import { useUi } from "../store/uiStore";
 import { useShortcut, withShortcut } from "./hooks";
@@ -12,31 +14,14 @@ import { IconPlus } from "./icons";
 import { MemoryPressureNotice, memoryPressureNow } from "./ResourceWarnings";
 import { useContextMenu, type MenuItem } from "./ui/Menu";
 
-interface LaunchOption {
-  key: string;
-  label: string;
-  hint?: string;
-  color?: string;
-  agent: AgentKind;
-  profileId?: string;
-  preset?: string;
-  disabled?: boolean;
-}
+export type { LaunchOption };
 
 function useLaunchOptions(): LaunchOption[] {
   // Select the stable store arrays themselves (deriving new objects inside a selector re-renders forever).
-  const profiles = useApp((s) => s.profiles);
+  const accounts = useApp((s) => s.accounts);
   const agents = useApp((s) => s.agents);
-  const missing = (k: AgentKind) => agents.some((a) => a.kind === k && !a.path);
-  const out: LaunchOption[] = [{ key: "ps", label: "PowerShell", agent: "powershell", disabled: missing("powershell") }];
-  if (profiles.length === 0) out.push({ key: "claude", label: "Claude Code", agent: "claude", disabled: missing("claude") });
-  for (const p of profiles)
-    out.push({ key: `claude:${p.id}`, label: `Claude Code`, hint: p.name, color: p.color, agent: "claude", profileId: p.id, disabled: missing("claude") });
-  out.push({ key: "codex", label: "Codex", agent: "codex", disabled: missing("codex") });
-  // Other agent CLIs found on this PC (broken installs are reported by detection and skipped here).
-  for (const a of agents)
-    if (a.preset && !a.error) out.push({ key: `tool:${a.preset}`, label: a.label ?? a.preset, agent: "generic", preset: a.preset });
-  return out;
+  // One card per signed-in account per agent ("Codex · work"); a plain card when an agent has none.
+  return useMemo(() => launchOptions(accounts, agents), [accounts, agents]);
 }
 
 /** Workspace + group a launch goes to: the given group (any workspace), else the active one. */

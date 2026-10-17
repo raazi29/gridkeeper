@@ -1,4 +1,5 @@
 import { useEffect } from "react";
+import { loadAccountAgents, refreshAccounts, scanAccounts } from "./actions/accounts";
 import { maybeAutoRetry, restoreSessions } from "./actions/sessions";
 import { setupBench } from "./bench";
 import { ErrorBoundary } from "./components/ErrorBoundary";
@@ -48,8 +49,16 @@ async function boot() {
   for (const info of await ipc.sessionList().catch(() => [])) useApp.getState().setRuntime(info);
 
   ipc.profilesList().then((p) => useApp.getState().setProfiles(p)).catch(() => {});
-  ipc.agentsDetect().then((a) => useApp.getState().setAgents(a)).catch(() => {});
+  void refreshAccounts();
+  void loadAccountAgents();
+  const detected = ipc
+    .agentsDetect()
+    .then((a) => useApp.getState().setAgents(a))
+    .catch(() => {});
   await restoreSessions();
+  // Account auto-detection (all agents) once agents are detected and restored sessions are
+  // launched: status checks skip accounts with a live session (Claude Code #91708).
+  void detected.finally(() => void scanAccounts());
 }
 
 export default function App() {

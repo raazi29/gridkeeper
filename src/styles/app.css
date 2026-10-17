@@ -1911,6 +1911,25 @@ input[type="number"].input {
   overflow: hidden;
   background: var(--bg-0);
 }
+/* accounts dialog: one block per agent */
+.account-group {
+  margin-bottom: 14px;
+}
+.account-group-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+.account-group-head .section-label {
+  margin: 0;
+}
+.account-env {
+  font-size: 11px;
+}
+.accounts-hidden {
+  margin: 4px 0 10px;
+}
 .empty-row {
   padding: 14px 12px;
   color: var(--text-2);

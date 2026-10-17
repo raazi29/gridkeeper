@@ -1,20 +1,28 @@
-//! Claude account profiles (`profiles.json`).
+//! Agent accounts (`profiles.json`), historically "Claude account profiles".
 //!
-//! A profile is a name + an optional `CLAUDE_CONFIG_DIR`. `config_dir: None`
-//! is the default profile: Claude Code's own default location
-//! (`%USERPROFILE%\.claude`), launched with `CLAUDE_CONFIG_DIR` removed.
+//! A record is a name + an optional home directory for one agent (see `accounts.rs` for the
+//! per-agent spec table). `config_dir: None` is the agent's default home (for Claude Code
+//! `%USERPROFILE%\.claude`), launched with the agent's home variable removed.
+//!
+//! On disk, Claude rows stay under the original `profiles` key (unchanged format, so an older
+//! Gridkeeper still reads them); rows of other agents go under `accounts`, and homes the user
+//! removed are remembered under `dismissed` so the automatic scan does not bring them back.
+//! The public API (`list`, `get`, `default_profile`, `create`, ...) keeps its Claude meaning;
+//! `list_all` / `create_in` / `create_new_home` / `merge_detected` cover every agent.
 //!
 //! Security: credential files are only ever checked for EXISTENCE by name.
 //! Nothing under a profile directory is read, copied, modified or deleted;
 //! deleting a profile removes the entry only. Account e-mails returned by
-//! `claude auth status` go to the UI only — never to logs or to disk.
+//! status commands go to the UI only — never to logs or to disk.
 
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
 
+use crate::accounts::{self, AccountSpec, HomeSource, ScanEnv};
 use crate::adapters::{discovery, process};
 use crate::persistence::{atomic_write, preserve_corrupt};
 use crate::types::*;
@@ -29,6 +37,14 @@ const NOT_SIGNED_IN: &str = "Not signed in — run `claude` in this profile and 
 pub const PALETTE: [&str; 8] =
     ["#7B61FF", "#3FB950", "#58A6FF", "#D29922", "#F778BA", "#39C5CF", "#FF7B72", "#A371F7"];
 
+fn is_claude(a: &AgentKind) -> bool {
+    *a == AgentKind::Claude
+}
+
+fn is_false(b: &bool) -> bool {
+    !*b
+}
+
 /// On-disk shape: no computed status.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -38,13 +54,40 @@ struct StoredProfile {
     #[serde(default)]
     config_dir: Option<String>,
     color: String,
+    #[serde(default = "default_account_agent", skip_serializing_if = "is_claude")]
+    agent: AgentKind,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    preset: Option<String>,
+    #[serde(default, skip_serializing_if = "is_false")]
+    auto_detected: bool,
+}
+
+impl StoredProfile {
+    fn spec(&self) -> Option<&'static AccountSpec> {
+        accounts::spec_for(self.agent, self.preset.as_deref())
+    }
+    fn is_spec(&self, spec: &AccountSpec) -> bool {
+        self.spec().is_some_and(|s| s.key == spec.key)
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize)]
 struct ProfilesFile {
     version: u32,
+    /// Claude accounts (original key and format).
     #[serde(default)]
     profiles: Vec<StoredProfile>,
+    /// Accounts of other agents.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    accounts: Vec<StoredProfile>,
+    /// Home keys (`accounts::home_key`) the user removed; `None` in files written before accounts existed.
+    #[serde(default)]
+    dismissed: Option<Vec<String>>,
+}
+
+struct Inner {
+    list: Vec<StoredProfile>,
+    dismissed: Vec<String>,
 }
 
 /// Config directory a profile resolves to (default profile → `<home>/.claude`).
@@ -59,71 +102,32 @@ fn config_root_in(config_dir: Option<&str>, home: Option<&Path>) -> Option<PathB
     }
 }
 
-/// Cheap, filename-only status.
-fn cheap_status(root: Option<&Path>) -> ProfileStatus {
-    let dir_exists = root.is_some_and(Path::is_dir);
-    ProfileStatus {
-        dir_exists,
-        likely_authenticated: dir_exists && root.is_some_and(|r| r.join(".credentials.json").is_file()),
-        verified: false,
-        note: (!dir_exists).then(|| "Directory does not exist".to_string()),
-        ..Default::default()
-    }
-}
-
-/// Lower-cased, separator-normalized form for equality checks.
-fn normalize_dir(p: &str) -> String {
-    let canon = std::fs::canonicalize(p)
-        .map(|c| c.to_string_lossy().trim_start_matches(r"\\?\").to_string())
-        .unwrap_or_else(|_| p.to_string());
-    canon.replace('/', "\\").trim_end_matches('\\').to_lowercase()
-}
-
 fn valid_color(c: &str) -> bool {
     c.len() == 7 && c.starts_with('#') && c[1..].chars().all(|ch| ch.is_ascii_hexdigit())
 }
 
-/// Sibling `.claude-*` directories that look like real Claude config dirs.
-fn discover_profile_dirs(home: &Path) -> Vec<(String, PathBuf)> {
-    let Ok(entries) = std::fs::read_dir(home) else {
-        return Vec::new();
-    };
-    let mut found: Vec<(String, PathBuf)> = entries
-        .flatten()
-        .filter_map(|e| {
-            let name = e.file_name().to_string_lossy().into_owned();
-            let suffix = name.strip_prefix(".claude-")?.to_string();
-            if suffix.is_empty() || !e.file_type().ok()?.is_dir() {
-                return None;
-            }
-            let path = e.path();
-            // Existence checks by name only. A credentials file is conclusive; a bare
-            // settings.json is not (tool dirs like .claude-mem have their own), so it
-            // must come with Claude's state file or transcript folder.
-            let is_config = path.join(".credentials.json").is_file()
-                || (path.join("settings.json").is_file()
-                    && (path.join(".claude.json").is_file() || path.join("projects").is_dir()));
-            is_config.then_some((suffix, path))
-        })
-        .collect();
-    found.sort_by_key(|a| a.0.to_lowercase());
-    found
+fn claude_spec() -> &'static AccountSpec {
+    accounts::spec_for(AgentKind::Claude, None).expect("claude spec")
 }
 
 pub struct ProfileStore {
     path: PathBuf,
-    home: Option<PathBuf>,
-    profiles: Mutex<Vec<StoredProfile>>,
+    env: ScanEnv,
+    profiles: Mutex<Inner>,
 }
 
 impl ProfileStore {
     /// Load `profiles.json`, seeding it on first run from the user's home directory.
     pub fn load(path: PathBuf) -> Self {
-        Self::load_with_home(path, discovery::home_dir())
+        Self::load_with_env(path, ScanEnv::current())
     }
 
     /// Like `load`, with an explicit home directory for seeding/default-dir status.
     pub fn load_with_home(path: PathBuf, home: Option<PathBuf>) -> Self {
+        Self::load_with_env(path, ScanEnv::with_home(home))
+    }
+
+    pub fn load_with_env(path: PathBuf, env: ScanEnv) -> Self {
         let existing = if path.exists() {
             match std::fs::read_to_string(&path).map_err(|e| e.to_string()).and_then(|t| {
                 serde_json::from_str::<ProfilesFile>(&t).map_err(|e| e.to_string())
@@ -132,7 +136,7 @@ impl ProfileStore {
                     if f.version > PROFILES_VERSION {
                         tracing::warn!(version = f.version, "profiles.json is from a newer Gridkeeper; loading best-effort");
                     }
-                    Some(f.profiles)
+                    Some(f)
                 }
                 Err(e) => {
                     tracing::error!(error = %e, "profiles.json unreadable; preserving it and re-seeding");
@@ -144,13 +148,47 @@ impl ProfileStore {
             None
         };
         let seeded = existing.is_none();
-        let mut profiles = existing.unwrap_or_else(|| Self::seed(home.as_deref()));
-        Self::dedupe(&mut profiles);
-        let store = Self { path, home, profiles: Mutex::new(profiles) };
-        if seeded {
-            let list = store.profiles.lock().clone();
-            tracing::info!(count = list.len(), "seeded Claude profiles");
-            if let Err(e) = store.persist(&list) {
+        let (mut list, dismissed, legacy) = match existing {
+            Some(f) => {
+                let mut list: Vec<StoredProfile> = f
+                    .profiles
+                    .into_iter()
+                    .map(|mut p| {
+                        // The `profiles` key only ever holds Claude rows.
+                        p.agent = AgentKind::Claude;
+                        p.preset = None;
+                        p
+                    })
+                    .collect();
+                list.extend(f.accounts.into_iter().filter(|p| p.agent != AgentKind::Claude));
+                let legacy = f.dismissed.is_none();
+                (list, f.dismissed.unwrap_or_default(), legacy)
+            }
+            None => (Self::seed(env.home.as_deref()), Vec::new(), false),
+        };
+        Self::dedupe(&mut list);
+        let mut dismissed = dismissed;
+        if legacy {
+            // Written before accounts existed: first-run seeding added every Claude sibling that
+            // existed then, so a sibling that is not listed now was most likely removed by the
+            // user. Respect that; the UI offers "show hidden accounts" to bring them back.
+            let spec = claude_spec();
+            let known: HashSet<String> =
+                list.iter().filter(|p| p.is_spec(spec)).map(|p| accounts::home_key(spec, p.config_dir.as_deref(), &env)).collect();
+            for f in accounts::discover(spec, &env).into_iter().filter(|f| f.source == HomeSource::Sibling) {
+                let key = accounts::home_key(spec, f.config_dir.as_deref(), &env);
+                if !known.contains(&key) {
+                    dismissed.push(key);
+                }
+            }
+        }
+        let store = Self { path, env, profiles: Mutex::new(Inner { list, dismissed }) };
+        if seeded || legacy {
+            let inner = store.profiles.lock();
+            if seeded {
+                tracing::info!(count = inner.list.len(), "seeded Claude profiles");
+            }
+            if let Err(e) = store.persist(&inner.list, &inner.dismissed) {
                 tracing::error!(error = %e, "could not write profiles.json");
             }
         }
@@ -163,16 +201,22 @@ impl ProfileStore {
             name: "Default".into(),
             config_dir: None,
             color: PALETTE[0].into(),
+            agent: AgentKind::Claude,
+            preset: None,
+            auto_detected: false,
         }];
-        if let Some(home) = home {
-            for (i, (suffix, path)) in discover_profile_dirs(home).into_iter().enumerate() {
-                out.push(StoredProfile {
-                    id: uuid::Uuid::new_v4().to_string(),
-                    name: suffix,
-                    config_dir: Some(path.to_string_lossy().into_owned()),
-                    color: PALETTE[(i + 1) % PALETTE.len()].into(),
-                });
-            }
+        let env = ScanEnv::with_home(home.map(Path::to_path_buf));
+        let siblings = accounts::discover(claude_spec(), &env).into_iter().filter(|f| f.source == HomeSource::Sibling);
+        for (i, f) in siblings.enumerate() {
+            out.push(StoredProfile {
+                id: uuid::Uuid::new_v4().to_string(),
+                name: f.name,
+                config_dir: f.config_dir,
+                color: PALETTE[(i + 1) % PALETTE.len()].into(),
+                agent: AgentKind::Claude,
+                preset: None,
+                auto_detected: false,
+            });
         }
         out
     }
@@ -188,42 +232,87 @@ impl ProfileStore {
         }
     }
 
-    fn persist(&self, list: &[StoredProfile]) -> AppResult<()> {
-        let file = ProfilesFile { version: PROFILES_VERSION, profiles: list.to_vec() };
+    fn persist(&self, list: &[StoredProfile], dismissed: &[String]) -> AppResult<()> {
+        let (profiles, others): (Vec<StoredProfile>, Vec<StoredProfile>) =
+            list.iter().cloned().partition(|p| p.agent == AgentKind::Claude);
+        let file = ProfilesFile { version: PROFILES_VERSION, profiles, accounts: others, dismissed: Some(dismissed.to_vec()) };
         let bytes = serde_json::to_vec_pretty(&file).map_err(|e| AppError::Other(e.to_string()))?;
         atomic_write(&self.path, &bytes, true)?;
         Ok(())
     }
 
-    fn to_public(&self, p: &StoredProfile) -> ClaudeProfile {
-        let root = config_root_in(p.config_dir.as_deref(), self.home.as_deref());
-        ClaudeProfile {
-            id: p.id.clone(),
-            name: p.name.clone(),
-            config_dir: p.config_dir.clone(),
-            color: p.color.clone(),
-            status: cheap_status(root.as_deref()),
+    fn to_account(&self, p: &StoredProfile) -> Account {
+        let spec = p.spec();
+        let root = match spec {
+            Some(s) => accounts::resolve_home(s, p.config_dir.as_deref(), &self.env),
+            None => config_root_in(p.config_dir.as_deref(), self.env.home.as_deref()),
+        };
+        Account {
+            profile: ClaudeProfile {
+                id: p.id.clone(),
+                name: p.name.clone(),
+                config_dir: p.config_dir.clone(),
+                color: p.color.clone(),
+                status: accounts::cheap_status(spec, root.as_deref()),
+            },
+            agent: p.agent,
+            preset: p.preset.clone(),
+            auto_detected: p.auto_detected,
+            resolved_dir: root.map(|r| r.to_string_lossy().into_owned()),
         }
     }
 
-    pub fn list(&self) -> Vec<ClaudeProfile> {
-        self.profiles.lock().iter().map(|p| self.to_public(p)).collect()
+    fn to_public(&self, p: &StoredProfile) -> ClaudeProfile {
+        self.to_account(p).profile
     }
 
+    /// Claude accounts (the historical meaning of "profiles").
+    pub fn list(&self) -> Vec<ClaudeProfile> {
+        self.profiles.lock().list.iter().filter(|p| p.agent == AgentKind::Claude).map(|p| self.to_public(p)).collect()
+    }
+
+    /// Accounts of every agent, grouped in spec-table order.
+    pub fn list_all(&self) -> Vec<Account> {
+        let inner = self.profiles.lock();
+        let order = |p: &StoredProfile| {
+            p.spec().and_then(|s| accounts::SPECS.iter().position(|x| x.key == s.key)).unwrap_or(usize::MAX)
+        };
+        let mut rows: Vec<&StoredProfile> = inner.list.iter().collect();
+        rows.sort_by_key(|p| order(p));
+        rows.into_iter().map(|p| self.to_account(p)).collect()
+    }
+
+    /// Profile record by id (any agent; use `get_account` to know which).
     pub fn get(&self, id: &str) -> Option<ClaudeProfile> {
-        self.profiles.lock().iter().find(|p| p.id == id).map(|p| self.to_public(p))
+        self.profiles.lock().list.iter().find(|p| p.id == id).map(|p| self.to_public(p))
+    }
+
+    /// Account of any agent by id.
+    pub fn get_account(&self, id: &str) -> Option<Account> {
+        self.profiles.lock().list.iter().find(|p| p.id == id).map(|p| self.to_account(p))
     }
 
     /// The profile using Claude's default location (no CLAUDE_CONFIG_DIR), if any.
     pub fn default_profile(&self) -> Option<ClaudeProfile> {
-        let list = self.profiles.lock();
-        list.iter()
+        let inner = self.profiles.lock();
+        let claude = || inner.list.iter().filter(|p| p.agent == AgentKind::Claude);
+        claude()
             .find(|p| p.config_dir.is_none())
-            .or_else(|| list.iter().find(|p| p.id == DEFAULT_PROFILE_ID))
+            .or_else(|| claude().find(|p| p.id == DEFAULT_PROFILE_ID))
             .map(|p| self.to_public(p))
     }
 
-    fn validate_name(list: &[StoredProfile], name: &str, except_id: Option<&str>) -> AppResult<String> {
+    /// Directories used for discovery and default homes.
+    pub fn scan_env(&self) -> &ScanEnv {
+        &self.env
+    }
+
+    /// Number of remembered removed homes (for "show hidden accounts").
+    pub fn dismissed_count(&self) -> usize {
+        self.profiles.lock().dismissed.len()
+    }
+
+    fn validate_name(list: &[StoredProfile], spec: &AccountSpec, name: &str, except_id: Option<&str>) -> AppResult<String> {
         let name = name.trim();
         if name.is_empty() {
             return Err(AppError::Invalid("Profile name must not be empty".into()));
@@ -231,7 +320,10 @@ impl ProfileStore {
         if name.chars().count() > 64 || name.contains('\0') {
             return Err(AppError::Invalid("Profile name is too long or contains invalid characters".into()));
         }
-        if list.iter().any(|p| Some(p.id.as_str()) != except_id && p.name.trim().eq_ignore_ascii_case(name)) {
+        if list
+            .iter()
+            .any(|p| Some(p.id.as_str()) != except_id && p.is_spec(spec) && p.name.trim().eq_ignore_ascii_case(name))
+        {
             return Err(AppError::Invalid(format!("A profile named {name:?} already exists")));
         }
         Ok(name.to_string())
@@ -242,15 +334,17 @@ impl ProfileStore {
     fn validate_dir(
         &self,
         list: &[StoredProfile],
+        spec: &AccountSpec,
         config_dir: Option<String>,
         except_id: Option<&str>,
     ) -> AppResult<Option<String>> {
-        let others = list.iter().filter(|p| Some(p.id.as_str()) != except_id);
+        let others = list.iter().filter(|p| Some(p.id.as_str()) != except_id && p.is_spec(spec));
         let Some(dir) = config_dir.map(|d| d.trim().to_string()).filter(|d| !d.is_empty()) else {
             if others.clone().any(|p| p.config_dir.is_none()) {
-                return Err(AppError::Invalid(
-                    "Another profile already uses Claude's default location; choose a directory".into(),
-                ));
+                return Err(AppError::Invalid(format!(
+                    "Another {} account already uses its default location; choose a directory",
+                    spec.label
+                )));
             }
             return Ok(None);
         };
@@ -261,16 +355,19 @@ impl ProfileStore {
         if !path.is_absolute() {
             return Err(AppError::Invalid(format!("Profile directory must be an absolute path: {dir}")));
         }
-        let norm = normalize_dir(&dir);
-        if let Some(default_root) = self.home.as_ref().map(|h| h.join(".claude"))
-            && normalize_dir(&default_root.to_string_lossy()) == norm
+        let norm = accounts::normalize_dir(&dir);
+        if let Some(default_root) = accounts::default_home(spec, &self.env)
+            && accounts::normalize_dir(&default_root.to_string_lossy()) == norm
             && others.clone().any(|p| p.config_dir.is_none())
         {
-            return Err(AppError::Invalid(
-                "That directory is Claude's default location, already used by the default profile".into(),
-            ));
+            return Err(AppError::Invalid(format!(
+                "That directory is {}'s default location, already used by the default account",
+                spec.label
+            )));
         }
-        if let Some(clash) = others.clone().find(|p| p.config_dir.as_deref().is_some_and(|d| normalize_dir(d) == norm)) {
+        if let Some(clash) =
+            others.clone().find(|p| p.config_dir.as_deref().is_some_and(|d| accounts::normalize_dir(d) == norm))
+        {
             return Err(AppError::Invalid(format!("Profile {:?} already uses that directory", clash.name)));
         }
         if path.exists() {
@@ -279,7 +376,7 @@ impl ProfileStore {
             }
         } else {
             std::fs::create_dir_all(&path)?;
-            tracing::info!("created new empty Claude profile directory");
+            tracing::info!(agent = spec.key, "created new empty account directory");
         }
         Ok(Some(dir))
     }
@@ -299,57 +396,209 @@ impl ProfileStore {
             .to_string())
     }
 
+    /// Create a Claude profile (historical API).
     pub fn create(&self, name: String, config_dir: Option<String>, color: Option<String>) -> AppResult<ClaudeProfile> {
-        let mut list = self.profiles.lock();
-        let name = Self::validate_name(&list, &name, None)?;
-        let color = Self::pick_color(&list, color)?;
-        let config_dir = self.validate_dir(&list, config_dir, None)?;
-        let stored = StoredProfile { id: uuid::Uuid::new_v4().to_string(), name, config_dir, color };
-        let mut next = list.clone();
+        self.create_in(claude_spec(), name, config_dir, color).map(|a| a.profile)
+    }
+
+    /// Create an account of any agent with an explicit (or default) home.
+    pub fn create_in(
+        &self,
+        spec: &AccountSpec,
+        name: String,
+        config_dir: Option<String>,
+        color: Option<String>,
+    ) -> AppResult<Account> {
+        let mut inner = self.profiles.lock();
+        let name = Self::validate_name(&inner.list, spec, &name, None)?;
+        let color = Self::pick_color(&inner.list, color)?;
+        let config_dir = self.validate_dir(&inner.list, spec, config_dir, None)?;
+        let stored = StoredProfile {
+            id: uuid::Uuid::new_v4().to_string(),
+            name,
+            config_dir,
+            color,
+            agent: spec.agent,
+            preset: spec.preset.map(String::from),
+            auto_detected: false,
+        };
+        let key = accounts::home_key(spec, stored.config_dir.as_deref(), &self.env);
+        let mut next = inner.list.clone();
         next.push(stored.clone());
-        self.persist(&next)?;
-        *list = next;
-        tracing::info!(profile = %stored.id, "created Claude profile");
-        Ok(self.to_public(&stored))
+        let dismissed: Vec<String> = inner.dismissed.iter().filter(|k| **k != key).cloned().collect();
+        self.persist(&next, &dismissed)?;
+        inner.list = next;
+        inner.dismissed = dismissed;
+        tracing::info!(profile = %stored.id, agent = spec.key, "created account");
+        Ok(self.to_account(&stored))
+    }
+
+    /// Where "Add account" would put a new home for `name` (path preview for the UI).
+    pub fn plan_home(&self, spec: &AccountSpec, name: &str) -> AppResult<accounts::PlannedHome> {
+        Ok(accounts::describe_home(&accounts::planned_home(spec, name, &self.env)?))
+    }
+
+    /// "Add account": create an EMPTY home (`~/.codex-<name>`, ...) and its entry. An existing
+    /// non-empty folder is refused unless `use_existing` (it is then used as is, never modified).
+    pub fn create_new_home(
+        &self,
+        spec: &AccountSpec,
+        name: String,
+        use_existing: bool,
+        home_dir: Option<String>,
+        color: Option<String>,
+    ) -> AppResult<Account> {
+        let path = match home_dir.map(|d| d.trim().to_string()).filter(|d| !d.is_empty()) {
+            Some(d) => PathBuf::from(d),
+            None => accounts::planned_home(spec, &name, &self.env)?,
+        };
+        let info = accounts::describe_home(&path);
+        if info.exists && !path.is_dir() {
+            return Err(AppError::Invalid(format!("Not a directory: {}", info.path)));
+        }
+        if info.exists && !info.empty && !use_existing {
+            return Err(AppError::Invalid(format!(
+                "{} already exists and is not empty. Choose “Use existing folder” to add it as is, or pick another name.",
+                info.path
+            )));
+        }
+        self.create_in(spec, name, Some(info.path), color)
+    }
+
+    /// Add homes found by `accounts::discover` that are neither listed nor dismissed. A missing
+    /// default home is only added when the agent is installed (so Sign in can create it).
+    /// Returns whether anything was added.
+    pub fn merge_detected(&self, installed: &HashSet<&'static str>) -> AppResult<bool> {
+        let found: Vec<(&'static AccountSpec, Vec<accounts::FoundHome>)> =
+            accounts::SPECS.iter().map(|s| (s, accounts::discover(s, &self.env))).collect();
+        let mut inner = self.profiles.lock();
+        let next = merge_found(&inner.list, &inner.dismissed, &found, installed, &self.env);
+        if next.len() == inner.list.len() {
+            return Ok(false);
+        }
+        self.persist(&next, &inner.dismissed)?;
+        tracing::info!(added = next.len() - inner.list.len(), "auto-detected accounts");
+        inner.list = next;
+        Ok(true)
+    }
+
+    /// Forget all dismissed homes (the next scan lists them again).
+    pub fn restore_dismissed(&self) -> AppResult<()> {
+        let mut inner = self.profiles.lock();
+        self.persist(&inner.list, &[])?;
+        inner.dismissed.clear();
+        Ok(())
     }
 
     pub fn update(&self, profile: ClaudeProfile) -> AppResult<ClaudeProfile> {
-        let mut list = self.profiles.lock();
-        let idx = list
+        let mut inner = self.profiles.lock();
+        let idx = inner
+            .list
             .iter()
             .position(|p| p.id == profile.id)
             .ok_or_else(|| AppError::NotFound(format!("Claude profile {}", profile.id)))?;
-        let name = Self::validate_name(&list, &profile.name, Some(&profile.id))?;
-        let config_dir = if profile.config_dir.as_deref().map(str::trim) == list[idx].config_dir.as_deref() {
-            list[idx].config_dir.clone()
+        // Agent and preset are fixed at creation (a `ClaudeProfile` does not carry them).
+        let current = inner.list[idx].clone();
+        let spec = current.spec().unwrap_or_else(claude_spec);
+        let name = Self::validate_name(&inner.list, spec, &profile.name, Some(&profile.id))?;
+        let config_dir = if profile.config_dir.as_deref().map(str::trim) == current.config_dir.as_deref() {
+            current.config_dir.clone()
         } else {
-            self.validate_dir(&list, profile.config_dir.clone(), Some(&profile.id))?
+            self.validate_dir(&inner.list, spec, profile.config_dir.clone(), Some(&profile.id))?
         };
         let color = if valid_color(profile.color.trim()) {
             profile.color.trim().to_uppercase()
         } else {
             return Err(AppError::Invalid(format!("Invalid color {:?}; expected #RRGGBB", profile.color)));
         };
-        let mut next = list.clone();
-        next[idx] = StoredProfile { id: profile.id.clone(), name, config_dir, color };
-        self.persist(&next)?;
-        *list = next;
-        Ok(self.to_public(&list[idx]))
+        let mut next = inner.list.clone();
+        next[idx] = StoredProfile {
+            id: profile.id.clone(),
+            name,
+            config_dir,
+            color,
+            agent: current.agent,
+            preset: current.preset.clone(),
+            // A user edit makes the entry the user's own.
+            auto_detected: false,
+        };
+        self.persist(&next, &inner.dismissed)?;
+        inner.list = next;
+        Ok(self.to_public(&inner.list[idx]))
     }
 
-    /// Remove the entry only. The directory and its contents are never touched.
+    /// Remove the entry only. The directory and its contents are never touched. The home is
+    /// remembered as dismissed so the automatic scan does not add it again.
     pub fn delete(&self, id: &str) -> AppResult<()> {
-        let mut list = self.profiles.lock();
-        let before = list.len();
-        let next: Vec<StoredProfile> = list.iter().filter(|p| p.id != id).cloned().collect();
-        if next.len() == before {
+        let mut inner = self.profiles.lock();
+        let Some(removed) = inner.list.iter().find(|p| p.id == id).cloned() else {
             return Err(AppError::NotFound(format!("Claude profile {id}")));
+        };
+        let next: Vec<StoredProfile> = inner.list.iter().filter(|p| p.id != id).cloned().collect();
+        let mut dismissed = inner.dismissed.clone();
+        if let Some(spec) = removed.spec() {
+            let key = accounts::home_key(spec, removed.config_dir.as_deref(), &self.env);
+            if !dismissed.contains(&key) {
+                dismissed.push(key);
+            }
         }
-        self.persist(&next)?;
-        *list = next;
-        tracing::info!(profile = %id, "removed Claude profile entry");
+        self.persist(&next, &dismissed)?;
+        inner.list = next;
+        inner.dismissed = dismissed;
+        tracing::info!(profile = %id, "removed account entry");
         Ok(())
     }
+}
+
+/// Pure merge of discovered homes into the stored list (see `merge_detected`).
+fn merge_found(
+    list: &[StoredProfile],
+    dismissed: &[String],
+    found: &[(&'static AccountSpec, Vec<accounts::FoundHome>)],
+    installed: &HashSet<&'static str>,
+    env: &ScanEnv,
+) -> Vec<StoredProfile> {
+    let mut next = list.to_vec();
+    for (spec, homes) in found {
+        let mut known: HashSet<String> =
+            next.iter().filter(|p| p.is_spec(spec)).map(|p| accounts::home_key(spec, p.config_dir.as_deref(), env)).collect();
+        for f in homes {
+            if f.source == HomeSource::Default && !f.exists && !installed.contains(spec.key) {
+                continue;
+            }
+            let key = accounts::home_key(spec, f.config_dir.as_deref(), env);
+            if known.contains(&key) || dismissed.contains(&key) {
+                continue;
+            }
+            // Unique name within this agent.
+            let taken = |n: &str| next.iter().any(|p| p.is_spec(spec) && p.name.trim().eq_ignore_ascii_case(n));
+            let mut name = f.name.chars().take(64).collect::<String>();
+            let mut i = 2;
+            while taken(&name) {
+                name = format!("{} {i}", f.name);
+                i += 1;
+            }
+            let id = match f.source {
+                HomeSource::Default => {
+                    let want = if spec.agent == AgentKind::Claude { DEFAULT_PROFILE_ID.to_string() } else { format!("default-{}", spec.key) };
+                    if next.iter().any(|p| p.id == want) { uuid::Uuid::new_v4().to_string() } else { want }
+                }
+                _ => uuid::Uuid::new_v4().to_string(),
+            };
+            let color = ProfileStore::pick_color(&next, None).unwrap_or_else(|_| PALETTE[0].into());
+            next.push(StoredProfile {
+                id,
+                name,
+                config_dir: f.config_dir.clone(),
+                color,
+                agent: spec.agent,
+                preset: spec.preset.map(String::from),
+                auto_detected: true,
+            });
+            known.insert(key);
+        }
+    }
+    next
 }
 
 /// Interpret `claude auth status --json` output. Pure; unit-tested.
@@ -393,9 +642,10 @@ fn parse_auth_status(stdout: &[u8], exit_code: Option<i32>, base: ProfileStatus)
 /// Verify login state by running `claude auth status --json` with the
 /// profile's environment. Only runs for existing directories (the command
 /// would otherwise create files there).
+/// (Claude only; `accounts::check_status` handles accounts of any agent.)
 pub fn check_status(profile: &ClaudeProfile, settings: &Settings) -> AppResult<ProfileStatus> {
     let root = config_root(profile);
-    let base = cheap_status(root.as_deref());
+    let base = accounts::cheap_status(Some(claude_spec()), root.as_deref());
     if !root.as_deref().is_some_and(Path::is_dir) {
         return Ok(ProfileStatus { note: Some("Directory does not exist".into()), ..base });
     }
@@ -415,6 +665,10 @@ pub fn check_status(profile: &ClaudeProfile, settings: &Settings) -> AppResult<P
         }
     }
     for key in crate::adapters::CLAUDE_IDENTITY_ENV {
+        cmd.env_remove(key);
+    }
+    // A parent Claude Code session's internal variables must not make the probe a sub-session.
+    for key in crate::adapters::inherited_agent_session_vars(std::env::vars().map(|(k, _)| k)) {
         cmd.env_remove(key);
     }
 
@@ -578,5 +832,159 @@ mod tests {
 
         let s = parse_auth_status(b"garbage", Some(3), base);
         assert!(!s.verified && s.logged_in.is_none());
+    }
+
+    /// A profiles.json written before accounts existed (exact v1 shape).
+    const V1_FILE: &str = r##"{
+  "version": 1,
+  "profiles": [
+    { "id": "default", "name": "Default", "configDir": null, "color": "#7B61FF" },
+    { "id": "p1", "name": "account1", "configDir": "C:\\Users\\x\\.claude-account1", "color": "#3FB950" }
+  ]
+}"##;
+
+    #[test]
+    fn v1_profiles_file_loads_unchanged_and_round_trips_accounts() {
+        let home = fake_home();
+        let data = tempfile::tempdir().unwrap();
+        let path = data.path().join("profiles.json");
+        std::fs::write(&path, V1_FILE).unwrap();
+        let store = ProfileStore::load_with_home(path.clone(), Some(home.path().to_path_buf()));
+        let all = store.list_all();
+        assert_eq!(all.len(), 2);
+        assert!(all.iter().all(|p| p.agent == AgentKind::Claude && p.preset.is_none() && !p.auto_detected));
+        assert_eq!(store.list().len(), 2);
+        assert_eq!(store.default_profile().unwrap().id, "default");
+        assert_eq!(store.get("p1").unwrap().config_dir.as_deref(), Some(r"C:\Users\x\.claude-account1"));
+
+        // Legacy file: siblings not listed (account1/work in the fake home) count as removed by the user.
+        let text = std::fs::read_to_string(&path).unwrap();
+        let v: serde_json::Value = serde_json::from_str(&text).unwrap();
+        assert_eq!(v["dismissed"].as_array().unwrap().len(), 2, "{text}");
+
+        // A Codex account goes under `accounts`; `profiles` keeps only Claude rows (old readers).
+        let codex = accounts::spec_for(AgentKind::Codex, None).unwrap();
+        let acct = store.create_new_home(codex, "Work".into(), false, None, None).unwrap();
+        assert_eq!(acct.agent, AgentKind::Codex);
+        assert!(home.path().join(".codex-work").is_dir());
+        let v: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+        assert_eq!(v["profiles"].as_array().unwrap().len(), 2);
+        assert!(v["profiles"].as_array().unwrap().iter().all(|p| p.get("agent").is_none()));
+        assert_eq!(v["accounts"][0]["agent"], "codex");
+
+        // Reload keeps the agent; the Claude-only API does not see it.
+        let again = ProfileStore::load_with_home(path, Some(home.path().to_path_buf()));
+        assert_eq!(again.get_account(&acct.id).unwrap().agent, AgentKind::Codex);
+        assert_eq!(again.list().len(), 2);
+        assert_eq!(again.list_all().len(), 3);
+        assert_eq!(again.dismissed_count(), 2);
+    }
+
+    #[test]
+    fn update_never_changes_agent() {
+        let home = fake_home();
+        let data = tempfile::tempdir().unwrap();
+        let store = ProfileStore::load_with_home(data.path().join("profiles.json"), Some(home.path().to_path_buf()));
+        let codex = accounts::spec_for(AgentKind::Codex, None).unwrap();
+        let a = store.create_new_home(codex, "w".into(), false, None, None).unwrap();
+        // Callers send a plain ClaudeProfile (no agent): the account stays a Codex account.
+        let json = serde_json::json!({ "id": a.id, "name": "renamed", "configDir": a.config_dir, "color": "#112233" });
+        let incoming: ClaudeProfile = serde_json::from_value(json).unwrap();
+        let u = store.update(incoming).unwrap();
+        assert_eq!(u.name, "renamed");
+        assert_eq!(store.get_account(&a.id).unwrap().agent, AgentKind::Codex);
+        assert!(store.list().iter().all(|p| p.id != a.id), "never listed as a Claude profile");
+        // The account JSON is flat: profile fields + agent fields.
+        let v = serde_json::to_value(store.get_account(&a.id).unwrap()).unwrap();
+        assert_eq!(v["agent"], "codex");
+        assert_eq!(v["name"], "renamed");
+        assert!(v.get("profile").is_none());
+        // Names are unique per agent: a Claude "Default" and a Codex "Default" coexist.
+        assert!(store.create_in(codex, "Default".into(), None, None).is_ok());
+        assert!(store.create_in(codex, "default".into(), Some(data.path().join("z").to_string_lossy().into()), None).is_err());
+    }
+
+    #[test]
+    fn scan_merge_respects_dismissed_and_renames() {
+        let home = fake_home();
+        let h = home.path();
+        std::fs::create_dir_all(h.join(".codex")).unwrap();
+        std::fs::create_dir_all(h.join(".codex-work")).unwrap();
+        std::fs::write(h.join(".codex-work").join("config.toml"), b"").unwrap();
+        let hermes_root = h.join(r"AppData\Local\hermes");
+        std::fs::create_dir_all(&hermes_root).unwrap();
+        std::fs::write(hermes_root.join("config.yaml"), b"").unwrap();
+        let data = tempfile::tempdir().unwrap();
+        let store = ProfileStore::load_with_home(data.path().join("profiles.json"), Some(h.to_path_buf()));
+        assert_eq!(store.list_all().len(), 3, "first run seeds Claude only");
+
+        let installed: HashSet<&'static str> = ["claude", "codex"].into_iter().collect();
+        assert!(store.merge_detected(&installed).unwrap());
+        let all = store.list_all();
+        let summary: Vec<(AgentKind, String, bool)> = all.iter().map(|a| (a.agent, a.name.clone(), a.auto_detected)).collect();
+        assert_eq!(
+            summary,
+            vec![
+                (AgentKind::Claude, "Default".into(), false),
+                (AgentKind::Claude, "account1".into(), false),
+                (AgentKind::Claude, "work".into(), false),
+                (AgentKind::Codex, "Default".into(), true),
+                (AgentKind::Codex, "work".into(), true),
+                (AgentKind::Generic, "Default".into(), true),
+            ]
+        );
+        let codex_default = all.iter().find(|a| a.agent == AgentKind::Codex && a.config_dir.is_none()).unwrap();
+        assert_eq!(codex_default.id, "default-codex");
+        assert_eq!(codex_default.resolved_dir.as_deref().map(PathBuf::from), Some(h.join(".codex")));
+        let hermes = all.iter().find(|a| a.agent == AgentKind::Generic).unwrap();
+        assert_eq!(hermes.preset.as_deref(), Some("hermes"));
+        assert!(!store.merge_detected(&installed).unwrap(), "idempotent");
+
+        // Renamed entries are matched by folder, not by name.
+        let work = all.iter().find(|a| a.agent == AgentKind::Codex && a.name == "work").unwrap().clone();
+        store.update(ClaudeProfile { name: "Job".into(), ..work.profile.clone() }).unwrap();
+        assert!(!store.merge_detected(&installed).unwrap());
+        assert!(!store.get_account(&work.id).unwrap().auto_detected, "edited entries are the user's own");
+
+        // Removed entries stay removed until restored; the folder is untouched.
+        store.delete(&work.id).unwrap();
+        assert!(!store.merge_detected(&installed).unwrap());
+        assert!(h.join(".codex-work").join("config.toml").exists());
+        store.restore_dismissed().unwrap();
+        assert!(store.merge_detected(&installed).unwrap());
+        assert_eq!(store.list_all().iter().filter(|a| a.agent == AgentKind::Codex).count(), 2);
+    }
+
+    #[test]
+    fn missing_default_home_only_added_when_installed() {
+        let home = tempfile::tempdir().unwrap();
+        let data = tempfile::tempdir().unwrap();
+        let store = ProfileStore::load_with_home(data.path().join("profiles.json"), Some(home.path().to_path_buf()));
+        assert!(!store.merge_detected(&HashSet::new()).unwrap());
+        let installed: HashSet<&'static str> = ["codex"].into_iter().collect();
+        assert!(store.merge_detected(&installed).unwrap());
+        let codex = store.list_all().into_iter().find(|a| a.agent == AgentKind::Codex).unwrap();
+        assert!(!codex.status.dir_exists && codex.config_dir.is_none());
+        assert!(!home.path().join(".codex").exists(), "scan never creates folders");
+    }
+
+    #[test]
+    fn create_new_home_refuses_non_empty_unless_use_existing() {
+        let home = fake_home();
+        let data = tempfile::tempdir().unwrap();
+        let store = ProfileStore::load_with_home(data.path().join("profiles.json"), Some(home.path().to_path_buf()));
+        let codex = accounts::spec_for(AgentKind::Codex, None).unwrap();
+        let dir = home.path().join(".codex-busy");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("config.toml"), b"model = 'x'").unwrap();
+        let plan = store.plan_home(codex, "busy").unwrap();
+        assert!(plan.exists && !plan.empty);
+        assert!(matches!(store.create_new_home(codex, "busy".into(), false, None, None), Err(AppError::Invalid(_))));
+        let a = store.create_new_home(codex, "busy".into(), true, None, None).unwrap();
+        assert_eq!(std::fs::read(dir.join("config.toml")).unwrap(), b"model = 'x'", "never modified");
+        assert!(a.status.dir_exists);
+        // An existing EMPTY folder is fine without use_existing.
+        std::fs::create_dir_all(home.path().join(".codex-fresh")).unwrap();
+        assert!(store.create_new_home(codex, "fresh".into(), false, None, None).is_ok());
     }
 }

@@ -3,12 +3,14 @@
 //! Module ownership:
 //! - `pty`         ConPTY sessions, output ring buffer, flow control, Job Objects
 //! - `adapters`    agent adapters (PowerShell, Claude Code, Codex, generic)
-//! - `profiles`    Claude account profiles (CLAUDE_CONFIG_DIR)
+//! - `profiles`    account records (`profiles.json`; historically Claude-only)
+//! - `accounts`    per-agent accounts: home discovery, status commands, launch env
 //! - `persistence` versioned, atomically written workspace state
 //! - `git`         repo info and worktrees
 //! - `diagnostics` host/webview/session resource attribution
 //! - `logging` / `redact` structured logs with secret redaction
 
+pub mod accounts;
 pub mod adapters;
 pub mod commands;
 pub mod diagnostics;
@@ -67,6 +69,12 @@ pub fn run() {
             commands::services::profile_update,
             commands::services::profile_delete,
             commands::services::profile_check,
+            commands::services::accounts_list,
+            commands::services::accounts_scan,
+            commands::services::accounts_specs,
+            commands::services::accounts_plan_home,
+            commands::services::accounts_create,
+            commands::services::accounts_restore_dismissed,
             commands::services::agents_detect,
             commands::services::path_info,
             commands::services::git_info,

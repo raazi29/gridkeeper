@@ -47,7 +47,7 @@ function SessionDetails({ id }: { id: string }) {
   const meta = useApp((s) => s.persisted.sessions.find((m) => m.id === id));
   const info = useApp((s) => s.runtime[id]);
   const hidden = useApp((s) => !!s.hiddenViews[id]);
-  const profile = useApp((s) => (meta?.profileId ? s.profiles.find((p) => p.id === meta.profileId) : undefined));
+  const profile = useApp((s) => (meta?.profileId ? s.accounts.find((p) => p.id === meta.profileId) : undefined));
   const stats = useUi((s) => s.diag?.sessions.find((x) => x.id === id)?.stats);
   const cores = useUi((s) => s.diag?.logicalCores ?? 1);
 

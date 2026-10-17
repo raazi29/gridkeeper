@@ -388,7 +388,7 @@ export const COMMANDS: Command[] = [
   { id: "session.broadcast", title: "Broadcast a line to several sessions…", category: "Session", run: () => toggleOverlay("broadcast") },
   { id: "view.comms", title: "Comms: recent alerts", category: "View", run: () => useAttentionUi.getState().toggleComms() },
   { id: "attention.markAllRead", title: "Comms: mark all alerts read", category: "View", run: () => useAttention.getState().markAllRead() },
-  { id: "view.profiles", title: "Claude account profiles", category: "View", run: () => toggleDialog("profiles") },
+  { id: "view.profiles", title: "Accounts (Claude, Codex, …)", category: "View", run: () => toggleDialog("profiles") },
   { id: "view.mission", title: "Mission Control (team view of this workspace)", category: "View", run: () => useMission.getState().toggle() },
   { id: "formation.launch", title: "Launch formation (agent team template)…", category: "Workspace", run: () => useMission.getState().openFormation() },
   ...EXPERIENCE_COMMANDS,

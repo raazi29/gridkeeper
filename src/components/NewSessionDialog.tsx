@@ -2,11 +2,13 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useShallow } from "zustand/react/shallow";
+import { checkAccount, signIn } from "../actions/accounts";
 import { notify } from "../actions/notify";
 import { newSession } from "../actions/sessions";
+import { accountsFor, accountStatus, defaultAccountId, isSignedIn, liveOnAccount, maskEmail } from "../lib/accounts";
 import { errorMessage, ipc } from "../lib/ipc";
 import type { AgentKind, GitInfo, LayoutPreset, WorktreeRef } from "../lib/types";
-import { isLive, selectActiveWorkspace, useApp } from "../store/appStore";
+import { selectActiveWorkspace, useApp } from "../store/appStore";
 import { confirmDialog, useUi } from "../store/uiStore";
 import { IconBranch, IconFolder, IconWarn } from "./icons";
 import { Button } from "./ui/Button";
@@ -16,7 +18,7 @@ import { RolePicker } from "./mission/RoleTag";
 import { recordActivity } from "../store/activity";
 import { MemoryPressureNotice } from "./ResourceWarnings";
 import { pickExecutable, pickFolder } from "./util/pick";
-import { AGENT_LABEL, profileStatusText } from "./util/session";
+import { AGENT_LABEL } from "./util/session";
 import { defaultWorktreePath, isValidBranchName, splitArgs } from "./util/text";
 
 type WtMode = "none" | "existing" | "new";
@@ -28,7 +30,8 @@ export function NewSessionDialog({ groupId, preset, onClose }: { groupId?: strin
   const last = useUi((s) => s.lastSession);
   const agents = useApp((s) => s.agents);
   const agentPaths = useApp((s) => s.persisted.settings.agentPaths);
-  const profiles = useApp((s) => s.profiles);
+  const accounts = useApp((s) => s.accounts);
+  const accountAgents = useApp((s) => s.accountAgents);
   const ws = useApp((s) => (groupId ? s.persisted.workspaces.find((w) => w.groups.some((g) => g.id === groupId)) : undefined) ?? selectActiveWorkspace(s));
   const groups = useApp(useShallow((s) => {
     const w = (groupId ? s.persisted.workspaces.find((x) => x.groups.some((g) => g.id === groupId)) : undefined) ?? selectActiveWorkspace(s);
@@ -36,9 +39,8 @@ export function NewSessionDialog({ groupId, preset, onClose }: { groupId?: strin
   }));
 
   const [agent, setAgent] = useState<AgentKind>(last.agent);
-  const [profileId, setProfileId] = useState<string | null>(() =>
-    last.profileId && profiles.some((p) => p.id === last.profileId) ? last.profileId : (profiles[0]?.id ?? null),
-  );
+  /** Account of the selected agent (Claude / Codex / catalog tool with account support). */
+  const [profileId, setProfileId] = useState<string | null>(null);
   const [cwd, setCwd] = useState(ws?.projectDir ?? "");
   const [pathState, setPathState] = useState<PathState>({ status: "idle" });
   const [git, setGit] = useState<GitInfo | null>(null);
@@ -124,16 +126,20 @@ export function NewSessionDialog({ groupId, preset, onClose }: { groupId?: strin
     return map;
   }, [agents, agentPaths]);
 
-  const profile = profiles.find((p) => p.id === profileId) ?? null;
-  const sameProfileLive = useApp((s) => {
-    if (agent !== "claude") return 0;
-    let n = 0;
-    for (const id in s.runtime) {
-      const r = s.runtime[id];
-      if (r.agent === "claude" && isLive(r) && (r.profileId ?? null) === (profileId ?? null)) n++;
-    }
-    return n;
-  });
+  const accountList = useMemo(
+    () => (agent === "claude" || agent === "codex" ? accountsFor(accounts, agent) : agent === "generic" && tool ? accountsFor(accounts, "generic", tool) : []),
+    [accounts, agent, tool],
+  );
+  const accountInfo = accountAgents.find((i) => i.key === (agent === "generic" ? tool : agent));
+  const hasStatus = accountInfo?.hasStatusCommand ?? true;
+  // The picker shows for any agent with at least one account (Claude always, as before).
+  const showAccounts = agent === "claude" || accountList.length > 0;
+  useEffect(() => {
+    setProfileId((cur) => defaultAccountId(accountList, cur ?? last.profileId));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [accountList]);
+  const profile = accountList.find((p) => p.id === profileId) ?? null;
+  const sameProfileLive = useApp((s) => (agent === "claude" || agent === "codex" ? liveOnAccount(s.runtime, agent, profileId) : 0));
 
   const args = useMemo(() => splitArgs(argsText), [argsText]);
   const avail = availability[agent];
@@ -156,11 +162,9 @@ export function NewSessionDialog({ groupId, preset, onClose }: { groupId?: strin
     if (!profile) return;
     setChecking(true);
     try {
-      const status = await ipc.profileCheck(profile.id);
-      const s = useApp.getState();
-      s.setProfiles(s.profiles.map((p) => (p.id === profile.id ? { ...p, status } : p)));
+      await checkAccount(profile.id);
     } catch (e) {
-      notify("error", `Profile check failed: ${errorMessage(e)}`);
+      notify("error", `Account check failed: ${errorMessage(e)}`);
     } finally {
       setChecking(false);
     }
@@ -217,7 +221,7 @@ export function NewSessionDialog({ groupId, preset, onClose }: { groupId?: strin
           agent,
           cwd: baseCwd,
           name: name.trim() ? (n > 1 ? `${name.trim()} ${i + 1}` : name.trim()) : undefined,
-          profileId: agent === "claude" ? profileId : null,
+          profileId: showAccounts ? profileId : null,
           command: agent === "generic" && !tool ? command.trim() : null,
           preset: agent === "generic" && tool ? tool : null,
           args,
@@ -225,7 +229,7 @@ export function NewSessionDialog({ groupId, preset, onClose }: { groupId?: strin
           role,
         });
       }
-      useUi.getState().setLastSession({ agent, profileId: agent === "claude" ? profileId : last.profileId });
+      useUi.getState().setLastSession({ agent, profileId: showAccounts && profileId ? profileId : last.profileId });
       // Make sure the target group is visible.
       const loc = app.persisted.workspaces.find((w) => w.groups.some((g) => g.id === target));
       if (loc) {
@@ -289,54 +293,6 @@ export function NewSessionDialog({ groupId, preset, onClose }: { groupId?: strin
           </div>
         </Field>
 
-        {agent === "claude" && (
-          <Field
-            label="Account"
-            warn={
-              sameProfileLive > 0 || count > 1 ? (
-                <span className="warn-inline">
-                  <IconWarn size={12} />
-                  {sameProfileLive > 0
-                    ? `${sameProfileLive} live session${sameProfileLive === 1 ? " already uses" : "s already use"} this profile.`
-                    : `${count} sessions will share this profile.`}{" "}
-                  Concurrent token refreshes in one profile can force a re-login (Claude Code #91708). Separate profiles avoid it.
-                </span>
-              ) : undefined
-            }
-          >
-            <div className="input-group">
-              <Select value={profileId ?? ""} onChange={(e) => setProfileId(e.target.value || null)} aria-label="Claude account profile">
-                {profiles.length === 0 && <option value="">Default (~/.claude)</option>}
-                {profiles.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.name} — {profileStatusText(p).text}
-                  </option>
-                ))}
-              </Select>
-              <Button onClick={() => void checkProfile()} disabled={!profile || checking}>
-                {checking ? "Checking…" : "Check"}
-              </Button>
-            </div>
-            {profile && (
-              <div className="profile-line">
-                <span className="dot" style={{ background: profile.color }} />
-                <span className={`chip tone-${profileStatusText(profile).tone}`}>{profileStatusText(profile).text}</span>
-                {profile.status.authMethod && <span className="muted">{profile.status.authMethod}</span>}
-                {profile.status.account && <span className="muted">{profile.status.account}</span>}
-                {!(profile.status.loggedIn || profile.status.likelyAuthenticated) && <span className="muted">Start a session with this profile and run /login</span>}
-                <button type="button" className="link-btn push-right" onClick={() => useUi.getState().openDialog({ kind: "profiles" })}>
-                  Manage profiles…
-                </button>
-              </div>
-            )}
-            {!profile && (
-              <button type="button" className="link-btn" onClick={() => useUi.getState().openDialog({ kind: "profiles" })}>
-                Add account profiles…
-              </button>
-            )}
-          </Field>
-        )}
-
         {agent === "generic" && tools.length > 0 && (
           <Field label="Tool" htmlFor="ns-tool" hint="Agent CLIs detected on this PC, or any command">
             <Select id="ns-tool" value={tool} onChange={(e) => setTool(e.target.value)}>
@@ -348,6 +304,75 @@ export function NewSessionDialog({ groupId, preset, onClose }: { groupId?: strin
               ))}
               <option value="">Custom command…</option>
             </Select>
+          </Field>
+        )}
+
+        {showAccounts && (
+          <Field
+            label="Account"
+            warn={
+              agent === "claude" && (sameProfileLive > 0 || count > 1) ? (
+                <span className="warn-inline">
+                  <IconWarn size={12} />
+                  {sameProfileLive > 0
+                    ? `${sameProfileLive} live session${sameProfileLive === 1 ? " already uses" : "s already use"} this profile.`
+                    : `${count} sessions will share this profile.`}{" "}
+                  Concurrent token refreshes in one profile can force a re-login (Claude Code #91708). Separate profiles avoid it.
+                </span>
+              ) : agent === "codex" && (sameProfileLive > 0 || count > 1) ? (
+                <span className="warn-inline">
+                  <IconWarn size={12} />
+                  {sameProfileLive > 0
+                    ? `${sameProfileLive} live Codex session${sameProfileLive === 1 ? " already uses" : "s already use"} this account.`
+                    : `${count} sessions will share this account.`}{" "}
+                  They share one CODEX_HOME login (token refreshes) and history; a separate account keeps them apart.
+                </span>
+              ) : undefined
+            }
+          >
+            <div className="input-group">
+              <Select value={profileId ?? ""} onChange={(e) => setProfileId(e.target.value || null)} aria-label={`${accountInfo?.label ?? AGENT_LABEL[agent]} account`}>
+                {accountList.length === 0 && <option value="">Default (~/.claude)</option>}
+                {accountList.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.name}
+                    {maskEmail(p.status.account) ? ` · ${maskEmail(p.status.account)}` : ""} — {accountStatus(p, hasStatus).text}
+                  </option>
+                ))}
+              </Select>
+              {hasStatus && (
+                <Button onClick={() => void checkProfile()} disabled={!profile || checking}>
+                  {checking ? "Checking…" : "Check"}
+                </Button>
+              )}
+            </div>
+            {profile && (
+              <div className="profile-line">
+                <span className="dot" style={{ background: profile.color }} />
+                <span className={`chip tone-${accountStatus(profile, hasStatus).tone}`}>{accountStatus(profile, hasStatus).text}</span>
+                {profile.status.authMethod && profile.status.authMethod !== "none" && <span className="muted">{profile.status.authMethod}</span>}
+                {!isSignedIn(profile) && accountInfo?.isolation === "verified" && (
+                  <button
+                    type="button"
+                    className="link-btn"
+                    onClick={() => {
+                      signIn(profile);
+                      onClose();
+                    }}
+                  >
+                    Sign in…
+                  </button>
+                )}
+                <button type="button" className="link-btn push-right" onClick={() => useUi.getState().openDialog({ kind: "profiles" })}>
+                  Manage accounts…
+                </button>
+              </div>
+            )}
+            {!profile && (
+              <button type="button" className="link-btn" onClick={() => useUi.getState().openDialog({ kind: "profiles" })}>
+                Add accounts…
+              </button>
+            )}
           </Field>
         )}
 
