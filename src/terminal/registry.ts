@@ -41,6 +41,7 @@ import { checkPaste, pasteTitle } from "./pasteGuard";
 import { PRESENTATION_FONT_BOOST, getSearchDecorations, getTerminalTheme } from "./theme";
 import { MAX_WEBGL, allocateWebgl, type WebglCandidate } from "./webglBudget";
 import { splitForWrite } from "./writeChunks";
+import { emitTerminalMenu, rightClickDecision } from "./menuBridge";
 import { clampZoom, zoomStep } from "./zoom";
 
 export interface RendererStatus {
@@ -913,11 +914,20 @@ function createEntry(id: SessionId): Entry {
     ev.stopImmediatePropagation();
     void guardedPaste(e, text);
   };
-  // Right-click: copy if there is a selection, else paste (Windows Terminal behaviour).
+  // Right-click: the app menu (default) or copy-or-paste (Windows Terminal style), per settings; a
+  // program with mouse tracking gets plain right-clicks (Shift+right-click is ours). See menuBridge.ts.
   const onContextMenu = (ev: MouseEvent) => {
     ev.preventDefault();
-    if (term.modes.mouseTrackingMode !== "none" && !ev.shiftKey) return; // the program owns the mouse
-    if (term.hasSelection()) copySelection(e, true);
+    ev.stopPropagation(); // never also open the grid's background menu
+    const decision = rightClickDecision({
+      mode: settings().rightClickAction,
+      mouseTracking: term.modes.mouseTrackingMode !== "none",
+      shift: ev.shiftKey,
+      hasSelection: term.hasSelection(),
+    });
+    if (decision === "program") return; // the program owns the mouse
+    if (decision === "menu") emitTerminalMenu({ sessionId: id, x: ev.clientX, y: ev.clientY, hasSelection: term.hasSelection() });
+    else if (decision === "copy") copySelection(e, true);
     else void pasteFromClipboard(e);
   };
   el.addEventListener("paste", onPaste, true);
@@ -1002,6 +1012,31 @@ export function getSelection(id: SessionId): string {
 
 export function scrollToBottom(id: SessionId): void {
   entries.get(id)?.term.scrollToBottom();
+}
+
+export function hasTerminalSelection(id: SessionId): boolean {
+  return entries.get(id)?.term.hasSelection() ?? false;
+}
+
+/** Context menu "Copy": the current selection to the clipboard (selection kept). */
+export function copyTerminalSelection(id: SessionId): void {
+  const e = entries.get(id);
+  if (e) copySelection(e, false);
+}
+
+/** Context menu "Paste": clipboard into the session, through the same paste guard as Ctrl+V. */
+export function pasteIntoTerminal(id: SessionId): void {
+  const e = entries.get(id);
+  if (!e) return;
+  e.term.focus();
+  void pasteFromClipboard(e);
+}
+
+export function selectAllInTerminal(id: SessionId): void {
+  const e = entries.get(id);
+  if (!e) return;
+  e.term.selectAll();
+  e.term.focus();
 }
 
 /** Write a dim, local-only line (never sent to the process). */

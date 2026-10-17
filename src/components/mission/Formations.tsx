@@ -168,7 +168,8 @@ export function FormationDialog() {
     return w;
   }, [plan, agents, useWorktrees, gitState, template]);
 
-  const reuse = wsId ? reusableEmptyGroup(wsId) : null;
+  const targetGroupId = useMission((s) => s.formationGroupId);
+  const reuse = wsId ? reusableEmptyGroup(wsId, targetGroupId) : null;
   const canLaunch = !!wsId && !!plan && plan.errors.length === 0 && gitState !== "checking" && !busy;
 
   const launch = async () => {
@@ -186,7 +187,7 @@ export function FormationDialog() {
     if (!ok) return;
     setBusy(true);
     try {
-      const r = await launchFormation(plan, wsId);
+      const r = await launchFormation(plan, wsId, { groupId: targetGroupId });
       if (r.ok) {
         notify("info", `Formation “${plan.name}” started: ${r.sessionIds.length} sessions`);
         close();

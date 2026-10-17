@@ -32,7 +32,11 @@ export function BroadcastDialog() {
   const persisted = useApp((s) => s.persisted);
   const candidates = useMemo(() => broadcastCandidates({ persisted, runtime }), [persisted, runtime]);
   const [selected, setSelected] = useState<Set<SessionId>>(
-    () => new Set(defaultBroadcastTargets(broadcastCandidates(useApp.getState()), selectActiveGroup(useApp.getState())?.id)),
+    () =>
+      new Set(
+        useAttentionUi.getState().broadcastPreselect ??
+          defaultBroadcastTargets(broadcastCandidates(useApp.getState()), selectActiveGroup(useApp.getState())?.id),
+      ),
   );
   const [agent, setAgent] = useState<AgentFilter>("all");
   const [line, setLine] = useState("");

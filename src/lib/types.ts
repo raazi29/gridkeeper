@@ -270,9 +270,12 @@ export interface Settings {
   saberColor: string;
   /** Star-streak transition on workspace switch: "auto" = only with the Hyperspace theme. */
   hyperspaceTransition: HyperspaceMode;
+  /** Terminal right-click: "menu" = context menu (default); "paste" = copy selection / paste (Windows Terminal style). */
+  rightClickAction: RightClickAction;
 }
 
 export type HyperspaceMode = "auto" | "on" | "off";
+export type RightClickAction = "menu" | "paste";
 /** "toast": Windows notification in the background, in-app toast in front; "inApp": in-app toasts only; "off": Comms feed only. */
 export type NotifyDelivery = "toast" | "inApp" | "off";
 export type SoundSet = "comm" | "console" | "droid" | "none";
@@ -416,4 +419,5 @@ export const DEFAULT_SETTINGS: Settings = {
   saberColor: "blue",
   hyperspaceTransition: "auto",
   pasteWarning: true,
+  rightClickAction: "menu",
 };

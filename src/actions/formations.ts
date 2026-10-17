@@ -20,9 +20,14 @@ export interface LaunchResult {
   error?: string;
 }
 
-/** A workspace whose only group is empty: the formation's first group reuses (renames) it. */
-export function reusableEmptyGroup(workspaceId: string): { id: string; name: string } | null {
+/**
+ * A workspace whose only group is empty: the formation's first group reuses (renames) it. With
+ * `preferGroupId` ("Launch formation here"), that group is reused whenever it is empty.
+ */
+export function reusableEmptyGroup(workspaceId: string, preferGroupId?: string | null): { id: string; name: string } | null {
   const ws = useApp.getState().persisted.workspaces.find((w) => w.id === workspaceId);
+  const preferred = preferGroupId ? ws?.groups.find((g) => g.id === preferGroupId) : undefined;
+  if (preferred && preferred.sessionIds.length === 0) return { id: preferred.id, name: preferred.name };
   if (!ws || ws.groups.length !== 1 || ws.groups[0].sessionIds.length > 0) return null;
   return { id: ws.groups[0].id, name: ws.groups[0].name };
 }
@@ -31,7 +36,7 @@ function logFormation(level: "info" | "ok" | "error", message: string, result?: 
   recordActivity({ sessionId: null, sessionName: "formation", role: null, agent: null, kind, level, message, result });
 }
 
-export async function launchFormation(plan: FormationPlan, workspaceId: string): Promise<LaunchResult> {
+export async function launchFormation(plan: FormationPlan, workspaceId: string, opts: { groupId?: string | null } = {}): Promise<LaunchResult> {
   const createdWorktrees: string[] = [];
   const wt = new Map<string, WorktreeRef>();
   if (plan.errors.length) return { ok: false, createdWorktrees, sessionIds: [], error: plan.errors.join(" ") };
@@ -55,7 +60,7 @@ export async function launchFormation(plan: FormationPlan, workspaceId: string):
 
   // 2. Groups (the first may reuse an empty lone group), 3. sessions.
   const app = useApp.getState();
-  const reuse = reusableEmptyGroup(workspaceId);
+  const reuse = reusableEmptyGroup(workspaceId, opts.groupId);
   const sessionIds: string[] = [];
   let firstGroupId: string | null = null;
   plan.groups.forEach((g, gi) => {

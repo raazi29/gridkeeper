@@ -7,14 +7,17 @@ import { useUi } from "./uiStore";
 interface MissionUi {
   open: boolean;
   formationOpen: boolean;
+  /** Group a formation should launch into ("Launch formation here"); used only while that group is empty. */
+  formationGroupId: string | null;
   toggle: (open?: boolean) => void;
-  openFormation: () => void;
+  openFormation: (opts?: { groupId?: string | null }) => void;
   closeFormation: () => void;
 }
 
 export const useMission = create<MissionUi>()((set, get) => ({
   open: false,
   formationOpen: false,
+  formationGroupId: null,
   toggle: (open) => {
     const next = open ?? !get().open;
     if (next) {
@@ -25,9 +28,9 @@ export const useMission = create<MissionUi>()((set, get) => ({
     }
     set({ open: next });
   },
-  openFormation: () => {
+  openFormation: (opts) => {
     useUi.getState().closePalette();
-    set({ formationOpen: true });
+    set({ formationOpen: true, formationGroupId: opts?.groupId ?? null });
   },
-  closeFormation: () => set({ formationOpen: false }),
+  closeFormation: () => set({ formationOpen: false, formationGroupId: null }),
 }));

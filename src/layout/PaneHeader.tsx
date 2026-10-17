@@ -1,19 +1,9 @@
 // Pane header: status, agent glyph, name (double-click to rename), account / worktree / cwd chips,
 // and hover actions. Subscribes only to this session's metadata, coarse runtime state and profile.
 
-import { memo, useCallback, useEffect, useLayoutEffect, useRef, useState, type DragEvent, type MouseEvent } from "react";
-import { createPortal } from "react-dom";
+import { memo, useCallback, useEffect, useRef, useState, type DragEvent, type MouseEvent } from "react";
 import { useShallow } from "zustand/react/shallow";
-import {
-  clearSession,
-  closeSession,
-  copyOutput,
-  hideView,
-  renameSession,
-  restartSession,
-  startSession,
-  stopSession,
-} from "../actions/sessions";
+import { closeSession, renameSession, restartSession, startSession, stopSession } from "../actions/sessions";
 import type { SessionId } from "../lib/types";
 import { selectSessionMeta, useApp } from "../store/appStore";
 import { focusTerminal } from "../terminal/registry";
@@ -23,9 +13,11 @@ import { AgentGlyph, IconBranch, IconClose, IconMaximize, IconMore, IconPlay, Ic
 import { beginPaneDrag, endPaneDrag } from "./paneDrag";
 import { AttentionLamp } from "../components/AttentionBits";
 import { RoleTag } from "../components/mission/RoleTag";
-import { roleMenuItems } from "../components/mission/roleMenu";
+import { buildSessionMenu } from "../components/menus/sessionMenu";
+import { useContextMenu } from "../components/ui/Menu";
+import { clearRenameRequest, renameSeqFor, useRenameRequest } from "../store/renameRequest";
 import { MutedGlyph } from "../components/MutedGlyph";
-import { toggleSessionMute, useSessionMuted } from "../actions/notifyPrefs";
+import { useSessionMuted } from "../actions/notifyPrefs";
 import { isSignedIn } from "../lib/accounts";
 
 export interface PaneHeaderProps {
@@ -87,104 +79,20 @@ function statusInfo(rt: RuntimeView): { cls: string; label: string } {
   }
 }
 
-// ---- menu -----------------------------------------------------------------------------------
-
-interface MenuItem {
-  label: string;
-  onSelect: () => void;
-  disabled?: boolean;
-  danger?: boolean;
-  separatorBefore?: boolean;
-}
-
-function PaneMenu({ anchor, items, onClose }: { anchor: HTMLElement; items: MenuItem[]; onClose: () => void }) {
-  const ref = useRef<HTMLDivElement>(null);
-  const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
-
-  useLayoutEffect(() => {
-    const r = anchor.getBoundingClientRect();
-    const menu = ref.current;
-    const w = menu?.offsetWidth ?? 180;
-    const h = menu?.offsetHeight ?? 240;
-    let top = r.bottom + 4;
-    if (top + h > window.innerHeight - 8) top = Math.max(8, r.top - h - 4);
-    const left = Math.min(Math.max(8, r.right - w), window.innerWidth - w - 8);
-    setPos({ top, left });
-    menu?.querySelector<HTMLButtonElement>("button:not(:disabled)")?.focus();
-  }, [anchor]);
-
-  useEffect(() => {
-    const onDown = (e: globalThis.MouseEvent) => {
-      if (ref.current?.contains(e.target as Node) || anchor.contains(e.target as Node)) return;
-      onClose();
-    };
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
-        e.preventDefault();
-        e.stopPropagation();
-        onClose();
-      } else if (e.key === "ArrowDown" || e.key === "ArrowUp") {
-        e.preventDefault();
-        const btns = [...(ref.current?.querySelectorAll<HTMLButtonElement>("button:not(:disabled)") ?? [])];
-        const i = btns.indexOf(document.activeElement as HTMLButtonElement);
-        const next = e.key === "ArrowDown" ? (i + 1) % btns.length : (i - 1 + btns.length) % btns.length;
-        btns[next]?.focus();
-      }
-    };
-    const onBlur = () => onClose();
-    window.addEventListener("mousedown", onDown, true);
-    window.addEventListener("keydown", onKey, true);
-    window.addEventListener("blur", onBlur);
-    window.addEventListener("resize", onBlur);
-    return () => {
-      window.removeEventListener("mousedown", onDown, true);
-      window.removeEventListener("keydown", onKey, true);
-      window.removeEventListener("blur", onBlur);
-      window.removeEventListener("resize", onBlur);
-    };
-  }, [anchor, onClose]);
-
-  return createPortal(
-    <div
-      ref={ref}
-      className="pane-menu"
-      role="menu"
-      style={pos ? { top: pos.top, left: pos.left } : { visibility: "hidden", top: 0, left: 0 }}
-    >
-      {items.map((it) => (
-        <div key={it.label}>
-          {it.separatorBefore && <div className="pane-menu-sep" />}
-          <button
-            type="button"
-            role="menuitem"
-            className={`pane-menu-item${it.danger ? " pane-menu-item--danger" : ""}`}
-            disabled={it.disabled}
-            onClick={() => {
-              onClose();
-              it.onSelect();
-            }}
-          >
-            {it.label}
-          </button>
-        </div>
-      ))}
-    </div>,
-    document.body,
-  );
-}
-
 // ---- header ---------------------------------------------------------------------------------
 
-export const PaneHeader = memo(function PaneHeader({ sessionId, groupId, index, count, maximized }: PaneHeaderProps) {
+export const PaneHeader = memo(function PaneHeader({ sessionId, groupId, index, maximized }: PaneHeaderProps) {
   const meta = useApp(selectSessionMeta(sessionId));
   const rt = useRuntimeView(sessionId);
   const profileId = meta?.profileId ?? null;
   const profile = useApp((s) => (profileId ? s.accounts.find((p) => p.id === profileId) : undefined));
   const [editing, setEditing] = useState(false);
-  const [menuAnchor, setMenuAnchor] = useState<HTMLElement | null>(null);
+  const menu = useContextMenu();
+  const menuWasOpen = useRef(false);
   const muted = useSessionMuted(sessionId);
   const inputRef = useRef<HTMLInputElement>(null);
   const renameDone = useRef(false);
+  const renameSeq = useRenameRequest(renameSeqFor(sessionId, "pane"));
 
   useEffect(() => {
     if (editing) {
@@ -193,8 +101,14 @@ export const PaneHeader = memo(function PaneHeader({ sessionId, groupId, index, 
     }
   }, [editing]);
 
+  // "Rename…" from the terminal / Fleet / Comms context menu.
+  useEffect(() => {
+    if (!renameSeq) return;
+    clearRenameRequest();
+    setEditing(true);
+  }, [renameSeq]);
+
   const live = isLiveState(rt.state);
-  const isAgent = meta?.agent === "claude" || meta?.agent === "codex";
 
   const commitRename = useCallback(
     (value: string) => {
@@ -239,9 +153,7 @@ export const PaneHeader = memo(function PaneHeader({ sessionId, groupId, index, 
     void closeSession(sessionId);
   }, [live, meta?.name, sessionId]);
 
-  const closeMenu = useCallback(() => setMenuAnchor(null), []);
-  const [roleAnchor, setRoleAnchor] = useState<HTMLElement | null>(null);
-  const closeRoleMenu = useCallback(() => setRoleAnchor(null), []);
+  const menuItems = () => buildSessionMenu(sessionId, { surface: "header", onRename: () => setEditing(true) });
 
   if (!meta) return <div className="pane-header" />;
 
@@ -249,36 +161,6 @@ export const PaneHeader = memo(function PaneHeader({ sessionId, groupId, index, 
   const cwdBase = basename(meta.cwd);
   const branch = meta.worktree ? (meta.worktree.branch ?? basename(meta.worktree.path)) : null;
   const profileWarn = !!profile && !isSignedIn(profile);
-
-  const menuItems: MenuItem[] = [
-    { label: "Rename", onSelect: () => setEditing(true) },
-    { label: "Copy output", onSelect: () => void copyOutput(sessionId) },
-    { label: "Clear", onSelect: () => void clearSession(sessionId) },
-    { label: "Hide view", onSelect: () => hideView(sessionId) },
-    { label: "Role ▸", onSelect: () => setRoleAnchor(menuAnchor) },
-    { label: muted ? "Unmute notifications" : "Mute notifications", onSelect: () => toggleSessionMute(sessionId) },
-    {
-      label: "Restart fresh",
-      separatorBefore: true,
-      onSelect: async () => {
-        if (live && !(await confirmAction(`Restart "${meta.name}" with a fresh ${isAgent ? "conversation" : "process"}?`, { title: "Restart fresh", confirmLabel: "Restart" })))
-          return;
-        void restartSession(sessionId, { mode: "none" });
-      },
-    },
-    {
-      label: "Move left",
-      separatorBefore: true,
-      disabled: index <= 0,
-      onSelect: () => useApp.getState().moveSession(groupId, index, index - 1),
-    },
-    {
-      label: "Move right",
-      disabled: index >= count - 1,
-      onSelect: () => useApp.getState().moveSession(groupId, index, index + 1),
-    },
-    { label: "Close", separatorBefore: true, danger: true, onSelect: () => void onClose() },
-  ];
 
   const onDragStart = (e: DragEvent<HTMLDivElement>) => {
     if (editing) {
@@ -301,8 +183,7 @@ export const PaneHeader = memo(function PaneHeader({ sessionId, groupId, index, 
       }}
       onContextMenu={(e) => {
         if ((e.target as HTMLElement).closest("input")) return;
-        e.preventDefault();
-        setMenuAnchor(e.currentTarget.querySelector<HTMLElement>(".pane-actions [aria-haspopup]") ?? e.currentTarget);
+        menu.open(e, menuItems());
       }}
       onAuxClick={(e) => {
         // Middle-click closes, like a browser tab.
@@ -395,12 +276,16 @@ export const PaneHeader = memo(function PaneHeader({ sessionId, groupId, index, 
         </button>
         <button
           type="button"
-          className={`pane-icon-btn${menuAnchor ? " is-active" : ""}`}
+          className={`pane-icon-btn${menu.isOpen ? " is-active" : ""}`}
           title="More"
           aria-label="More actions"
           aria-haspopup="menu"
-          aria-expanded={!!menuAnchor}
-          onClick={(e) => setMenuAnchor(menuAnchor ? null : e.currentTarget)}
+          aria-expanded={menu.isOpen}
+          onMouseDown={() => (menuWasOpen.current = menu.isOpen)}
+          onClick={(e) => {
+            if (!menuWasOpen.current) menu.openAt(e.currentTarget, menuItems());
+            menuWasOpen.current = false;
+          }}
         >
           <IconMore />
         </button>
@@ -414,8 +299,7 @@ export const PaneHeader = memo(function PaneHeader({ sessionId, groupId, index, 
           <IconClose />
         </button>
       </div>
-      {menuAnchor && <PaneMenu anchor={menuAnchor} items={menuItems} onClose={closeMenu} />}
-      {roleAnchor && <PaneMenu anchor={roleAnchor} items={roleMenuItems(sessionId, meta.role ?? null)} onClose={closeRoleMenu} />}
+      {menu.element}
     </div>
   );
 });
