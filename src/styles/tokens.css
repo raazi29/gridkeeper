@@ -1,0 +1,88 @@
+/* Design tokens. Deep neutral dark palette with restrained purple accents. */
+:root {
+  --bg-0: #0b0b0e;        /* app background / terminal background */
+  --bg-1: #111116;        /* sidebar, status bar */
+  --bg-2: #17171d;        /* raised surfaces, pane headers */
+  --bg-3: #1e1e26;        /* hover */
+  --bg-4: #262630;        /* active / pressed */
+  --border: #24242c;
+  --border-strong: #32323d;
+  --text-0: #ececf1;      /* primary */
+  --text-1: #a9a9b6;      /* secondary */
+  --text-2: #6f6f7d;      /* muted */
+  --accent: #7b61ff;
+  --accent-2: #8b5cf6;
+  --accent-3: #6d5bff;
+  --accent-soft: rgba(123, 97, 255, 0.14);
+  --accent-ring: rgba(123, 97, 255, 0.55);
+  --ok: #3fb950;
+  --warn: #d29922;
+  --err: #f85149;
+  --info: #58a6ff;
+
+  --radius-s: 4px;
+  --radius-m: 6px;
+  --radius-l: 8px;
+  --font-ui: "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+  --font-mono: "Cascadia Mono", "Cascadia Code", Consolas, monospace;
+  --fs-xs: 11px;
+  --fs-s: 12px;
+  --fs-m: 13px;
+  --fs-l: 15px;
+  --sidebar-w: 232px;
+  --sidebar-w-collapsed: 48px;
+  --statusbar-h: 24px;
+  --pane-header-h: 26px;
+  --ease: cubic-bezier(0.2, 0, 0, 1);
+  --dur: 120ms;
+  color-scheme: dark;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+  background: var(--bg-0);
+  color: var(--text-0);
+  font-family: var(--font-ui);
+  font-size: var(--fs-m);
+  -webkit-font-smoothing: antialiased;
+  user-select: none;
+}
+
+button {
+  font: inherit;
+  color: inherit;
+}
+
+:focus-visible {
+  outline: 1px solid var(--accent-ring);
+  outline-offset: 1px;
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-thumb {
+  background: #2a2a33;
+  border-radius: 6px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.boot {
+  height: 100%;
+  background: var(--bg-0);
+}
