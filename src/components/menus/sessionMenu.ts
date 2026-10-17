@@ -141,9 +141,12 @@ export function buildSessionMenu(id: SessionId, ctx: SessionMenuCtx, st: Session
   const rename = () => {
     if (ctx.onRename) ctx.onRename();
     else if (surface === "mission") requestRename(id, "mission");
+    else if (surface === "terminal") requestRename(id, "pane");
     else {
-      if (surface !== "terminal") goto();
-      requestRename(id, "pane");
+      // Fleet / Comms: jumping focuses the terminal two frames later (focusSoon); ask for the inline
+      // rename after that, or the terminal's focus would blur (and commit) the rename box at once.
+      goto();
+      window.setTimeout(() => requestRename(id, "pane"), 120);
     }
   };
   const customRole = () => {
@@ -227,7 +230,7 @@ export function buildSessionMenu(id: SessionId, ctx: SessionMenuCtx, st: Session
     "separator",
     { label: st.muted ? "Unmute notifications" : "Mute notifications", checked: st.muted, onSelect: () => toggleSessionMute(id) },
     roleSubmenu(id, st.role, customRole),
-    { label: "Rename…", hint: surface === "header" ? "F2" : undefined, onSelect: rename },
+    { label: "Rename…", hint: surface === "mission" ? "F2" : undefined, onSelect: rename },
   );
   if (!inPane) items.push({ label: "Copy output", onSelect: () => void copyOutput(id) });
   if (inPane) items.push(st.hidden ? { label: "Show view", onSelect: () => showView(id) } : { label: "Hide view", onSelect: () => hideView(id) });

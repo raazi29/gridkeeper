@@ -36,9 +36,22 @@ export function newSessionSubmenu(groupId: string | undefined, label = "New sess
     { label: "Open URL…", hint: shortcutHint("browser.open"), onSelect: () => promptOpenUrl(groupId) },
     "separator",
     { label: "More options…", hint: shortcutHint("session.new"), onSelect: () => useUi.getState().openDialog({ kind: "newSession", groupId }) },
-    { label: "Launch formation here…", onSelect: () => useMission.getState().openFormation({ groupId }) },
+    formationItem(groupId),
   );
   return { label, children };
+}
+
+/**
+ * Formation entry for a group: "here" only when the group is empty (the formation's first lane reuses
+ * it); otherwise the formation creates its own groups, so the label does not promise "here".
+ */
+export function formationItem(groupId: string | undefined): MenuAction {
+  let empty = false;
+  if (groupId) for (const w of useApp.getState().persisted.workspaces) for (const g of w.groups) if (g.id === groupId) empty = g.sessionIds.length === 0;
+  return {
+    label: empty ? "Launch formation here…" : "Launch formation…",
+    onSelect: () => useMission.getState().openFormation({ groupId: empty ? groupId : null }),
+  };
 }
 
 /** "Split ▸": a new session in this group, laid out as columns or rows (New Session dialog). */

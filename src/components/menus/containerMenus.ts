@@ -7,7 +7,7 @@ import { isWorkspaceMuted, toggleWorkspaceMute } from "../../actions/notifyPrefs
 import { useApp } from "../../store/appStore";
 import { useMission } from "../../store/mission";
 import type { MenuItem } from "../ui/Menu";
-import { layoutSubmenu, newSessionSubmenu, shortcutHint } from "./common";
+import { formationItem, layoutSubmenu, newSessionSubmenu, shortcutHint } from "./common";
 
 function findGroup(groupId: string) {
   for (const w of useApp.getState().persisted.workspaces) {
@@ -27,7 +27,7 @@ export function buildGroupMenu(groupId: string, ctx: { onRename?: () => void } =
   return [
     ...(ctx.onRename ? [{ label: "Rename", hint: "F2", onSelect: ctx.onRename } as MenuItem] : []),
     newSessionSubmenu(groupId),
-    { label: "Launch formation here…", onSelect: () => useMission.getState().openFormation({ groupId }) },
+    formationItem(groupId),
     layoutSubmenu(groupId, group.layout.preset),
     "separator",
     { label: "Message all in group…", disabled: empty, onSelect: () => messageSessions(groupSessionIds(groupId), what) },
@@ -67,7 +67,7 @@ export function buildBackgroundMenu(groupId: string): MenuItem[] {
   if (!loc) return [];
   return [
     newSessionSubmenu(groupId),
-    { label: "Launch formation here…", onSelect: () => useMission.getState().openFormation({ groupId }) },
+    formationItem(groupId),
     layoutSubmenu(groupId, loc.group.layout.preset),
     "separator",
     { label: "Message all in group…", disabled: loc.group.sessionIds.length === 0, onSelect: () => messageSessions(groupSessionIds(groupId), `“${loc.group.name}”`) },

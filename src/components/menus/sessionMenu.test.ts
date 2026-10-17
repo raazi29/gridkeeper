@@ -75,7 +75,8 @@ describe("buildSessionMenu — terminal", () => {
     const sub = find(buildSessionMenu("s1", { surface: "terminal" }, state()), "New session")!.children!;
     expect(labels(sub)).toContain("PowerShell");
     expect(labels(sub)).toContain("More options…");
-    expect(labels(sub)).toContain("Launch formation here…");
+    expect(labels(sub)).toContain("Browser");
+    expect(labels(sub)).toContain("Launch formation…"); // group not empty / unknown: no "here"
   });
 
   it("maximized pane offers Restore; hidden view offers Show view", () => {
@@ -221,7 +222,7 @@ describe("menu actions", () => {
     expect(labels(items)).toEqual([
       "Rename",
       "New session",
-      "Launch formation here…",
+      "Launch formation…",
       "Layout",
       "Message all in group…",
       "Restart all…",
