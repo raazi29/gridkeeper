@@ -1,7 +1,7 @@
 <#
 .SYNOPSIS
-  Samples CPU, memory and GPU usage of a running Altera instance, attributed by category:
-    host     = altera.exe (Tauri/Rust process)
+  Samples CPU, memory and GPU usage of a running Gridkeeper instance, attributed by category:
+    host     = gridkeeper.exe (Tauri/Rust process)
     webview  = msedgewebview2.exe descendants (UI + terminal rendering)
     console  = OpenConsole.exe / conhost.exe descendants (ConPTY hosts)
     agents   = everything else in the tree (pwsh, claude, codex, node, git, ...)
@@ -16,7 +16,7 @@ param(
   [double]$Interval = 1.0,
   [string]$Label = "sample",
   [string]$OutDir = "bench-results",
-  [string]$ProcessName = "altera",
+  [string]$ProcessName = "gridkeeper",
   [int]$RootPid = 0
 )
 

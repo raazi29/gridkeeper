@@ -1,6 +1,6 @@
-# Altera
+# Gridkeeper
 
-Altera is a GPU-accelerated multi-agent terminal workspace for Windows. It runs many Claude Code sessions (several accounts at once), Codex sessions and PowerShell terminals side by side in one window. Each session is a real ConPTY process tree, and its output is rendered by xterm.js with WebGL.
+Gridkeeper is a GPU-accelerated multi-agent terminal workspace for Windows. It runs many Claude Code sessions (several accounts at once), Codex sessions and PowerShell terminals side by side in one window. Each session is a real ConPTY process tree, and its output is rendered by xterm.js with WebGL.
 
 It is built with Tauri 2.12 (Rust backend, `portable-pty`/ConPTY, Windows Job Objects) and React 19 + TypeScript + xterm.js 6 in the system WebView2. It replaces "Terax" for this workflow.
 
@@ -27,7 +27,7 @@ Documentation:
   - Codex resumes with `resume --last`. When several Codex panes share a folder, each gets Codex's picker instead.
 - **Git worktrees.** A new session can use an existing worktree or create one (you confirm the exact git command first).
 - **Process safety:**
-  - Every session's process tree is in its own Job Object, so closing a pane or quitting Altera never leaves orphans.
+  - Every session's process tree is in its own Job Object, so closing a pane or quitting Gridkeeper never leaves orphans.
   - Graceful stop sends Ctrl+C, then closes the console, then kills the job. Force stop kills the whole tree.
 - **Performance:**
   - Output is coalesced into raw binary IPC frames with ack-based flow control. A slow view never pauses an agent.
@@ -92,14 +92,14 @@ The installer is written to `src-tauri\target\release\bundle\nsis\`.
 
 Open **Profiles** in the sidebar footer, or "Claude account profiles" in the palette.
 
-- On first run, Altera seeds a **Default** profile (Claude's default `%USERPROFILE%\.claude`). It also adds every existing `%USERPROFILE%\.claude-<name>` folder that looks like a Claude config directory.
+- On first run, Gridkeeper seeds a **Default** profile (Claude's default `%USERPROFILE%\.claude`). It also adds every existing `%USERPROFILE%\.claude-<name>` folder that looks like a Claude config directory.
 - **To add an account:**
   1. Click Add, then give a name and a config folder (for example `C:\Users\you\.claude-work`). A missing folder is created empty.
   2. Start a Claude Code session with that profile.
   3. Run **`/login`** inside Claude.
   4. Use **Check status** to confirm. It runs `claude auth status --json` and shows the login state and account e-mail; the e-mail is shown in the UI only and never logged.
-- Removing a profile removes only Altera's entry. The folder is never touched.
-- Altera warns when two live sessions share one profile: concurrent token refreshes can force a re-login (Claude Code #91708). Use separate profiles for concurrent work.
+- Removing a profile removes only Gridkeeper's entry. The folder is never touched.
+- Gridkeeper warns when two live sessions share one profile: concurrent token refreshes can force a re-login (Claude Code #91708). Use separate profiles for concurrent work.
 
 ### Codex
 
@@ -169,7 +169,7 @@ These commands have no default shortcut and run from the palette (they can be bo
 | Right-click | Copy the selection, or paste. Goes to the program when it uses the mouse (hold Shift to override) |
 | `Ctrl+click` | Open an http(s) link |
 
-**Policy:** Altera never binds keys that terminals and agents need. Settings refuses these:
+**Policy:** Gridkeeper never binds keys that terminals and agents need. Settings refuses these:
 
 - function keys;
 - combos without Ctrl or Alt;
@@ -193,23 +193,23 @@ Settings (`Ctrl+,`) has four sections, and everything is saved in `workspaces.js
 
 ## Data locations
 
-Everything lives under `%APPDATA%\ai.altera.workspace\`:
+Everything lives under `%APPDATA%\app.gridkeeper.desktop\`:
 
 | Path | Contents |
 |---|---|
 | `workspaces.json` | Settings, workspaces, groups, layouts, session definitions (no secrets). `.bak` is the previous good version and `.tmp` is the in-flight write. `workspaces.corrupt-<timestamp>.json` holds preserved damaged files. |
 | `profiles.json` | Claude profile entries (name, folder, colour). |
-| `logs\altera.YYYY-MM-DD.log` | JSON-lines logs, redacted, daily rotation, 7 files kept. The level is set with the `ALTERA_LOG` env var (e.g. `ALTERA_LOG=debug,altera_lib::pty=trace`). |
-| `diagnostics\altera-diagnostics-<timestamp>.json` | Exported diagnostics bundles (redacted, home directory shown as `~`). |
+| `logs\gridkeeper.YYYY-MM-DD.log` | JSON-lines logs, redacted, daily rotation, 7 files kept. The level is set with the `GRIDKEEPER_LOG` env var (e.g. `GRIDKEEPER_LOG=debug,gridkeeper_lib::pty=trace`). |
+| `diagnostics\gridkeeper-diagnostics-<timestamp>.json` | Exported diagnostics bundles (redacted, home directory shown as `~`). |
 
-Altera never writes inside Claude or Codex config directories. The one exception is creating an empty folder when you add a new profile.
+Gridkeeper never writes inside Claude or Codex config directories. The one exception is creating an empty folder when you add a new profile.
 
 ## Bench mode and e2e scripts
 
 **Bench mode** opens an in-memory "Bench" workspace with N PowerShell sessions running `scripts/bench/flood.ps1`. Nothing is persisted in bench mode.
 
 ```powershell
-$env:ALTERA_BENCH = "sessions=6;mode=sustained;seconds=60;rate=2000;layout=grid"
+$env:GRIDKEEPER_BENCH = "sessions=6;mode=sustained;seconds=60;rate=2000;layout=grid"
 npm run tauri dev
 ```
 
@@ -222,7 +222,7 @@ Keys:
 | `count`, `rate`, `seconds` | Passed to `flood.ps1` |
 | `layout` | `grid` / `columns` / `rows` |
 
-`ALTERA_BENCH_SCRIPTS` overrides the scripts folder. `scripts/bench/sample.ps1` samples CPU/RAM/GPU of a running instance by category (host, webview, console, agents):
+`GRIDKEEPER_BENCH_SCRIPTS` overrides the scripts folder. `scripts/bench/sample.ps1` samples CPU/RAM/GPU of a running instance by category (host, webview, console, agents):
 
 ```powershell
 pwsh -File scripts/bench/sample.ps1 -Seconds 60 -Label idle-6-sessions -OutDir bench-results
@@ -237,11 +237,11 @@ npm run tauri dev
 node scripts/e2e/cdp.mjs file scripts/e2e/ps-basic.js     # pwsh prompt, echo, Unicode, 20,000 lines
 node scripts/e2e/cdp.mjs file scripts/e2e/multi-agent.js  # 3 Claude profiles + 2 Codex + 1 pwsh (sends no prompts)
 node scripts/e2e/cdp.mjs file scripts/e2e/codex-race.js   # 3 Codex started in the same tick
-node scripts/e2e/cdp.mjs eval "window.__alteraTerminals.list()"
+node scripts/e2e/cdp.mjs eval "window.__gridkeeperTerminals.list()"
 node scripts/e2e/cdp.mjs shot out.png
 ```
 
-The scripts use hard-coded `D:\AlteraAI` as the working folder; edit them for other locations. Debug hooks are `window.__alteraTerminals.list()/text(id)` and `window.__alteraForceContextLoss(id?)` (simulates a GPU context loss).
+The scripts use hard-coded `D:\AlteraAI` as the working folder; edit them for other locations. Debug hooks are `window.__gridkeeperTerminals.list()/text(id)` and `window.__gridkeeperForceContextLoss(id?)` (simulates a GPU context loss).
 
 ## Testing
 

@@ -69,7 +69,7 @@ fn common_env_and_cwd() {
     assert_eq!(plan.cwd, PathBuf::from(&f.cwd));
     assert_eq!(env(&plan, "TERM"), Some("xterm-256color"));
     assert_eq!(env(&plan, "COLORTERM"), Some("truecolor"));
-    assert_eq!(env(&plan, "TERM_PROGRAM"), Some("Altera"));
+    assert_eq!(env(&plan, "TERM_PROGRAM"), Some("Gridkeeper"));
     assert_eq!(env(&plan, "TERM_PROGRAM_VERSION"), Some(env!("CARGO_PKG_VERSION")));
     assert!(removed(&plan, "WT_SESSION") && removed(&plan, "WT_PROFILE_ID"));
     assert!(plan.display.contains("claude.exe"));

@@ -1,14 +1,14 @@
 <#
 .SYNOPSIS
   Runs the standard benchmark scenarios against a RELEASE build and writes bench-results/summary.csv.
-  Each scenario launches the app with ALTERA_BENCH (in-memory bench workspace; user data untouched),
+  Each scenario launches the app with GRIDKEEPER_BENCH (in-memory bench workspace; user data untouched),
   warms up, samples CPU/RAM/GPU by category with sample.ps1, then closes the app.
 
 .EXAMPLE
-  pwsh -File scripts/bench/run-all.ps1 -Exe src-tauri/target/release/altera.exe
+  pwsh -File scripts/bench/run-all.ps1 -Exe src-tauri/target/release/gridkeeper.exe
 #>
 param(
-  [string]$Exe = "src-tauri/target/release/altera.exe",
+  [string]$Exe = "src-tauri/target/release/gridkeeper.exe",
   [int]$Warmup = 20,
   [int]$Seconds = 40,
   [string]$OutDir = "bench-results",
@@ -35,11 +35,11 @@ $all = @()
 foreach ($s in $scenarios) {
   Write-Host "=== $($s.label) ===" -ForegroundColor Cyan
   Get-Process -Name $procName -ErrorAction SilentlyContinue | Where-Object { $_.Path -eq $Exe } | Stop-Process -Force
-  $env:ALTERA_BENCH = $s.bench
+  $env:GRIDKEEPER_BENCH = $s.bench
   # Separate WebView2 profile: a normal instance may already hold the default one with other browser flags.
   $env:WEBVIEW2_USER_DATA_FOLDER = Join-Path $env:TEMP "gridkeeper-bench-webview"
   $p = Start-Process -FilePath $Exe -PassThru
-  Remove-Item Env:ALTERA_BENCH, Env:WEBVIEW2_USER_DATA_FOLDER
+  Remove-Item Env:GRIDKEEPER_BENCH, Env:WEBVIEW2_USER_DATA_FOLDER
   Start-Sleep -Seconds $Warmup
   & pwsh -NoProfile -File (Join-Path $here "sample.ps1") -Seconds $Seconds -Label $s.label -OutDir $OutDir -ProcessName $procName -RootPid $p.Id
   $sum = Import-Csv (Join-Path $OutDir "$($s.label).summary.csv")

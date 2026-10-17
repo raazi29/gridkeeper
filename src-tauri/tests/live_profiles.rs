@@ -3,9 +3,9 @@
 //!
 //! Prints ONLY non-personal fields (never the account e-mail).
 
-use altera_lib::adapters;
-use altera_lib::profiles::{self, ProfileStore};
-use altera_lib::types::*;
+use gridkeeper_lib::adapters;
+use gridkeeper_lib::profiles::{self, ProfileStore};
+use gridkeeper_lib::types::*;
 
 fn home() -> std::path::PathBuf {
     adapters::discovery::home_dir().expect("home dir")

@@ -1,9 +1,9 @@
 // E2E reliability checks against the running app (run via cdp.mjs file). PowerShell sessions only.
 (async () => {
-  const S = window.__altera.sessions;
-  const { useApp } = window.__altera.store;
-  const reg = window.__altera.registry;
-  const ipc = window.__altera.ipc;
+  const S = window.__gridkeeper.sessions;
+  const { useApp } = window.__gridkeeper.store;
+  const reg = window.__gridkeeper.registry;
+  const ipc = window.__gridkeeper.ipc;
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   const waitFor = async (pred, ms = 20000) => {
     const t0 = Date.now();
@@ -13,7 +13,7 @@
     }
     return false;
   };
-  const text = (id) => window.__alteraTerminals?.text(id) ?? "";
+  const text = (id) => window.__gridkeeperTerminals?.text(id) ?? "";
   const cwd = "D:\\AlteraAI";
   const scripts = "D:\\AlteraAI\\scripts\\bench";
   const results = {};
@@ -34,7 +34,7 @@
 
   // 2. GPU context loss -> DOM fallback -> WebGL recovery.
   const before = reg.getRendererStatus();
-  window.__alteraForceContextLoss?.(a);
+  window.__gridkeeperForceContextLoss?.(a);
   await sleep(1500);
   const during = reg.getRendererStatus();
   await waitFor(() => reg.getRendererStatus().webglActive >= before.webglActive, 15000);
@@ -86,7 +86,7 @@
   // 7. Repeated workspace switching: no terminal/listener growth.
   const wsIds = useApp.getState().persisted.workspaces.map((w) => w.id);
   const heap0 = performance.memory?.usedJSHeapSize;
-  const terms0 = window.__alteraTerminals.list().length;
+  const terms0 = window.__gridkeeperTerminals.list().length;
   const t1 = performance.now();
   for (let i = 0; i < 60; i++) {
     useApp.getState().setActiveWorkspace(wsIds[i % wsIds.length]);
@@ -98,7 +98,7 @@
     switches: 60,
     msPerSwitch: Math.round((performance.now() - t1) / 60 - 50),
     terminalsBefore: terms0,
-    terminalsAfter: window.__alteraTerminals.list().length,
+    terminalsAfter: window.__gridkeeperTerminals.list().length,
     heapMBBefore: heap0 && Math.round(heap0 / 1048576),
     heapMBAfter: performance.memory && Math.round(performance.memory.usedJSHeapSize / 1048576),
     renderer: reg.getRendererStatus(),

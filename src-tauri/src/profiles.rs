@@ -130,7 +130,7 @@ impl ProfileStore {
             }) {
                 Ok(f) => {
                     if f.version > PROFILES_VERSION {
-                        tracing::warn!(version = f.version, "profiles.json is from a newer Altera; loading best-effort");
+                        tracing::warn!(version = f.version, "profiles.json is from a newer Gridkeeper; loading best-effort");
                     }
                     Some(f.profiles)
                 }

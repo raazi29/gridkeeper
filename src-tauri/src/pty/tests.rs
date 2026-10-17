@@ -38,7 +38,7 @@ fn plan(program: impl Into<PathBuf>, args: &[&str]) -> LaunchPlan {
         display: format!("{} {}", program.display(), args.join(" ")),
         program,
         args: args.iter().map(|s| s.to_string()).collect(),
-        env_set: vec![("ALTERA_TEST".into(), "1".into())],
+        env_set: vec![("GRIDKEEPER_TEST".into(), "1".into())],
         env_remove: vec!["CLAUDE_CONFIG_DIR".into()],
         cwd: std::env::temp_dir(),
     }
@@ -393,7 +393,7 @@ fn attention_signals_through_conpty() {
 fn status_probe_is_answered() {
     // The reply is opt-in (see session.rs); enabling it process-wide is harmless for other tests.
     // SAFETY: tests do not read this variable concurrently with a write that could tear.
-    unsafe { std::env::set_var("ALTERA_OSC7501_REPLY", "1") };
+    unsafe { std::env::set_var("GRIDKEEPER_OSC7501_REPLY", "1") };
     let (core, _events) = attention_fixture();
     let id = "it-probe";
     let script = concat!(

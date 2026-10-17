@@ -410,7 +410,7 @@ pub fn build_bundle(input: &ExportInput<'_>, frontend: Value) -> Value {
 
     let bundle = json!({
         "generatedAt": chrono::Local::now().to_rfc3339(),
-        "app": { "name": "Altera", "version": env!("CARGO_PKG_VERSION"), "debugBuild": cfg!(debug_assertions) },
+        "app": { "name": "Gridkeeper", "version": env!("CARGO_PKG_VERSION"), "debugBuild": cfg!(debug_assertions) },
         "os": {
             "name": System::name(),
             "longOsVersion": System::long_os_version(),
@@ -440,7 +440,7 @@ pub fn build_bundle(input: &ExportInput<'_>, frontend: Value) -> Value {
     scrub.value(bundle)
 }
 
-/// Write the bundle to `<data_dir>/diagnostics/altera-diagnostics-<ts>.json`.
+/// Write the bundle to `<data_dir>/diagnostics/gridkeeper-diagnostics-<ts>.json`.
 pub fn write_bundle(input: &ExportInput<'_>, frontend: Value) -> AppResult<PathBuf> {
     let bundle = build_bundle(input, frontend);
     let pretty = serde_json::to_string_pretty(&bundle).map_err(|e| AppError::Other(e.to_string()))?;
@@ -452,10 +452,10 @@ pub fn write_bundle(input: &ExportInput<'_>, frontend: Value) -> AppResult<PathB
     let dir = input.data_dir.join("diagnostics");
     std::fs::create_dir_all(&dir)?;
     let ts = chrono::Local::now().format("%Y%m%d-%H%M%S");
-    let mut path = dir.join(format!("altera-diagnostics-{ts}.json"));
+    let mut path = dir.join(format!("gridkeeper-diagnostics-{ts}.json"));
     let mut n = 1;
     while path.exists() {
-        path = dir.join(format!("altera-diagnostics-{ts}-{n}.json"));
+        path = dir.join(format!("gridkeeper-diagnostics-{ts}-{n}.json"));
         n += 1;
     }
     crate::persistence::atomic_write(&path, text.as_bytes(), false)?;
@@ -547,7 +547,7 @@ mod tests {
         for i in 0..400 {
             log.push_str(&format!("{{\"n\":{i},\"message\":\"line token=abc{i}\"}}\n"));
         }
-        std::fs::write(logs.join("altera.2026-10-17.log"), log).unwrap();
+        std::fs::write(logs.join("gridkeeper.2026-10-17.log"), log).unwrap();
 
         let home = PathBuf::from(r"C:\Users\Someone");
         let mut state = PersistedState::default();

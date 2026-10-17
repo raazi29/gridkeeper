@@ -1,8 +1,8 @@
 // E2E: start 3 Codex sessions in the same tick; report output bytes after 12 s (tiny = hung at startup).
 (async () => {
-  const { newSession, closeSession } = window.__altera.sessions;
-  const { useApp } = window.__altera.store;
-  const ipc = window.__altera.ipc;
+  const { newSession, closeSession } = window.__gridkeeper.sessions;
+  const { useApp } = window.__gridkeeper.store;
+  const ipc = window.__gridkeeper.ipc;
   const app = useApp.getState();
   // Clean up earlier runs.
   for (const w of useApp.getState().persisted.workspaces.filter((w) => w.name === "Codex race")) {

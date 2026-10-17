@@ -1,13 +1,13 @@
 //! Structured logging.
 //!
-//! - JSON lines in `<logs_dir>/altera.<YYYY-MM-DD>.log` (daily rotation by
+//! - JSON lines in `<logs_dir>/gridkeeper.<YYYY-MM-DD>.log` (daily rotation by
 //!   `tracing-appender`, which names files `<prefix>.<date>.<suffix>`; at most
 //!   `MAX_LOG_FILES` are kept — older ones are pruned when the appender is
 //!   built and on every rollover).
 //! - Writes go through a non-blocking worker; every line is passed through
 //!   `redact::redact` on that worker thread before it reaches disk.
-//! - Filter: `info` by default, overridable with the `ALTERA_LOG` env var
-//!   (standard `EnvFilter` syntax, e.g. `ALTERA_LOG=debug,altera_lib::pty=trace`).
+//! - Filter: `info` by default, overridable with the `GRIDKEEPER_LOG` env var
+//!   (standard `EnvFilter` syntax, e.g. `GRIDKEEPER_LOG=debug,gridkeeper_lib::pty=trace`).
 //! - Debug builds also log human-readable lines to stdout (also redacted).
 
 use std::io::{self, Write};
@@ -21,10 +21,10 @@ use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;
 use tracing_subscriber::{EnvFilter, Layer};
 
-pub const LOG_PREFIX: &str = "altera";
+pub const LOG_PREFIX: &str = "gridkeeper";
 pub const LOG_SUFFIX: &str = "log";
 pub const MAX_LOG_FILES: usize = 7;
-pub const LOG_ENV: &str = "ALTERA_LOG";
+pub const LOG_ENV: &str = "GRIDKEEPER_LOG";
 
 static INITIALIZED: AtomicBool = AtomicBool::new(false);
 
@@ -87,7 +87,7 @@ impl<'a> MakeWriter<'a> for RedactingStdout {
     }
 }
 
-/// All `altera.*.log` files in `logs_dir`, newest (by modification time) first.
+/// All `gridkeeper.*.log` files in `logs_dir`, newest (by modification time) first.
 pub fn log_files(logs_dir: &Path) -> Vec<PathBuf> {
     let Ok(entries) = std::fs::read_dir(logs_dir) else {
         return Vec::new();
@@ -129,7 +129,7 @@ pub fn init(logs_dir: &Path) -> anyhow::Result<LogGuard> {
         let appender = build_appender(logs_dir)?;
         let (writer, guard) = tracing_appender::non_blocking::NonBlockingBuilder::default()
             .lossy(true)
-            .thread_name("altera-log")
+            .thread_name("gridkeeper-log")
             .finish(RedactingWriter::new(appender));
 
         let filter = EnvFilter::try_from_env(LOG_ENV).unwrap_or_else(|_| EnvFilter::new("info"));
@@ -187,13 +187,13 @@ mod tests {
     #[test]
     fn log_file_listing() {
         let dir = tempfile::tempdir().unwrap();
-        std::fs::write(dir.path().join("altera.2026-10-01.log"), "a\n").unwrap();
+        std::fs::write(dir.path().join("gridkeeper.2026-10-01.log"), "a\n").unwrap();
         std::thread::sleep(std::time::Duration::from_millis(20));
-        std::fs::write(dir.path().join("altera.2026-10-02.log"), "b\n").unwrap();
+        std::fs::write(dir.path().join("gridkeeper.2026-10-02.log"), "b\n").unwrap();
         std::fs::write(dir.path().join("other.txt"), "c\n").unwrap();
         let files = log_files(dir.path());
         assert_eq!(files.len(), 2);
-        assert!(current_log_file(dir.path()).unwrap().ends_with("altera.2026-10-02.log"));
+        assert!(current_log_file(dir.path()).unwrap().ends_with("gridkeeper.2026-10-02.log"));
     }
 
     /// The only test that installs the global subscriber.
@@ -202,7 +202,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         // Old files beyond the retention limit are pruned when the appender is built.
         for day in 1..=10 {
-            std::fs::write(dir.path().join(format!("altera.2020-01-{day:02}.log")), "old\n").unwrap();
+            std::fs::write(dir.path().join(format!("gridkeeper.2020-01-{day:02}.log")), "old\n").unwrap();
         }
         let guard = init(dir.path()).expect("first init");
         assert!(init(dir.path()).is_err(), "second init must fail");

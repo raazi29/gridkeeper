@@ -1,6 +1,6 @@
-# Altera — Research
+# Gridkeeper — Research
 
-This document answers the research questions in the original brief and shows the evidence for each answer. It draws on the raw notes in [`research-notes/terminal-stack.md`](research-notes/terminal-stack.md) and [`research-notes/claude-codex-cli.md`](research-notes/claude-codex-cli.md) (both dated 2026-10-17), on Altera's code, and on live tests run on the target machine.
+This document answers the research questions in the original brief and shows the evidence for each answer. It draws on the raw notes in [`research-notes/terminal-stack.md`](research-notes/terminal-stack.md) and [`research-notes/claude-codex-cli.md`](research-notes/claude-codex-cli.md) (both dated 2026-10-17), on Gridkeeper's code, and on live tests run on the target machine.
 
 ## Evidence legend
 
@@ -9,7 +9,7 @@ This document answers the research questions in the original brief and shows the
 | **[V]** | Verified against a primary source: official docs, release notes, the library's own source, or the npm/crates.io APIs. |
 | **[H]** | Hypothesis, anecdote or inference that was not checked against a primary source. |
 | **[M]** | Measured or observed on the target machine (details below). |
-| **[C]** | What Altera's code does (file references point into this repo). |
+| **[C]** | What Gridkeeper's code does (file references point into this repo). |
 
 **Target machine [M]:** Intel i7-12650H (10C/16T), 15.7 GB RAM, Intel UHD + NVIDIA GeForce RTX 3050 Laptop 4 GB (driver 592.82), Windows 11 Home build 26300, WebView2 155.0.4283.60, Rust 1.99.1, Claude Code 2.1.302, codex-cli 0.162.0, pwsh 7.6.7.
 
@@ -34,9 +34,9 @@ Versions in use **[V]** (npm/crates.io, 2026-10-17): `@tauri-apps/api` 2.12.4, `
 
 **Answer: xterm.js 6, on ConPTY, with a few agent-specific adjustments.**
 
-- xterm.js 6 removed the canvas renderer (DOM or WebGL remain) and `windowsMode`. It added DEC 2026 synchronized output, OSC 52, ESM and `onWriteParsed` **[V]** (xterm.js 6.0.0 release notes). The `windowsPty?: IWindowsPty` option still exists **[V: typings]**. Altera passes `windowsPty: { backend: "conpty", buildNumber }` using the real Windows build from `app_info` **[C: `src/terminal/registry.ts`, `src-tauri/src/commands/app.rs`]**.
-- **Claude Code** probes XTVERSION, kitty keyboard (`CSI ? u`), OSC 7501, DA1 and DECRQM ?2026 **[V]**. Its fullscreen renderer (alt screen + SGR mouse) is mis-coalesced by ConPTY hosts. The documented fix is `CLAUDE_CODE_ALT_SCREEN_FULL_REPAINT=1` (code.claude.com/docs/en/fullscreen) **[V]**. Altera sets it for every Claude session **[C: `adapters/claude.rs`]**. Recommended environment: `TERM=xterm-256color`, `COLORTERM=truecolor`, don't set `WT_SESSION`, and don't spoof `TERM_PROGRAM=windows-terminal` (#94873) **[V]**. Altera sets `TERM`/`COLORTERM`, sets `TERM_PROGRAM=Altera`, and removes `WT_SESSION`/`WT_PROFILE_ID` **[C: `adapters/mod.rs`]**. Shift+Enter is fragile on Windows without the kitty protocol, which Claude enables only for allowlisted `TERM_PROGRAM` values (#92771) **[V]**. This is a known limitation. On Windows, Claude reads `^H` as Ctrl+Backspace (`CLAUDE_CODE_BS_AS_CTRL_BACKSPACE=0` opts out) **[V]**.
-- **Codex** runs natively on Windows and needs ConPTY (Win10 1809+) **[V]** (learn.chatgpt.com/docs/windows/windows-sandbox). Inline mode (`--no-alt-screen`) loses history in xterm.js (#27644), so Altera leaves the alternate screen on **[V; C: `adapters/codex.rs`]**. Other known issues: ESC[?2026 leak (#35395), xterm.js+ConPTY cursor/IME (#35438), and kitty keyboard fragments leaking after exit (#24026) **[V]**. Altera does not currently write `CSI < u` on child exit. Its exit notice only turns off mouse-reporting modes **[C: `registry.ts` `maybeWriteExitNotice`]**.
+- xterm.js 6 removed the canvas renderer (DOM or WebGL remain) and `windowsMode`. It added DEC 2026 synchronized output, OSC 52, ESM and `onWriteParsed` **[V]** (xterm.js 6.0.0 release notes). The `windowsPty?: IWindowsPty` option still exists **[V: typings]**. Gridkeeper passes `windowsPty: { backend: "conpty", buildNumber }` using the real Windows build from `app_info` **[C: `src/terminal/registry.ts`, `src-tauri/src/commands/app.rs`]**.
+- **Claude Code** probes XTVERSION, kitty keyboard (`CSI ? u`), OSC 7501, DA1 and DECRQM ?2026 **[V]**. Its fullscreen renderer (alt screen + SGR mouse) is mis-coalesced by ConPTY hosts. The documented fix is `CLAUDE_CODE_ALT_SCREEN_FULL_REPAINT=1` (code.claude.com/docs/en/fullscreen) **[V]**. Gridkeeper sets it for every Claude session **[C: `adapters/claude.rs`]**. Recommended environment: `TERM=xterm-256color`, `COLORTERM=truecolor`, don't set `WT_SESSION`, and don't spoof `TERM_PROGRAM=windows-terminal` (#94873) **[V]**. Gridkeeper sets `TERM`/`COLORTERM`, sets `TERM_PROGRAM=Gridkeeper`, and removes `WT_SESSION`/`WT_PROFILE_ID` **[C: `adapters/mod.rs`]**. Shift+Enter is fragile on Windows without the kitty protocol, which Claude enables only for allowlisted `TERM_PROGRAM` values (#92771) **[V]**. This is a known limitation. On Windows, Claude reads `^H` as Ctrl+Backspace (`CLAUDE_CODE_BS_AS_CTRL_BACKSPACE=0` opts out) **[V]**.
+- **Codex** runs natively on Windows and needs ConPTY (Win10 1809+) **[V]** (learn.chatgpt.com/docs/windows/windows-sandbox). Inline mode (`--no-alt-screen`) loses history in xterm.js (#27644), so Gridkeeper leaves the alternate screen on **[V; C: `adapters/codex.rs`]**. Other known issues: ESC[?2026 leak (#35395), xterm.js+ConPTY cursor/IME (#35438), and kitty keyboard fragments leaking after exit (#24026) **[V]**. Gridkeeper does not currently write `CSI < u` on child exit. Its exit notice only turns off mouse-reporting modes **[C: `registry.ts` `maybeWriteExitNotice`]**.
 - **PowerShell:** pwsh 7 is preferred, with Windows PowerShell 5.1 as the fallback, launched with `-NoLogo` **[C: `adapters/powershell.rs`]**.
 - **Measured [M]:** in the running app, the interactive pwsh prompt, echo, Unicode (`日本語 ✅ 🚀`) and 20,000 lines of output were verified (`scripts/e2e/ps-basic.js`). Six concurrent sessions (3 Claude profiles, 2 Codex, 1 pwsh) each drew its TUI (`scripts/e2e/multi-agent.js`).
 
@@ -50,8 +50,8 @@ Versions in use **[V]** (npm/crates.io, 2026-10-17): `@tauri-apps/api` 2.12.4, `
   - `kill()` calls `TerminateProcess` on the direct child only.
   - Waits with `WaitForSingleObject`.
   - Does not spawn with `CREATE_SUSPENDED`.
-- With `INHERIT_CURSOR`, the host must answer the cursor position request (`ESC[6n`) asynchronously or the client may hang (learn.microsoft.com/windows/console/createpseudoconsole) **[V]**. Altera answers `ESC[1;1R` from Rust whenever no view would answer it live **[C: `pty/stream.rs`]**.
-- `ClosePseudoConsole` returns immediately from Win11 24H2 (26100). Earlier versions block unless output is drained. It sends `CTRL_CLOSE_EVENT` **[V]**. Altera therefore never closes the console from the reader thread. The waiter thread closes it after output goes quiet **[C: `pty/session.rs`]**.
+- With `INHERIT_CURSOR`, the host must answer the cursor position request (`ESC[6n`) asynchronously or the client may hang (learn.microsoft.com/windows/console/createpseudoconsole) **[V]**. Gridkeeper answers `ESC[1;1R` from Rust whenever no view would answer it live **[C: `pty/stream.rs`]**.
+- `ClosePseudoConsole` returns immediately from Win11 24H2 (26100). Earlier versions block unless output is drained. It sends `CTRL_CLOSE_EVENT` **[V]**. Gridkeeper therefore never closes the console from the reader thread. The waiter thread closes it after output goes quiet **[C: `pty/session.rs`]**.
 - node-pty 1.1.0 ships `conpty.dll` + `OpenConsole.exe` (ConPTY 1.23) behind an experimental `useConptyDll` flag **[V]**. The ConPTY NuGet package `Microsoft.Windows.Console.ConPTY` is at stable 1.25.260930003, and Windows Terminal is at v1.25.2733.0 (2026-10-02) **[V]**.
 - Other crates considered: `conpty` 0.7.0 and `winpty-rs` 1.0.6 **[V: versions]**. winpty is obsolete on ConPTY-capable Windows **[H]**.
 - **Why not sideload yet:** the redistribution terms of the ConPTY NuGet package were not verified (see §9). The system ConPTY on build 26300 hosted every tested workload **[M]**. portable-pty already picks up a sideloaded DLL if one is placed next to the exe, so the switch costs nothing later **[V]**.
@@ -61,14 +61,14 @@ Versions in use **[V]** (npm/crates.io, 2026-10-17): `@tauri-apps/api` 2.12.4, `
 **Answer: xterm.js's WebGL addon, under a context budget, with the DOM renderer as fallback.**
 
 - `WebglAddon(preserveDrawingBuffer?)` exposes `onContextLoss` and `onChangeTextureAtlas`. The README says to dispose the addon on context loss **[V]**.
-- Chromium allows at most **16 active WebGL contexts per renderer process** and forcibly loses the oldest beyond that (codereview.chromium.org/14217005) **[V]**. Altera caps itself at 12 (`MAX_WEBGL`). Only visible terminals compete for the slots, the focused terminal goes first, and visible terminals beyond the cap use DOM **[C: `src/terminal/webglBudget.ts`, `registry.ts`]**.
-- xterm's `RenderService` pauses rendering through IntersectionObserver when the terminal isn't intersecting the viewport. `write()` still parses (RenderService.ts L119–137) **[V: source]**. Altera relies on this for parked terminals (`display:none`).
+- Chromium allows at most **16 active WebGL contexts per renderer process** and forcibly loses the oldest beyond that (codereview.chromium.org/14217005) **[V]**. Gridkeeper caps itself at 12 (`MAX_WEBGL`). Only visible terminals compete for the slots, the focused terminal goes first, and visible terminals beyond the cap use DOM **[C: `src/terminal/webglBudget.ts`, `registry.ts`]**.
+- xterm's `RenderService` pauses rendering through IntersectionObserver when the terminal isn't intersecting the viewport. `write()` still parses (RenderService.ts L119–137) **[V: source]**. Gridkeeper relies on this for parked terminals (`display:none`).
 - **Measured [M]:** the WebGL renderer string, verbatim: `ANGLE (NVIDIA, NVIDIA GeForce RTX 3050 Laptop GPU (0x000025A2) Direct3D11 vs_5_0 ps_5_0, D3D11)`, with 6 WebGL contexts active while 6 sessions were visible.
 - GPU acceleration covers terminal *drawing* only. Parsing, IPC and the agents' own CPU work run on the CPU **[C]**.
 
 ## 5. Can terminal rendering and app logic share one frontend?
 
-**Answer: yes, in one WebView2.** All panes, dialogs and every xterm instance live in one page, so there is one renderer process and one GPU process **[C]**. The costs are the 16-context WebGL limit per renderer process (handled by the budget) and the risk that terminal output triggers UI re-renders. Altera avoids the second by keeping xterm instances in a registry outside React, so terminal bytes never enter React/zustand state **[C: `registry.ts`, `store/appStore.ts` header]**. Multiple WebViews would multiply renderer processes and give up the shared GPU process **[H]**.
+**Answer: yes, in one WebView2.** All panes, dialogs and every xterm instance live in one page, so there is one renderer process and one GPU process **[C]**. The costs are the 16-context WebGL limit per renderer process (handled by the budget) and the risk that terminal output triggers UI re-renders. Gridkeeper avoids the second by keeping xterm instances in a registry outside React, so terminal bytes never enter React/zustand state **[C: `registry.ts`, `store/appStore.ts` header]**. Multiple WebViews would multiply renderer processes and give up the shared GPU process **[H]**.
 
 ## 6. What do 6+ sessions cost?
 
@@ -83,7 +83,7 @@ Qualitative, from the code **[C]**. Measured numbers are in `docs/PERFORMANCE.md
 | IPC | Coalesced binary frames (≥64 KiB or 8 ms) and batched acks (≥64 KiB or 30 ms). Nothing when idle. |
 | Polling | No per-session timers. The diagnostics poll (2 s) runs only while the status bar/inspector/diagnostics panel wants it and the window is visible. |
 
-Superset reported a ~26% renderer-memory reduction from serializing background terminals (changelog 2026-07-19) **[V: vendor changelog]**. Altera keeps parked terminals live instead, and lets users hide views to free them (ADR-007).
+Superset reported a ~26% renderer-memory reduction from serializing background terminals (changelog 2026-07-19) **[V: vendor changelog]**. Gridkeeper keeps parked terminals live instead, and lets users hide views to free them (ADR-007).
 
 ## 7. Buffering, backpressure and scrollback design
 
@@ -103,9 +103,9 @@ Design **[C]**: see ARCHITECTURE "Terminal output data flow". In short:
 
 ## 8. What causes excessive CPU/RAM in comparable apps?
 
-From the research notes **[V/H as marked]**, with Altera's countermeasure **[C]**:
+From the research notes **[V/H as marked]**, with Gridkeeper's countermeasure **[C]**:
 
-| Cause | Altera's countermeasure |
+| Cause | Gridkeeper's countermeasure |
 |---|---|
 | Rendering hidden terminals (xterm.js #880) **[V]** | Parked terminals sit under a `display:none` parking container, so IntersectionObserver pauses them. The WebGL context is released after a 400 ms grace. |
 | One IPC message per chunk, plus JSON byte arrays **[V]** | 8 ms / 64 KiB coalescing, raw `ArrayBuffer` frames, batched acks. |
@@ -118,16 +118,16 @@ From the research notes **[V/H as marked]**, with Altera's countermeasure **[C]*
 
 ## 9. Which GPU features are supported on the target?
 
-- WebGL2 is available through ANGLE on Direct3D 11 (`vs_5_0`/`ps_5_0`) on the RTX 3050 Laptop GPU **[M]**. `WEBGL_debug_renderer_info` exposes the unmasked renderer. Altera probes it once and frees the probe context immediately with `WEBGL_lose_context`, so the probe never occupies one of the 16 slots **[C]**.
+- WebGL2 is available through ANGLE on Direct3D 11 (`vs_5_0`/`ps_5_0`) on the RTX 3050 Laptop GPU **[M]**. `WEBGL_debug_renderer_info` exposes the unmasked renderer. Gridkeeper probes it once and frees the probe context immediately with `WEBGL_lose_context`, so the probe never occupies one of the 16 slots **[C]**.
 - 6 simultaneous WebGL contexts were confirmed in the app **[M]**. The budget allows 12 **[C]**.
-- On a hybrid laptop, Windows decides which GPU WebView2 uses (Settings > System > Display > Graphics). On this machine it reported the NVIDIA dGPU **[M]**. Altera does not pick a GPU itself **[C]**.
-- Context loss is handled: the addon is disposed, the terminal falls back to DOM, WebGL is retried after 3 s while visible, and the terminal gives up after 3 losses. `window.__alteraForceContextLoss()` exists to exercise this path **[C]**.
+- On a hybrid laptop, Windows decides which GPU WebView2 uses (Settings > System > Display > Graphics). On this machine it reported the NVIDIA dGPU **[M]**. Gridkeeper does not pick a GPU itself **[C]**.
+- Context loss is handled: the addon is disposed, the terminal falls back to DOM, WebGL is retried after 3 s while visible, and the terminal gives up after 3 losses. `window.__gridkeeperForceContextLoss()` exists to exercise this path **[C]**.
 
 ## 10. Licensing and distribution
 
 - **Licenses [V]:** Tauri Apache-2.0 OR MIT; xterm.js MIT; portable-pty MIT; windows-sys MIT/Apache-2.0; React/Vite MIT; TypeScript Apache-2.0; alacritty_terminal Apache-2.0 (not used). All are compatible with closed or open distribution, given attribution.
 - **Claude Squad is AGPL-3.0:** reference only. No code was reused **[V]**.
-- **WebView2:** preinstalled on Windows 11. Altera's NSIS bundle uses `webviewInstallMode: embedBootstrapper` (~1.8 MB), so machines without the runtime can install it, and `installMode: currentUser` **[C: `src-tauri/tauri.conf.json`; V: sizes]**. MSI would need WiX v3 + the VBSCRIPT feature, so NSIS is the recommended target **[V]**.
+- **WebView2:** preinstalled on Windows 11. Gridkeeper's NSIS bundle uses `webviewInstallMode: embedBootstrapper` (~1.8 MB), so machines without the runtime can install it, and `installMode: currentUser` **[C: `src-tauri/tauri.conf.json`; V: sizes]**. MSI would need WiX v3 + the VBSCRIPT feature, so NSIS is the recommended target **[V]**.
 - **ConPTY NuGet (`Microsoft.Windows.Console.ConPTY`) redistribution terms: not verified.** This must be checked before sideloading `conpty.dll`/`OpenConsole.exe` **[H/open]**.
 
 ## 11. Existing multi-agent managers
@@ -138,7 +138,7 @@ From the research notes **[V/H as marked]**, with Altera's countermeasure **[C]*
 | Crystal | Electron, MIT | Dormant; continued as Nimbalyst. |
 | vibe-kanban | Rust + web, Apache-2.0 | Kanban-style agent orchestration. |
 | Wave Terminal | Go + Electron, Apache-2.0 | General terminal with blocks. |
-| Terax | Tauri 2 + portable-pty + xterm.js WebGL + CodeMirror, Apache-2.0 | The app Altera replaces (scriptbyai.com/terax-ai-dev-workspace). Same base stack. |
+| Terax | Tauri 2 + portable-pty + xterm.js WebGL + CodeMirror, Apache-2.0 | The app Gridkeeper replaces (scriptbyai.com/terax-ai-dev-workspace). Same base stack. |
 | Termexo | Windows | Claude + Codex manager. |
 | Superset | — | Serializes background terminals (changelog 2026-07-19). |
 
@@ -157,8 +157,8 @@ Sources: terminal-stack research notes **[V for licenses/stacks as listed there]
   6. `ANTHROPIC_PROFILE`
   7. Subscription OAuth
 
-  Any of 2–6 inherited by the app would make every profile authenticate as that one identity. Altera removes them for every Claude session **[C: `CLAUDE_IDENTITY_ENV`]**. The Bedrock/Vertex/Foundry switches are not removed.
-- `claude auth status --json` exits 0 when logged in and 1 when not. Its fields are `loggedIn`, `authMethod`, `apiProvider`, `configDirectory`, `projectsDirectory`, `email`, `orgId`, `orgName` and `subscriptionType`, with no tokens (code.claude.com/docs/en/cli-reference) **[V]**. Side effect: on a non-existent directory it creates `.claude.json` + `backups/`, so Altera only probes existing directories **[V; C]**.
+  Any of 2–6 inherited by the app would make every profile authenticate as that one identity. Gridkeeper removes them for every Claude session **[C: `CLAUDE_IDENTITY_ENV`]**. The Bedrock/Vertex/Foundry switches are not removed.
+- `claude auth status --json` exits 0 when logged in and 1 when not. Its fields are `loggedIn`, `authMethod`, `apiProvider`, `configDirectory`, `projectsDirectory`, `email`, `orgId`, `orgName` and `subscriptionType`, with no tokens (code.claude.com/docs/en/cli-reference) **[V]**. Side effect: on a non-existent directory it creates `.claude.json` + `backups/`, so Gridkeeper only probes existing directories **[V; C]**.
 - **Measured [M]:** `~/.claude`, `~/.claude-account1` and `~/.claude-account2` each hold their own credentials. `claude auth status --json` reported all three logged in (`authMethod: claude.ai`) as three distinct accounts, and no credential file was read. In the app, each Claude profile pane showed its own account/model, and one showed Claude's "trust this folder" prompt, consistent with per-profile state.
 - Claude flags (2.1.302 help) **[V]**: `-c/--continue`, `-r/--resume [id]`, `--session-id <uuid>`, `--fork-session`, `-n/--name`, `--add-dir`. There is no `--cwd` (the ConPTY cwd is used). `--resume` searches project + worktrees, then all projects, within one config dir. Using the same session in two terminals interleaves transcripts.
 - Windows: the native `%USERPROFILE%\.local\bin\claude.exe` is preferred over the npm `claude.cmd` shim **[V; C: `adapters/claude.rs`]**.
@@ -171,11 +171,11 @@ Sources: terminal-stack research notes **[V for licenses/stacks as listed there]
   - `--last` is filtered by cwd.
   - Codex has no way to choose a conversation id up front **[V: flag list; consequence C]**.
 - Known Claude issues **[V: issue tracker state at research time]**:
-  - **#91708 (open):** the same profile in two concurrent processes races on OAuth refresh, which forces a re-login. Altera warns about this in the New Session dialog.
-  - **#101027 (open, Windows):** `claude.exe` can outlive ConPTY when a pane closes, so the process tree must be killed explicitly. Altera's Job Objects cover this.
+  - **#91708 (open):** the same profile in two concurrent processes races on OAuth refresh, which forces a re-login. Gridkeeper warns about this in the New Session dialog.
+  - **#101027 (open, Windows):** `claude.exe` can outlive ConPTY when a pane closes, so the process tree must be killed explicitly. Gridkeeper's Job Objects cover this.
   - Closed NOT_PLANNED: #30230 (both CLAUDE.md files loaded), #34800/#4739 (IDE lock files in `~/.claude/ide`), #15071 (plugin paths), #81278.
   - `CLAUDE_CODE_SUBPROCESS_ENV_SCRUB=1` strips `CLAUDE_CONFIG_DIR` from child tools.
-- **Found in testing [M]:** when Altera was launched from inside a Claude Code session, inherited `CLAUDECODE`, `CLAUDE_CODE_SESSION_ID`, `CLAUDE_CODE_MESSAGING_TOKEN` and similar variables leaked into children, and `claude` reported "Transcript saving is off". These variables are now stripped for **all** sessions **[C: `adapters::inherited_agent_session_vars`]**.
+- **Found in testing [M]:** when Gridkeeper was launched from inside a Claude Code session, inherited `CLAUDECODE`, `CLAUDE_CODE_SESSION_ID`, `CLAUDE_CODE_MESSAGING_TOKEN` and similar variables leaked into children, and `claude` reported "Transcript saving is off". These variables are now stripped for **all** sessions **[C: `adapters::inherited_agent_session_vars`]**.
 
 ---
 
@@ -201,16 +201,16 @@ Sources: terminal-stack research notes **[V for licenses/stacks as listed there]
 
 ## Unresolved uncertainties
 
-1. **Binary IPC throughput on Windows** (#11915). 20,000 lines rendered correctly, but a sustained 10 MB+ transfer has not been timed in isolation. Bench mode exists for this (`ALTERA_BENCH`, see README); results belong in `docs/PERFORMANCE.md`.
+1. **Binary IPC throughput on Windows** (#11915). 20,000 lines rendered correctly, but a sustained 10 MB+ transfer has not been timed in isolation. Bench mode exists for this (`GRIDKEEPER_BENCH`, see README); results belong in `docs/PERFORMANCE.md`.
 2. **GDI / handle growth over long runs** (Zebar #264): no multi-hour soak test yet.
 3. **ConPTY NuGet redistribution terms:** unverified. This blocks sideloading `conpty.dll`/`OpenConsole.exe`.
 4. **Codex 1-of-6 silent start:** one of six simultaneously launched Codex 0.162 instances produced no output at all. It did not reproduce with 3 simultaneous Codex alone (`scripts/e2e/codex-race.js`), and the root cause is unknown. It is mitigated, not fixed: same-agent launches are staggered (claude 350 ms, codex 600 ms), and a 12 s no-output hint offers Restart.
 5. **Job Object pre-assignment race:** portable-pty doesn't use `CREATE_SUSPENDED`, so a child that spawns a grandchild in the first microseconds, before `AssignProcessToJobObject`, could escape the job. This hasn't been observed with shells or agent CLIs.
 6. **#101027 (`claude.exe` outliving ConPTY):** the Job Object should cover it (KILL_ON_JOB_CLOSE plus explicit `TerminateJobObject`). "No orphans after restart" was observed **[M]**, but this specific issue wasn't reproduced and then checked.
 7. **Claude profile leaks** that upstream won't fix (#30230 both CLAUDE.md files, #34800/#4739 IDE lock files, #15071 plugin paths) may still apply under `CLAUDE_CONFIG_DIR`. Not tested.
-8. **Diagnostics attribution of the ConPTY host:** with system ConPTY, `conhost.exe` is started by `CreatePseudoConsole` in the context of `altera.exe`. It is outside the session's Job and not a descendant of the session root. The in-app snapshot counts host = `altera.exe` only, webview = `msedgewebview2.exe` descendants, sessions = root trees, so conhost appears in none of the three. `scripts/bench/sample.ps1` reports it as a separate "console" category. This is a reading of the code and has not been measured.
+8. **Diagnostics attribution of the ConPTY host:** with system ConPTY, `conhost.exe` is started by `CreatePseudoConsole` in the context of `gridkeeper.exe`. It is outside the session's Job and not a descendant of the session root. The in-app snapshot counts host = `gridkeeper.exe` only, webview = `msedgewebview2.exe` descendants, sessions = root trees, so conhost appears in none of the three. `scripts/bench/sample.ps1` reports it as a separate "console" category. This is a reading of the code and has not been measured.
 9. **Electron vs Tauri RAM** was not measured on this machine. Only third-party numbers exist.
-10. **Shift+Enter in Claude on Windows** depends on Claude's kitty-protocol allowlist (#92771). `TERM_PROGRAM=Altera` is not on it.
+10. **Shift+Enter in Claude on Windows** depends on Claude's kitty-protocol allowlist (#92771). `TERM_PROGRAM=Gridkeeper` is not on it.
 
 ---
 

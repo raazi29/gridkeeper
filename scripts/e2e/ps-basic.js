@@ -1,13 +1,13 @@
 // E2E: create a PowerShell session in the running dev app, type into it, verify output. Run via cdp.mjs file.
 (async () => {
-  const { newSession } = window.__altera.sessions;
-  const { useApp, selectActiveGroup } = window.__altera.store;
-  const ipc = window.__altera.ipc;
+  const { newSession } = window.__gridkeeper.sessions;
+  const { useApp, selectActiveGroup } = window.__gridkeeper.store;
+  const ipc = window.__gridkeeper.ipc;
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   const st = useApp.getState();
   const group = selectActiveGroup(st);
   const id = newSession({ groupId: group.id, agent: "powershell", cwd: "D:\\AlteraAI", name: "e2e-ps" });
-  const text = () => window.__alteraTerminals?.text(id) ?? "";
+  const text = () => window.__gridkeeperTerminals?.text(id) ?? "";
   const waitFor = async (pred, ms = 15000) => {
     const t0 = Date.now();
     while (Date.now() - t0 < ms) {
