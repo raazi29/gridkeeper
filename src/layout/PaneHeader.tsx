@@ -18,7 +18,7 @@ import type { SessionId } from "../lib/types";
 import { selectSessionMeta, useApp } from "../store/appStore";
 import { focusTerminal } from "../terminal/registry";
 import { confirmAction } from "./confirm";
-import { AgentGlyph, IconBranch, IconMaximize, IconMore, IconPlay, IconRestart, IconRestore, IconStop } from "./icons";
+import { AgentGlyph, IconBranch, IconClose, IconMaximize, IconMore, IconPlay, IconRestart, IconRestore, IconStop } from "./icons";
 import { beginPaneDrag, endPaneDrag } from "./paneDrag";
 
 export interface PaneHeaderProps {
@@ -287,6 +287,15 @@ export const PaneHeader = memo(function PaneHeader({ sessionId, groupId, index, 
       onDoubleClick={(e) => {
         if (!(e.target as HTMLElement).closest("button, input")) toggleMaximize();
       }}
+      onContextMenu={(e) => {
+        if ((e.target as HTMLElement).closest("input")) return;
+        e.preventDefault();
+        setMenuAnchor(e.currentTarget.querySelector<HTMLElement>(".pane-actions [aria-haspopup]") ?? e.currentTarget);
+      }}
+      onAuxClick={(e) => {
+        // Middle-click closes, like a browser tab.
+        if (e.button === 1 && !(e.target as HTMLElement).closest("input")) void onClose();
+      }}
     >
       <div className="pane-title-area">
         <span className={`pane-dot pane-dot--${status.cls}`} title={status.label} aria-label={status.label} />
@@ -378,6 +387,15 @@ export const PaneHeader = memo(function PaneHeader({ sessionId, groupId, index, 
           onClick={(e) => setMenuAnchor(menuAnchor ? null : e.currentTarget)}
         >
           <IconMore />
+        </button>
+        <button
+          type="button"
+          className="pane-icon-btn pane-icon-btn--close"
+          title={live ? "Close session (stops the process)" : "Close session"}
+          aria-label="Close session"
+          onClick={() => void onClose()}
+        >
+          <IconClose />
         </button>
       </div>
       {menuAnchor && <PaneMenu anchor={menuAnchor} items={menuItems} onClose={closeMenu} />}

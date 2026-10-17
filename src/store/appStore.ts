@@ -90,7 +90,23 @@ export const useApp = create<AppStore>()((set, get) => ({
 
   hydrate: (state) =>
     set({ loaded: true, persisted: { ...state, settings: { ...DEFAULT_SETTINGS, ...state.settings } } }),
-  setRuntime: (info) => set((s) => ({ runtime: { ...s.runtime, [info.id]: info } })),
+  setRuntime: (info) =>
+    set((s) => {
+      const prev = s.runtime[info.id];
+      // Events and command responses can arrive out of order. For the same process run (same startedAt),
+      // never regress: keep the larger byte count and never go from a terminal state back to running.
+      if (prev && info.startedAt && prev.startedAt === info.startedAt) {
+        const terminal = (x: SessionInfo) => x.state.state === "exited" || x.state.state === "failed";
+        const merged: SessionInfo = {
+          ...info,
+          bytesOut: Math.max(prev.bytesOut, info.bytesOut),
+          state: terminal(prev) && !terminal(info) ? prev.state : info.state,
+          endedAt: info.endedAt ?? prev.endedAt,
+        };
+        return { runtime: { ...s.runtime, [info.id]: merged } };
+      }
+      return { runtime: { ...s.runtime, [info.id]: info } };
+    }),
   dropRuntime: (id) =>
     set((s) => {
       const { [id]: _, ...rest } = s.runtime;

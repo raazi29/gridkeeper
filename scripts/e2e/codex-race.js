@@ -1,8 +1,8 @@
 // E2E: start 3 Codex sessions in the same tick; report output bytes after 12 s (tiny = hung at startup).
 (async () => {
-  const { newSession, closeSession } = await import("/src/actions/sessions.ts");
-  const { useApp } = await import("/src/store/appStore.ts");
-  const ipc = (await import("/src/lib/ipc.ts")).ipc;
+  const { newSession, closeSession } = window.__altera.sessions;
+  const { useApp } = window.__altera.store;
+  const ipc = window.__altera.ipc;
   const app = useApp.getState();
   // Clean up earlier runs.
   for (const w of useApp.getState().persisted.workspaces.filter((w) => w.name === "Codex race")) {

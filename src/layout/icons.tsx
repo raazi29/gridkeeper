@@ -77,6 +77,7 @@ export const IconRestart = ({ size = 12 }: P) =>
       <path d="M13 2.8v2.7h-2.7" />
     </>,
   );
+export const IconClose = ({ size = 12 }: P) => svg(size, <path d="M4 4l8 8M12 4l-8 8" />);
 export const IconStop = ({ size = 12 }: P) => svg(size, <rect x="4" y="4" width="8" height="8" rx="1" />);
 export const IconPlay = ({ size = 12 }: P) => svg(size, <path d="M5 3.5v9l7-4.5z" />);
 export const IconMore = ({ size = 12 }: P) =>

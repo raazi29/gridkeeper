@@ -1,9 +1,9 @@
 // E2E: 6 concurrent agent sessions (3 Claude profiles, 2 Codex, 1 PowerShell). Verifies each TUI renders.
 // Sends no prompts to the models (no quota use): only waits for each UI to draw.
 (async () => {
-  const { newSession } = await import("/src/actions/sessions.ts");
-  const { useApp, selectActiveWorkspace } = await import("/src/store/appStore.ts");
-  const { getRendererStatus } = await import("/src/terminal/registry.ts");
+  const { newSession } = window.__altera.sessions;
+  const { useApp, selectActiveWorkspace } = window.__altera.store;
+  const { getRendererStatus } = window.__altera.registry;
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   const app = useApp.getState();
   const wsId = app.createWorkspace("E2E Agents", "D:\\AlteraAI");

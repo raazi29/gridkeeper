@@ -286,7 +286,7 @@
   display: flex;
   align-items: center;
   gap: 1px;
-  opacity: 0;
+  opacity: 0.55;
   transition: opacity var(--dur) var(--ease);
 }
 .pane:hover .pane-actions,
@@ -561,4 +561,9 @@
   display: flex;
   justify-content: flex-end;
   gap: 8px;
+}
+
+.pane-icon-btn--close:hover {
+  color: #ff8a80;
+  background: rgba(248, 81, 73, 0.14);
 }

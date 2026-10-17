@@ -1,8 +1,8 @@
 // E2E: create a PowerShell session in the running dev app, type into it, verify output. Run via cdp.mjs file.
 (async () => {
-  const { newSession } = await import("/src/actions/sessions.ts");
-  const { useApp, selectActiveGroup } = await import("/src/store/appStore.ts");
-  const ipc = (await import("/src/lib/ipc.ts")).ipc;
+  const { newSession } = window.__altera.sessions;
+  const { useApp, selectActiveGroup } = window.__altera.store;
+  const ipc = window.__altera.ipc;
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   const st = useApp.getState();
   const group = selectActiveGroup(st);
