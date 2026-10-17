@@ -12,6 +12,75 @@ import { Segmented, Toggle } from "./ui/Field";
 import { copyText } from "./util/pick";
 import { AGENT_LABEL, stateLabel } from "./util/session";
 import { formatBytes, formatCpu, formatMb, formatTime, taskManagerCpu } from "./util/text";
+import { PortsList } from "../browser/PortsList";
+import { goHome, openExternal, popOut, reload } from "../actions/browser";
+import { useBrowserNav } from "../browser/nav";
+
+function BrowserDetails({ id }: { id: string }) {
+  const meta = useApp((s) => s.persisted.sessions.find((m) => m.id === id));
+  const probe = useBrowserNav((s) => s.panes[id]?.probe ?? null);
+  const popout = useBrowserNav((s) => !!s.panes[id]?.popout);
+  if (!meta) return null;
+  const url = meta.url ?? null;
+  const update = useApp.getState().updateSessionMeta;
+  return (
+    <div className="inspector-body">
+      <div className="inspector-title">
+        <span className="dot is-ok" />
+        <button type="button" className="inspector-name" title="Focus this pane" onClick={() => focusSession(id)}>
+          {meta.name}
+        </button>
+        <span className="chip">Browser</span>
+      </div>
+      <div className="inspector-actions">
+        <Button size="sm" onClick={() => reload(id)} disabled={!url}>
+          Reload
+        </Button>
+        <Button size="sm" onClick={() => void popOut(id)} disabled={!url} title="Open in a separate Gridkeeper window (any site, file: pages)">
+          Pop out
+        </Button>
+        <Button size="sm" variant="ghost" onClick={() => openExternal(url)} disabled={!url?.startsWith("http")}>
+          Open in browser
+        </Button>
+        <Button size="sm" variant="ghost" onClick={() => goHome(id)} disabled={!url}>
+          Start page
+        </Button>
+        <Button size="sm" variant="ghost" className="is-danger-text" onClick={() => void confirmCloseSession(id)}>
+          Close
+        </Button>
+      </div>
+      <div className="inspector-section">
+        <div className="kv">
+          <span className="kv-k">Address</span>
+          <span className="kv-v mono kv-path" title={url ?? ""}>
+            {url ?? "Start page"}
+          </span>
+          {url && (
+            <IconButton size="sm" label="Copy address" onClick={() => void copyText(url, "Address copied")}>
+              <IconCopy size={12} />
+            </IconButton>
+          )}
+        </div>
+        {probe && (
+          <Row k="Server" mono>
+            {probe.reachable ? `HTTP ${probe.status ?? "?"}` : (probe.error ?? "No response")}
+          </Row>
+        )}
+        {probe?.frameable === false && <Row k="Embedding">Refused ({probe.reason})</Row>}
+        <Row k="Pop-out">{popout ? "Open" : "—"}</Row>
+        <Toggle checked={!!meta.titleAsName} onChange={(v) => update(id, { titleAsName: v })} label="Name follows page title" />
+        <p className="explain">
+          Browser panes have no process. Pages run in a sandboxed frame without access to Gridkeeper; back / forward cover the addresses opened here, not
+          link clicks inside the page. Sites that refuse embedding open in a pop-out window.
+        </p>
+      </div>
+      <div className="inspector-section">
+        <div className="section-label">Dev-server ports</div>
+        <PortsList compact />
+      </div>
+    </div>
+  );
+}
 
 export function Inspector() {
   const id = useApp((s) => s.focusedSessionId);
@@ -52,6 +121,7 @@ function SessionDetails({ id }: { id: string }) {
   const cores = useUi((s) => s.diag?.logicalCores ?? 1);
 
   if (!meta) return <div className="inspector-empty">Session not found.</div>;
+  if (meta.kind === "browser") return <BrowserDetails id={id} />;
   const live = isLive(info);
   const st = stateLabel(info?.state);
   const exitCode = info?.state.state === "exited" ? info.state.code : meta.lastExitCode;
@@ -157,6 +227,11 @@ function SessionDetails({ id }: { id: string }) {
             </code>
           </div>
         )}
+      </div>
+
+      <div className="inspector-section">
+        <div className="section-label">Ports</div>
+        {live ? <PortsList sessionId={id} compact emptyText="Not listening on any TCP port." /> : <p className="explain">Not running.</p>}
       </div>
 
       <div className="inspector-section">

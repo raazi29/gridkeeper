@@ -13,7 +13,9 @@ export type DialogState =
   | { kind: "settings"; section?: string }
   | { kind: "profiles" }
   | { kind: "diagnostics" }
-  | { kind: "welcome" };
+  | { kind: "welcome" }
+  /** "Open URL…" for a new browser pane. */
+  | { kind: "openUrl"; groupId?: string };
 
 export type PaletteMode = "all" | "workspaces" | "sessions";
 
@@ -70,6 +72,9 @@ export interface UiStore {
   presentation: boolean;
   /** CRT scanline overlay for themes that offer it (per-machine preference). */
   scanlines: boolean;
+  /** Read-only git Changes drawer (right side, this run only). */
+  changesOpen: boolean;
+  setChangesOpen: (on: boolean) => void;
 
   openDialog: (d: DialogState) => void;
   closeDialog: () => void;
@@ -125,6 +130,8 @@ export const useUi = create<UiStore>()((set) => ({
   focusMode: false,
   presentation: false,
   scanlines: readScanlines(),
+  changesOpen: false,
+  setChangesOpen: (changesOpen) => set({ changesOpen }),
 
   openDialog: (dialog) => set({ dialog, palette: { open: false, mode: "all" } }),
   closeDialog: () => set({ dialog: null }),

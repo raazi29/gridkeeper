@@ -131,6 +131,17 @@ describe("buildSessionMenu — states and surfaces", () => {
     expect(find(roles, "No role")?.checked).toBe(false);
   });
 
+  it("browser panes get no process / input actions", () => {
+    const items = buildSessionMenu("w", { surface: "fleet" }, state({ isBrowser: true, live: false }));
+    expect(labels(items)).toEqual(["Jump to pane", "Rename…", "Close"]);
+  });
+
+  it("listening ports become an 'Open in browser pane' submenu", () => {
+    const items = buildSessionMenu("s1", { surface: "terminal" }, state({ ports: [5173, 8080] }));
+    expect(labels(find(items, "Open in browser pane")!.children!)).toEqual(["localhost:5173", "localhost:8080"]);
+    expect(labels(buildSessionMenu("s1", { surface: "terminal" }, state()))).not.toContain("Open in browser pane");
+  });
+
   it("a missing session yields a single disabled item", () => {
     expect(buildSessionMenu("nope", { surface: "terminal" }, state({ exists: false }))).toEqual([{ label: "Session not found", disabled: true }]);
   });

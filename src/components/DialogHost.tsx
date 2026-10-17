@@ -4,6 +4,7 @@ import { useUi } from "../store/uiStore";
 import { DiagnosticsPanel } from "./DiagnosticsPanel";
 import { NewSessionDialog } from "./NewSessionDialog";
 import { NewWorkspaceDialog } from "./NewWorkspaceDialog";
+import { OpenUrlDialog } from "../browser/OpenUrlDialog";
 import { ProfilesDialog } from "./ProfilesDialog";
 import { SettingsDialog } from "./SettingsDialog";
 import { WelcomeSheet } from "./Welcome";
@@ -25,5 +26,7 @@ export function DialogHost() {
       return <DiagnosticsPanel onClose={close} />;
     case "welcome":
       return <WelcomeSheet onClose={close} />;
+    case "openUrl":
+      return <OpenUrlDialog groupId={dialog.groupId} onClose={close} />;
   }
 }

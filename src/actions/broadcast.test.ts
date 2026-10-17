@@ -62,6 +62,21 @@ const runtime: Record<string, SessionInfo> = {
   e: info("e", { state: "starting" }),
 };
 
+describe("broadcast excludes browser panes", () => {
+  it("never targets a browser pane, even with a runtime entry", () => {
+    const browser: SessionMeta = { ...meta("web", "generic"), kind: "browser", url: "http://localhost:5173/" };
+    const withBrowser: PersistedState = {
+      ...persisted,
+      sessions: [...persisted.sessions, browser],
+      workspaces: persisted.workspaces.map((w) =>
+        w.id === "w1" ? { ...w, groups: w.groups.map((g) => (g.id === "g1" ? { ...g, sessionIds: [...g.sessionIds, "web"] } : g)) } : w,
+      ),
+    };
+    const cands = broadcastCandidates({ persisted: withBrowser, runtime: { ...runtime, web: info("web", running) } });
+    expect(cands.map((c) => c.id)).toEqual(["a", "b", "d", "e"]);
+  });
+});
+
 describe("broadcast targets", () => {
   const cands = broadcastCandidates({ persisted, runtime });
 

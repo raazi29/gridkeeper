@@ -99,3 +99,31 @@ export const IconBranch = ({ size = 10 }: P) =>
       <path d="M4.5 5v6M11.5 7c0 2.5-2 3-7 4" />
     </>,
   );
+export const IconGlobe = ({ size = 12 }: P) =>
+  svg(
+    size,
+    <>
+      <circle cx="8" cy="8" r="5.5" />
+      <path d="M2.5 8h11M8 2.5c1.6 1.6 2.4 3.4 2.4 5.5S9.6 11.9 8 13.5M8 2.5C6.4 4.1 5.6 5.9 5.6 8s.8 3.9 2.4 5.5" />
+    </>,
+  );
+export const IconBack = ({ size = 12 }: P) => svg(size, <path d="M9.5 3.5 5 8l4.5 4.5" />);
+export const IconForward = ({ size = 12 }: P) => svg(size, <path d="M6.5 3.5 11 8l-4.5 4.5" />);
+export const IconPopout = ({ size = 12 }: P) =>
+  svg(
+    size,
+    <>
+      <path d="M9 2.5h4.5V7M13.5 2.5 8 8" />
+      <path d="M11.5 9.5v3a1 1 0 0 1-1 1h-7a1 1 0 0 1-1-1v-7a1 1 0 0 1 1-1h3" />
+    </>,
+  );
+export const IconExternal = ({ size = 12 }: P) =>
+  svg(
+    size,
+    <>
+      <circle cx="8" cy="8" r="5.5" />
+      <path d="M6 10l4-4M7 6h3v3" />
+    </>,
+  );
+export const IconCode = ({ size = 12 }: P) => svg(size, <path d="M5.5 4.5 2 8l3.5 3.5M10.5 4.5 14 8l-3.5 3.5" />);
+export const IconHome = ({ size = 12 }: P) => svg(size, <path d="M2.5 7.5 8 3l5.5 4.5M4 6.5v6h8v-6" />);

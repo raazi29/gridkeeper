@@ -197,6 +197,25 @@ fn tree(children: &HashMap<u32, Vec<u32>>, alive: &HashSet<u32>, probe: &mut Pro
     out
 }
 
+/// Process tree (root + descendants) of each session, from one Toolhelp snapshot.
+/// Same PID-reuse guard as the diagnostics snapshot. Used by `ports` to attribute listeners.
+pub fn session_trees(roots: &[(SessionId, u32)]) -> Vec<(SessionId, Vec<u32>)> {
+    if roots.is_empty() {
+        return Vec::new();
+    }
+    let entries = win::processes();
+    let mut children: HashMap<u32, Vec<u32>> = HashMap::new();
+    let mut alive: HashSet<u32> = HashSet::with_capacity(entries.len());
+    for e in &entries {
+        alive.insert(e.pid);
+        if e.ppid != 0 && e.ppid != e.pid {
+            children.entry(e.ppid).or_default().push(e.pid);
+        }
+    }
+    let mut probe = Probe::default();
+    roots.iter().map(|(id, root)| (id.clone(), tree(&children, &alive, &mut probe, *root))).collect()
+}
+
 /// Turns raw readings into stats, tracking CPU deltas across snapshots.
 struct Accumulator<'a> {
     now: Instant,

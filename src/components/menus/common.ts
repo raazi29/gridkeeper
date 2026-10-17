@@ -1,5 +1,6 @@
 // Building blocks shared by the context-menu builders (session / group / workspace / background).
 
+import { openBrowserPane, promptOpenUrl } from "../../actions/browser";
 import { bindingsByCommand, displayCombo } from "../../keybindings/combo";
 import { launchOptions } from "../../lib/accounts";
 import type { LayoutPreset } from "../../lib/types";
@@ -30,6 +31,9 @@ export function newSessionSubmenu(groupId: string | undefined, label = "New sess
       onSelect: () => quickLaunch(o, groupId),
     });
   children.push(
+    "separator",
+    { label: "Browser", onSelect: () => void openBrowserPane({ groupId }) },
+    { label: "Open URL…", hint: shortcutHint("browser.open"), onSelect: () => promptOpenUrl(groupId) },
     "separator",
     { label: "More options…", hint: shortcutHint("session.new"), onSelect: () => useUi.getState().openDialog({ kind: "newSession", groupId }) },
     { label: "Launch formation here…", onSelect: () => useMission.getState().openFormation({ groupId }) },

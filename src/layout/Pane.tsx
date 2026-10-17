@@ -1,5 +1,6 @@
-// One pane: header + terminal body + state overlays. Re-renders only when this session's metadata,
-// coarse runtime state, focus or hidden flag change — never on terminal output.
+// One pane: header + terminal body + state overlays (or a browser pane, see BrowserPane.tsx).
+// Re-renders only when this session's metadata, coarse runtime state, focus or hidden flag change —
+// never on terminal output.
 
 import { memo, useCallback, useEffect, useState, type DragEvent, type MouseEvent, type ReactNode } from "react";
 import { closeSession, restartSession, showView, startSession } from "../actions/sessions";
@@ -10,6 +11,7 @@ import { disposeTerminal, focusTerminal } from "../terminal/registry";
 import { PaneFindBar } from "../components/FindBar";
 import { PaneHeader, useRuntimeView } from "./PaneHeader";
 import { currentPaneDrag, endPaneDrag } from "./paneDrag";
+import { BrowserPane } from "./BrowserPane";
 
 export interface PaneProps {
   sessionId: SessionId;
@@ -21,13 +23,49 @@ export interface PaneProps {
   maximized: boolean;
 }
 
-export const Pane = memo(function Pane({ sessionId, groupId, index, count, visible, maximized }: PaneProps) {
+/** A pane of either kind: terminal session or browser page. */
+export const Pane = memo(function Pane(props: PaneProps) {
+  const browser = useApp((s) => selectSessionMeta(props.sessionId)(s)?.kind === "browser");
+  return browser ? <BrowserPane {...props} /> : <TerminalPane {...props} />;
+});
+
+/** Drag & drop target for reordering panes within a group (shared by both pane kinds). */
+export function usePaneDrop(sessionId: SessionId, groupId: string) {
+  const [dropTarget, setDropTarget] = useState(false);
+  const acceptsDrag = (e: DragEvent) => {
+    const d = currentPaneDrag();
+    return !!d && d.groupId === groupId && d.sessionId !== sessionId && e.dataTransfer.types.includes("application/x-gridkeeper-pane");
+  };
+  const onDragOver = (e: DragEvent<HTMLDivElement>) => {
+    if (!acceptsDrag(e)) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "move";
+    if (!dropTarget) setDropTarget(true);
+  };
+  const onDragLeave = (e: DragEvent<HTMLDivElement>) => {
+    if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setDropTarget(false);
+  };
+  const onDrop = (e: DragEvent<HTMLDivElement>) => {
+    setDropTarget(false);
+    const d = currentPaneDrag();
+    endPaneDrag();
+    if (!d || d.groupId !== groupId || d.sessionId === sessionId) return;
+    e.preventDefault();
+    const ids = findIds(groupId);
+    const from = ids.indexOf(d.sessionId);
+    const to = ids.indexOf(sessionId);
+    if (from >= 0 && to >= 0) useApp.getState().moveSession(groupId, from, to);
+  };
+  return { dropTarget, onDragOver, onDragLeave, onDrop };
+}
+
+const TerminalPane = memo(function TerminalPane({ sessionId, groupId, index, count, visible, maximized }: PaneProps) {
   const focused = useApp((s) => s.focusedSessionId === sessionId);
   const hidden = useApp((s) => !!s.hiddenViews[sessionId]);
   const agent = useApp((s) => selectSessionMeta(sessionId)(s)?.agent);
   const resumeOnRestore = useApp((s) => selectSessionMeta(sessionId)(s)?.resumeOnRestore);
   const rt = useRuntimeView(sessionId);
-  const [dropTarget, setDropTarget] = useState(false);
+  const { dropTarget, onDragOver, onDragLeave, onDrop } = usePaneDrop(sessionId, groupId);
 
   // Hidden view: free the terminal entirely (Rust keeps the process + bounded buffer; Show replays it).
   useEffect(() => {
@@ -56,32 +94,6 @@ export const Pane = memo(function Pane({ sessionId, groupId, index, count, visib
   );
 
   const isAgent = agent === "claude" || agent === "codex";
-
-  // ---- drag & drop target
-  const acceptsDrag = (e: DragEvent) => {
-    const d = currentPaneDrag();
-    return !!d && d.groupId === groupId && d.sessionId !== sessionId && e.dataTransfer.types.includes("application/x-gridkeeper-pane");
-  };
-  const onDragOver = (e: DragEvent<HTMLDivElement>) => {
-    if (!acceptsDrag(e)) return;
-    e.preventDefault();
-    e.dataTransfer.dropEffect = "move";
-    if (!dropTarget) setDropTarget(true);
-  };
-  const onDragLeave = (e: DragEvent<HTMLDivElement>) => {
-    if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setDropTarget(false);
-  };
-  const onDrop = (e: DragEvent<HTMLDivElement>) => {
-    setDropTarget(false);
-    const d = currentPaneDrag();
-    endPaneDrag();
-    if (!d || d.groupId !== groupId || d.sessionId === sessionId) return;
-    e.preventDefault();
-    const ids = findIds(groupId);
-    const from = ids.indexOf(d.sessionId);
-    const to = ids.indexOf(sessionId);
-    if (from >= 0 && to >= 0) useApp.getState().moveSession(groupId, from, to);
-  };
 
   let overlay: ReactNode = null;
   if (hidden) {

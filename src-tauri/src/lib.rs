@@ -6,18 +6,22 @@
 //! - `profiles`    account records (`profiles.json`; historically Claude-only)
 //! - `accounts`    per-agent accounts: home discovery, status commands, launch env
 //! - `persistence` versioned, atomically written workspace state
-//! - `git`         repo info and worktrees
+//! - `git`         repo info, worktrees, read-only status / diff (Changes panel)
 //! - `diagnostics` host/webview/session resource attribution
+//! - `ports`       LISTENING TCP ports per session process tree
+//! - `browser`     browser panes: URL validation, embeddability probe, pop-out windows
 //! - `logging` / `redact` structured logs with secret redaction
 
 pub mod accounts;
 pub mod adapters;
+pub mod browser;
 pub mod commands;
 pub mod diagnostics;
 pub mod git;
 pub mod gpu;
 pub mod logging;
 pub mod persistence;
+pub mod ports;
 pub mod profiles;
 pub mod pty;
 pub mod redact;
@@ -83,6 +87,13 @@ pub fn run() {
             commands::services::diagnostics_export,
             commands::services::log_frontend,
             commands::app::app_info,
+            commands::tools::git_changes,
+            commands::tools::git_diff,
+            commands::tools::ports_list,
+            commands::tools::browser_probe,
+            commands::tools::browser_open_window,
+            commands::tools::browser_close_window,
+            commands::tools::browser_devtools,
         ])
         .build(tauri::generate_context!())
         .unwrap_or_else(|e| fatal_startup_error(&e.to_string()))

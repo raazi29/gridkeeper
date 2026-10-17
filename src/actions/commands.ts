@@ -23,6 +23,9 @@ import { confirmDialog, useUi } from "../store/uiStore";
 import { focusTerminal } from "../terminal/registry";
 import { THEMES, getTheme } from "../theme/themes";
 import { terminalCommands } from "./terminalCommands";
+import { isBrowserMeta } from "../lib/browserPanes";
+import { refreshPorts, usePorts } from "../store/ports";
+import { openBrowserPane, openExternal, popOut, promptOpenUrl, reload as reloadBrowser } from "./browser";
 
 export interface Command {
   id: string;
@@ -137,6 +140,33 @@ function requireTarget(): SessionId | null {
   const id = targetSession();
   if (!id) notify("info", "No session focused in this group");
   return id;
+}
+
+const isBrowserPane = (id: SessionId) => isBrowserMeta(useApp.getState().persisted.sessions.find((m) => m.id === id));
+
+/** Focused pane, when it is a terminal session (process commands do not apply to browser panes). */
+function requireTerminal(): SessionId | null {
+  const id = requireTarget();
+  if (id && isBrowserPane(id)) {
+    notify("info", "Not available for browser panes");
+    return null;
+  }
+  return id;
+}
+
+function requireBrowser(): SessionId | null {
+  const id = targetSession();
+  if (!id || !isBrowserPane(id)) {
+    notify("info", "Focus a browser pane first");
+    return null;
+  }
+  return id;
+}
+
+async function refreshPortsCommand() {
+  await refreshPorts();
+  const n = Object.values(usePorts.getState().bySession).reduce((a, p) => a + p.length, 0);
+  notify("info", n ? `${n} listening port${n === 1 ? "" : "s"} in your sessions` : "No session is listening on a TCP port");
 }
 
 function cycleSession(dir: 1 | -1) {
@@ -271,6 +301,7 @@ export const COMMANDS: Command[] = [
     category: "Session",
     run: () => {
       const id = requireTarget();
+      if (id && isBrowserPane(id)) return reloadBrowser(id); // a browser pane "restarts" by reloading
       if (id) return restartSession(id, { mode: "continue" });
     },
   },
@@ -279,7 +310,7 @@ export const COMMANDS: Command[] = [
     title: "Restart session (fresh conversation)",
     category: "Session",
     run: () => {
-      const id = requireTarget();
+      const id = requireTerminal();
       if (id) return restartSession(id, { mode: "none" });
     },
   },
@@ -288,7 +319,7 @@ export const COMMANDS: Command[] = [
     title: "Stop session",
     category: "Session",
     run: () => {
-      const id = requireTarget();
+      const id = requireTerminal();
       if (id) return stopSession(id, false);
     },
   },
@@ -297,7 +328,7 @@ export const COMMANDS: Command[] = [
     title: "Force stop session…",
     category: "Session",
     run: () => {
-      const id = requireTarget();
+      const id = requireTerminal();
       if (id) return confirmForceStop(id);
     },
   },
@@ -307,7 +338,7 @@ export const COMMANDS: Command[] = [
     title: "Copy session output",
     category: "Session",
     run: () => {
-      const id = requireTarget();
+      const id = requireTerminal();
       if (id) return copyOutput(id);
     },
   },
@@ -316,11 +347,50 @@ export const COMMANDS: Command[] = [
     title: "Clear terminal",
     category: "Session",
     run: () => {
-      const id = requireTarget();
+      const id = requireTerminal();
       if (id) return clearSession(id);
     },
   },
-  ...terminalCommands(requireTarget),
+  ...terminalCommands(requireTerminal),
+  { id: "browser.new", title: "Browser: new pane (start page with detected ports)", category: "Session", run: () => void openBrowserPane({}) },
+  { id: "browser.open", title: "Browser: open URL in a pane…", category: "Session", run: () => promptOpenUrl(selectActiveGroup(useApp.getState())?.id) },
+  {
+    id: "browser.reload",
+    title: "Browser: reload focused pane",
+    category: "Session",
+    run: () => {
+      const id = requireBrowser();
+      if (id) reloadBrowser(id);
+    },
+  },
+  {
+    id: "browser.popOut",
+    title: "Browser: open focused pane in a pop-out window",
+    category: "Session",
+    run: () => {
+      const id = requireBrowser();
+      if (id) return popOut(id);
+    },
+  },
+  {
+    id: "browser.external",
+    title: "Browser: open focused pane in the system browser",
+    category: "Session",
+    run: () => {
+      const id = requireBrowser();
+      if (id) openExternal(useApp.getState().persisted.sessions.find((m) => m.id === id)?.url);
+    },
+  },
+  { id: "ports.refresh", title: "Ports: refresh listening dev-server ports", category: "View", run: refreshPortsCommand },
+  {
+    id: "view.changes",
+    title: "Changes: git status and diffs (read-only)",
+    category: "View",
+    run: () => {
+      const ui = useUi.getState();
+      ui.setChangesOpen(!ui.changesOpen);
+    },
+  },
   { id: "workspace.new", title: "New workspace…", category: "Workspace", run: () => useUi.getState().openDialog({ kind: "newWorkspace" }) },
   { id: "workspace.next", title: "Next workspace", category: "Workspace", run: () => cycleWorkspace(1) },
   { id: "workspace.prev", title: "Previous workspace", category: "Workspace", run: () => cycleWorkspace(-1) },

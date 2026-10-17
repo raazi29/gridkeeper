@@ -25,16 +25,22 @@ import { StatusBar } from "./StatusBar";
 import { Toasts } from "./Toasts";
 import { Button } from "./ui/Button";
 import { WorkspaceHeader } from "./WorkspaceHeader";
+import { BrowserLayer } from "../browser/BrowserLayer";
+import { ChangesDrawer } from "./ChangesDrawer";
+import { installPortsWatch } from "../store/ports";
+import "../browser/browser.css";
 
 export function Shell() {
   const activeWsId = useApp((s) => selectActiveWorkspace(s)?.id);
   const inspectorOpen = useApp((s) => s.persisted.settings.inspectorOpen);
   const collapsed = useApp((s) => s.persisted.settings.sidebarCollapsed);
+  const changesOpen = useUi((s) => s.changesOpen);
 
   useEffect(() => {
     const offKeys = installKeybindings();
     const offFocus = installFocusTracking();
     const offResume = installResumeWatch();
+    const offPorts = installPortsWatch();
     const onNewSession = (e: Event) => {
       const detail = (e as CustomEvent<{ groupId?: string } | undefined>).detail;
       const groupId = detail?.groupId ?? selectActiveGroup(useApp.getState())?.id;
@@ -45,6 +51,7 @@ export function Shell() {
       offKeys();
       offFocus();
       offResume();
+      offPorts();
       window.removeEventListener("gridkeeper:new-session", onNewSession);
     };
   }, []);
@@ -63,6 +70,7 @@ export function Shell() {
           <GroupTabs />
           <div className="work-row">
             <GridArea />
+            {changesOpen && <ChangesDrawer />}
             {inspectorOpen && <Inspector />}
           </div>
         </main>
@@ -103,6 +111,7 @@ function GridArea() {
           </div>
         );
       })}
+      <BrowserLayer />
     </div>
   );
 }

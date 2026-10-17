@@ -8,7 +8,10 @@
 // "Message…" only opens the Broadcast composer with the session preselected.
 
 import { confirmCloseSession, confirmForceStop, focusSession, jumpToSession } from "../../actions/commands";
+import { openPort } from "../../actions/browser";
 import { messageSessions } from "../../actions/groupActions";
+import { isBrowserMeta } from "../../lib/browserPanes";
+import { usePorts } from "../../store/ports";
 import { toggleSessionMute } from "../../actions/notifyPrefs";
 import { clearSession, copyOutput, hideView, restartSession, showView, startSession, stopSession } from "../../actions/sessions";
 import { BUILTIN_ROLES, isBuiltinRole, roleInfo } from "../../lib/roles";
@@ -35,6 +38,10 @@ export interface SessionMenuCtx {
 
 export interface SessionMenuState {
   exists: boolean;
+  /** Browser panes have no process: only navigation / rename / close apply. */
+  isBrowser?: boolean;
+  /** Local ports the session's process listens on (dev servers). */
+  ports?: number[];
   name: string;
   agent: AgentKind | null;
   live: boolean;
@@ -57,6 +64,8 @@ export function sessionMenuState(id: SessionId): SessionMenuState {
   const rt = s.runtime[id];
   return {
     exists: !!meta,
+    isBrowser: isBrowserMeta(meta),
+    ports: (usePorts.getState().bySession[id] ?? []).map((p) => p.port),
     name: meta?.name ?? "session",
     agent: meta?.agent ?? null,
     live: isLive(rt),
@@ -143,6 +152,13 @@ export function buildSessionMenu(id: SessionId, ctx: SessionMenuCtx, st: Session
     useApp.getState().updateSettings({ inspectorOpen: true });
   };
 
+  if (st.isBrowser) {
+    // Browser panes (their own header menu has the navigation items): no process actions, no input.
+    if (!inPane) items.push({ label: "Jump to pane", hint: keyHint("Enter"), onSelect: goto });
+    items.push({ label: "Rename…", onSelect: rename }, "separator", { label: "Close", danger: true, onSelect: () => void confirmCloseSession(id) });
+    return items;
+  }
+
   // ---- terminal clipboard / view tools
   if (surface === "terminal") {
     items.push(
@@ -167,6 +183,18 @@ export function buildSessionMenu(id: SessionId, ctx: SessionMenuCtx, st: Session
   }
 
   items.push({ label: "Message…", hint: keyHint("M"), disabled: !st.live, onSelect: () => messageSessions([id], `“${st.name}”`) });
+  if (st.ports?.length) {
+    items.push({
+      label: "Open in browser pane",
+      children: st.ports.map((port) => ({
+        label: `localhost:${port}`,
+        onSelect: () => {
+          ctx.onNavigate?.();
+          openPort(id, port);
+        },
+      })),
+    });
+  }
 
   // ---- layout (only where the pane is on screen)
   if (inPane && st.groupId) {

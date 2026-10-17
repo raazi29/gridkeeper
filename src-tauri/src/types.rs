@@ -338,6 +338,46 @@ pub struct WorktreeInfo {
     pub is_main: bool,
 }
 
+/// One changed path from `git status --porcelain=v2`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ChangedFile {
+    /// Repository-relative path (forward slashes, as git prints it).
+    pub path: String,
+    /// Rename / copy source.
+    pub orig_path: Option<String>,
+    /// Index (staged) status letter: `.` = unchanged, M, A, D, R, C, T, U.
+    pub index: String,
+    /// Work-tree status letter (same alphabet).
+    pub worktree: String,
+    /// "changed" | "renamed" | "unmerged" | "untracked".
+    pub kind: String,
+}
+
+/// Read-only snapshot of a repository's working state.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RepoChanges {
+    pub is_repo: bool,
+    pub root: Option<String>,
+    pub branch: Option<String>,
+    pub upstream: Option<String>,
+    pub ahead: u32,
+    pub behind: u32,
+    pub files: Vec<ChangedFile>,
+    /// More than `git::MAX_STATUS_FILES` entries: the list was cut.
+    pub truncated: bool,
+}
+
+/// Unified diff text for one file, capped at `git::MAX_DIFF_BYTES`.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FileDiff {
+    pub text: String,
+    pub truncated: bool,
+    pub binary: bool,
+}
+
 // ---------------------------------------------------------------------------
 // Diagnostics
 // ---------------------------------------------------------------------------
@@ -611,6 +651,17 @@ pub struct WorktreeRef {
     pub branch: Option<String>,
 }
 
+/// What a pane shows. Missing in older state files = `Terminal`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum PaneKind {
+    /// A ConPTY session (the only kind before browser panes existed).
+    #[default]
+    Terminal,
+    /// An embedded web page. No process: never started, never counted as a running session.
+    Browser,
+}
+
 /// Persisted session metadata (NOT a running process). No secrets.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -619,6 +670,16 @@ pub struct SessionMeta {
     pub name: String,
     pub agent: AgentKind,
     pub cwd: String,
+    /// Terminal (default) or browser pane.
+    #[serde(default)]
+    pub kind: PaneKind,
+    /// Browser panes: the page to (re)open. http / https / file only, <= 2048 chars
+    /// (validated by `persistence::sanitize`). Always `None` for terminals.
+    #[serde(default)]
+    pub url: Option<String>,
+    /// Browser panes: the pane name follows the page title.
+    #[serde(default)]
+    pub title_as_name: bool,
     #[serde(default)]
     pub profile_id: Option<String>,
     #[serde(default)]
