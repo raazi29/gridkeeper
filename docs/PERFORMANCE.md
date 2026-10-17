@@ -17,7 +17,7 @@ All numbers below were **measured on the target machine** with a **release build
 | Agent CLIs | Claude Code 2.1.302, codex-cli 0.162.0, PowerShell 7.6.7 |
 | WebGL renderer reported by the app | `ANGLE (NVIDIA, NVIDIA GeForce RTX 3050 Laptop GPU (0x000025A2) Direct3D11 vs_5_0 ps_5_0, D3D11)` — Windows assigned the discrete GPU |
 
-Disk: 22.7 GB free on C:, 207 GB on D:. Build artefacts: installer `*_x64-setup.exe` **5.2 MB**, app binary **13.8 MB**.
+Disk: 22.7 GB free on C:, 207 GB on D:. Build artefacts: installer `*_x64-setup.exe` **≈6 MB**, app binary **13.8 MB**.
 
 ## Final build results (2026-10-17, commit c04b899, all features)
 

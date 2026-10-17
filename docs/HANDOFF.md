@@ -5,7 +5,7 @@ Working notes for the next session's agents (and humans). Read this first, then
 Ideas for what to build next are in [ROADMAP.md](ROADMAP.md).
 
 **State as of 2026-10-17:** v0.1.0 released (`gh release view v0.1.0 -R raazi29/gridkeeper`, private repo,
-installer `Gridkeeper_0.1.0_x64-setup.exe`, ≈6 MB). 164 Rust and 400 frontend tests, 22/22 live e2e checks at
+installer `Gridkeeper_0.1.1_x64-setup.exe`, ≈6 MB). 164 Rust and 400 frontend tests, 22/22 live e2e checks at
 release. License MIT. Main checkout: `D:\AlteraAI`. Agents work in `D:\AlteraAI\.claude\worktrees\agent-*`.
 
 ## 1. Project map
