@@ -18,6 +18,7 @@ import type { SessionId } from "../lib/types";
 import { selectSessionMeta, useApp } from "../store/appStore";
 import { focusTerminal } from "../terminal/registry";
 import { confirmAction } from "./confirm";
+import { QuickLaunchButton } from "../components/QuickLaunch";
 import { AgentGlyph, IconBranch, IconClose, IconMaximize, IconMore, IconPlay, IconRestart, IconRestore, IconStop } from "./icons";
 import { beginPaneDrag, endPaneDrag } from "./paneDrag";
 import { AttentionLamp } from "../components/AttentionBits";
@@ -358,6 +359,7 @@ export const PaneHeader = memo(function PaneHeader({ sessionId, groupId, index, 
         </span>
       </div>
       <div className="pane-actions">
+        <QuickLaunchButton variant="icon" groupId={groupId} />
         <button
           type="button"
           className="pane-icon-btn"

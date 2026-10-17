@@ -37,11 +37,20 @@ function useLaunchOptions(): LaunchOption[] {
   return out;
 }
 
-/** Launch now, or fall back to the dialog when the workspace has no project folder yet. */
-export function quickLaunch(o: LaunchOption) {
+/** Workspace + group a launch goes to: the given group (any workspace), else the active one. */
+function target(groupId?: string) {
   const s = useApp.getState();
-  const ws = selectActiveWorkspace(s);
-  const group = selectActiveGroup(s);
+  if (groupId)
+    for (const w of s.persisted.workspaces) {
+      const g = w.groups.find((x) => x.id === groupId);
+      if (g) return { ws: w, group: g };
+    }
+  return { ws: selectActiveWorkspace(s), group: selectActiveGroup(s) };
+}
+
+/** Launch now, or fall back to the dialog when the workspace has no project folder yet. */
+export function quickLaunch(o: LaunchOption, groupId?: string) {
+  const { ws, group } = target(groupId);
   if (!ws || !group) return;
   if (!ws.projectDir) {
     useUi.getState().openDialog({ kind: "newSession", groupId: group.id });
@@ -50,12 +59,19 @@ export function quickLaunch(o: LaunchOption) {
   newSession({ groupId: group.id, agent: o.agent, cwd: ws.projectDir, profileId: o.profileId ?? null, preset: o.preset ?? null });
 }
 
-function openFullDialog() {
-  const group = selectActiveGroup(useApp.getState());
-  useUi.getState().openDialog({ kind: "newSession", groupId: group?.id });
+function openFullDialog(groupId?: string) {
+  useUi.getState().openDialog({ kind: "newSession", groupId: target(groupId).group?.id });
 }
 
-export function QuickLaunchButton() {
+export interface QuickLaunchButtonProps {
+  /** Target group; default = the active group. */
+  groupId?: string;
+  /** "primary" (header), "ghost" (tab row) or "icon" (pane header). */
+  variant?: "primary" | "ghost" | "icon";
+  label?: string;
+}
+
+export function QuickLaunchButton({ groupId, variant = "primary", label = "New session" }: QuickLaunchButtonProps) {
   const options = useLaunchOptions();
   const menu = useContextMenu();
   const scNew = useShortcut("session.new");
@@ -65,23 +81,33 @@ export function QuickLaunchButton() {
         label: o.hint ? `${o.label} · ${o.hint}` : o.label,
         disabled: o.disabled,
         icon: o.color ? <span className="dot" style={{ background: o.color }} /> : undefined,
-        onSelect: () => quickLaunch(o),
+        onSelect: () => quickLaunch(o, groupId),
       }),
     ),
     "separator",
-    { label: "More options…", hint: scNew ?? undefined, onSelect: openFullDialog },
+    { label: "More options…", hint: scNew ?? undefined, onSelect: () => openFullDialog(groupId) },
   ];
+  const open = (e: { currentTarget: HTMLElement; stopPropagation: () => void }) => {
+    e.stopPropagation();
+    menu.openAt(e.currentTarget, items);
+  };
   return (
     <>
-      <button
-        type="button"
-        className="btn btn-sm btn-primary quick-launch"
-        title={withShortcut("New session", scNew)}
-        onClick={(e) => menu.openAt(e.currentTarget, items)}
-      >
-        <IconPlus size={13} />
-        New
-      </button>
+      {variant === "icon" ? (
+        <button type="button" className="pane-icon-btn" title="Add a session to this group" aria-label="Add session" onClick={open}>
+          <IconPlus size={12} />
+        </button>
+      ) : (
+        <button
+          type="button"
+          className={variant === "primary" ? "btn btn-sm btn-primary quick-launch" : "btn btn-sm btn-ghost quick-launch quick-launch--ghost"}
+          title={withShortcut("New session", scNew)}
+          onClick={open}
+        >
+          <IconPlus size={13} />
+          {label}
+        </button>
+      )}
       {menu.element}
     </>
   );
@@ -106,7 +132,7 @@ export function QuickLaunchPanel() {
           </button>
         ))}
       </div>
-      <button type="button" className="link-btn quick-panel-more" onClick={openFullDialog}>
+      <button type="button" className="link-btn quick-panel-more" onClick={() => openFullDialog()}>
         {hasFolder ? "More options (worktree, arguments, several at once)…" : "Choose a folder and options…"}
       </button>
     </div>

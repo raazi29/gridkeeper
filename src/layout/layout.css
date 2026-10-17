@@ -386,7 +386,8 @@
   display: flex;
   align-items: center;
   gap: 1px;
-  opacity: 0.5;
+  /* Always readable: closing/adding a session must never require hunting for a faint icon. */
+  opacity: 0.85;
   transition: opacity var(--dur) var(--ease);
 }
 .pane:hover .pane-actions,
@@ -717,4 +718,19 @@
   display: flex;
   justify-content: flex-end;
   gap: 8px;
+}
+
+/* Close sits apart from the other actions, slightly larger, red on hover. */
+.pane-icon-btn--close {
+  margin-left: 4px;
+  width: 22px;
+  height: 22px;
+  color: var(--text-1);
+  border-left: 1px solid var(--border);
+  border-radius: 0 var(--radius-s) var(--radius-s) 0;
+}
+.pane-icon-btn--close:hover,
+.pane-icon-btn--close:focus-visible {
+  color: var(--err-fg);
+  background: var(--err-soft);
 }

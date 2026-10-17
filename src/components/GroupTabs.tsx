@@ -7,6 +7,7 @@ import { isLive, selectActiveGroup, selectActiveWorkspace, useApp, type AppStore
 import { GroupUnreadBadge } from "./AttentionBits";
 import { useShortcut, withShortcut } from "./hooks";
 import { IconMaximize, IconPlus } from "./icons";
+import { QuickLaunchButton } from "./QuickLaunch";
 import { useContextMenu } from "./ui/Menu";
 
 function findGroup(s: AppStore, groupId: string) {
@@ -36,6 +37,7 @@ export function GroupTabs() {
       <button type="button" className="tab-add" aria-label="New group" title={withShortcut("New group", scGroup)} onClick={() => runCommand("group.new")}>
         <IconPlus size={13} />
       </button>
+      <QuickLaunchButton variant="ghost" label="Session" />
       <div className="group-tabs-spacer" />
       {maximizedName && (
         <button
