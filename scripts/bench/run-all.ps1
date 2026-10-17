@@ -27,6 +27,7 @@ $scenarios = @(
   @{ label = "sustained-6-dom"; bench = "sessions=6;mode=sustained;rate=2000;seconds=120;renderer=dom" },
   @{ label = "flood-6-webgl"; bench = "sessions=6;mode=lines;count=200000;renderer=webgl" }
 )
+$Only = @($Only | ForEach-Object { $_ -split "," } | Where-Object { $_ })
 if ($Only.Count) { $scenarios = $scenarios | Where-Object { $Only -contains $_.label } }
 
 New-Item -ItemType Directory -Force -Path $OutDir | Out-Null
@@ -35,8 +36,10 @@ foreach ($s in $scenarios) {
   Write-Host "=== $($s.label) ===" -ForegroundColor Cyan
   Get-Process -Name $procName -ErrorAction SilentlyContinue | Where-Object { $_.Path -eq $Exe } | Stop-Process -Force
   $env:ALTERA_BENCH = $s.bench
+  # Separate WebView2 profile: a normal instance may already hold the default one with other browser flags.
+  $env:WEBVIEW2_USER_DATA_FOLDER = Join-Path $env:TEMP "gridkeeper-bench-webview"
   $p = Start-Process -FilePath $Exe -PassThru
-  Remove-Item Env:ALTERA_BENCH
+  Remove-Item Env:ALTERA_BENCH, Env:WEBVIEW2_USER_DATA_FOLDER
   Start-Sleep -Seconds $Warmup
   & pwsh -NoProfile -File (Join-Path $here "sample.ps1") -Seconds $Seconds -Label $s.label -OutDir $OutDir -ProcessName $procName -RootPid $p.Id
   $sum = Import-Csv (Join-Path $OutDir "$($s.label).summary.csv")

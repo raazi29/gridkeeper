@@ -48,6 +48,9 @@ export function NewSessionDialog({ groupId, preset, onClose }: { groupId?: strin
   const [name, setName] = useState("");
   const [argsText, setArgsText] = useState("");
   const [command, setCommand] = useState("");
+  /** Catalog tool id when agent = generic ("" = custom command). */
+  const [tool, setTool] = useState("");
+  const tools = useMemo(() => agents.filter((a) => a.preset && !a.error), [agents]);
   const [count, setCount] = useState(1);
   const [target, setTarget] = useState(groupId ?? ws?.activeGroupId ?? ws?.groups[0]?.id ?? "");
   const [checking, setChecking] = useState(false);
@@ -133,14 +136,14 @@ export function NewSessionDialog({ groupId, preset, onClose }: { groupId?: strin
   const branchOk = wtMode !== "new" || isValidBranchName(branch);
   const cwdError =
     pathState.status === "missing" ? "Folder does not exist" : submitted && !cwd.trim() ? "Choose a working directory" : null;
-  const commandError = agent === "generic" && submitted && !command.trim() ? "Enter the executable to run" : null;
+  const commandError = agent === "generic" && !tool && submitted && !command.trim() ? "Enter the executable to run" : null;
   const canSubmit =
     !busy &&
     avail.ok &&
     !!cwd.trim() &&
     pathState.status !== "missing" &&
     pathState.status !== "checking" &&
-    (agent !== "generic" || !!command.trim()) &&
+    (agent !== "generic" || !!tool || !!command.trim()) &&
     !!target &&
     (wtMode !== "existing" || !!wtExisting) &&
     (wtMode !== "new" || (branchOk && !!wtPath.trim()));
@@ -210,7 +213,8 @@ export function NewSessionDialog({ groupId, preset, onClose }: { groupId?: strin
           cwd: baseCwd,
           name: name.trim() ? (n > 1 ? `${name.trim()} ${i + 1}` : name.trim()) : undefined,
           profileId: agent === "claude" ? profileId : null,
-          command: agent === "generic" ? command.trim() : null,
+          command: agent === "generic" && !tool ? command.trim() : null,
+          preset: agent === "generic" && tool ? tool : null,
           args,
           worktree,
         });
@@ -326,7 +330,21 @@ export function NewSessionDialog({ groupId, preset, onClose }: { groupId?: strin
           </Field>
         )}
 
-        {agent === "generic" && (
+        {agent === "generic" && tools.length > 0 && (
+          <Field label="Tool" htmlFor="ns-tool" hint="Agent CLIs detected on this PC, or any command">
+            <Select id="ns-tool" value={tool} onChange={(e) => setTool(e.target.value)}>
+              {tools.map((t) => (
+                <option key={t.preset!} value={t.preset!}>
+                  {t.label}
+                  {t.version ? ` — ${t.version}` : ""}
+                </option>
+              ))}
+              <option value="">Custom command…</option>
+            </Select>
+          </Field>
+        )}
+
+        {agent === "generic" && !tool && (
           <Field label="Command" htmlFor="ns-cmd" error={commandError} hint="Executable path or a command on PATH">
             <div className="input-group">
               <Input id="ns-cmd" mono value={command} onChange={(e) => setCommand(e.target.value)} placeholder={"C:\\tools\\bin\\tool.exe"} invalid={!!commandError} />

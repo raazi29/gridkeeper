@@ -14,7 +14,8 @@ const AGENT_LABEL: Record<AgentKind, string> = {
   generic: "Command",
 };
 
-export function defaultResume(agent: AgentKind): ResumeMode {
+export function defaultResume(agent: AgentKind, presetResumes = false): ResumeMode {
+  if (agent === "generic" && presetResumes) return { mode: "continue" };
   if (agent === "claude") return { mode: "continue" }; // resolved to the pinned id when one exists
   if (agent === "codex") return { mode: "continue" };
   return { mode: "none" };
@@ -29,15 +30,18 @@ export interface NewSessionOptions {
   command?: string | null;
   args?: string[];
   worktree?: WorktreeRef | null;
+  /** Catalog tool id (agent = "generic"), e.g. "hermes". */
+  preset?: string | null;
   start?: boolean;
 }
 
 export function newSession(o: NewSessionOptions): SessionId {
   const s = useApp.getState();
-  const count = s.persisted.sessions.filter((m) => m.agent === o.agent).length + 1;
+  const tool = o.preset ? s.agents.find((a) => a.preset === o.preset) : undefined;
+  const count = s.persisted.sessions.filter((m) => m.agent === o.agent && (m.preset ?? null) === (o.preset ?? null)).length + 1;
   const meta: SessionMeta = {
     id: uid(),
-    name: o.name?.trim() || `${AGENT_LABEL[o.agent]} ${count}`,
+    name: o.name?.trim() || `${tool?.label ?? AGENT_LABEL[o.agent]} ${count}`,
     agent: o.agent,
     cwd: o.worktree?.path ?? o.cwd,
     profileId: o.agent === "claude" ? (o.profileId ?? null) : null,
@@ -45,7 +49,8 @@ export function newSession(o: NewSessionOptions): SessionId {
     args: o.args ?? [],
     env: [],
     autoStart: true,
-    resumeOnRestore: defaultResume(o.agent),
+    resumeOnRestore: defaultResume(o.agent, !!tool?.supportsResume),
+    preset: o.agent === "generic" ? (o.preset ?? null) : null,
     agentSessionId: null,
     worktree: o.worktree ?? null,
     createdAt: new Date().toISOString(),
@@ -111,6 +116,7 @@ export async function startSession(id: SessionId, resume: ResumeMode = { mode: "
     env: meta.env,
     resume: effectiveResume,
     agentSessionId,
+    preset: meta.preset ?? null,
     cols: size.cols,
     rows: size.rows,
   };

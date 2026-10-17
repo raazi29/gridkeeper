@@ -20,7 +20,8 @@
         "minHeight": 420,
         "center": true,
         "backgroundColor": "#0b0b0e",
-        "dragDropEnabled": false
+        "dragDropEnabled": false,
+        "additionalBrowserArgs": "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection,msEdgeTranslate,AutofillServerCommunication --disable-background-networking --disable-component-update --disable-domain-reliability --disable-sync --no-pings --disable-breakpad --enable-gpu-rasterization --enable-zero-copy"
       }
     ],
     "security": {

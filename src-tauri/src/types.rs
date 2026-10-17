@@ -115,6 +115,9 @@ pub struct SessionSpec {
     /// Agent conversation id to pin for a NEW conversation (claude --session-id <uuid>).
     #[serde(default)]
     pub agent_session_id: Option<String>,
+    /// Catalog tool id for generic sessions (see adapters::catalog), e.g. "hermes".
+    #[serde(default)]
+    pub preset: Option<String>,
     pub cols: u16,
     pub rows: u16,
 }
@@ -215,6 +218,14 @@ pub struct AgentAvailability {
     pub path: Option<String>,
     pub version: Option<String>,
     pub error: Option<String>,
+    /// Catalog tool id (kind = Generic), e.g. "hermes". `None` for built-in kinds.
+    #[serde(default)]
+    pub preset: Option<String>,
+    /// Display name for catalog tools.
+    #[serde(default)]
+    pub label: Option<String>,
+    #[serde(default)]
+    pub supports_resume: bool,
 }
 
 // ---------------------------------------------------------------------------
@@ -426,6 +437,9 @@ pub struct SessionMeta {
     /// Pinned agent conversation id (Claude --session-id), used to resume precisely.
     #[serde(default)]
     pub agent_session_id: Option<String>,
+    /// Catalog tool id for generic sessions, e.g. "hermes".
+    #[serde(default)]
+    pub preset: Option<String>,
     #[serde(default)]
     pub worktree: Option<WorktreeRef>,
     #[serde(default)]

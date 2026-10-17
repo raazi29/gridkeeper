@@ -463,6 +463,7 @@ mod tests {
             auto_start: false,
             resume_on_restore: ResumeMode::None,
             agent_session_id: None,
+            preset: None,
             worktree: None,
             created_at: None,
             last_exit_code: None,

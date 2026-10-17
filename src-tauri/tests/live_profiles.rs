@@ -82,6 +82,7 @@ fn live_seed_detect_and_launch_plans() {
             env: vec![],
             resume: ResumeMode::Continue,
             agent_session_id: None,
+            preset: None,
             cols: 80,
             rows: 24,
         };

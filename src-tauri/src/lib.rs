@@ -75,7 +75,7 @@ pub fn run() {
             commands::app::app_info,
         ])
         .build(tauri::generate_context!())
-        .expect("error while building tauri application")
+        .unwrap_or_else(|e| fatal_startup_error(&e.to_string()))
         .run(|app, event| {
             if let tauri::RunEvent::Exit = event {
                 if let Some(ctx) = app.try_state::<state::AppCtx>() {
@@ -83,4 +83,26 @@ pub fn run() {
                 }
             }
         });
+}
+
+/// Startup failed before any window exists (e.g. WebView2 missing or its profile folder locked by
+/// another process). Tell the user instead of exiting silently.
+fn fatal_startup_error(message: &str) -> ! {
+    tracing::error!(error = %redact::redact(message), "startup failed");
+    #[cfg(windows)]
+    {
+        use windows_sys::Win32::UI::WindowsAndMessaging::{MessageBoxW, MB_ICONERROR, MB_OK};
+        let wide = |s: &str| s.encode_utf16().chain(std::iter::once(0)).collect::<Vec<u16>>();
+        let text = wide(&format!(
+            "The app could not start.
+
+{message}
+
+If another copy is already running, close it and try again.              If the problem persists, (re)install the Microsoft Edge WebView2 Runtime."
+        ));
+        let title = wide("Startup error");
+        // SAFETY: both buffers are NUL-terminated UTF-16 and outlive the call.
+        unsafe { MessageBoxW(std::ptr::null_mut(), text.as_ptr(), title.as_ptr(), MB_OK | MB_ICONERROR) };
+    }
+    std::process::exit(1);
 }

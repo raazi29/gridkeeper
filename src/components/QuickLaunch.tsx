@@ -17,6 +17,7 @@ interface LaunchOption {
   color?: string;
   agent: AgentKind;
   profileId?: string;
+  preset?: string;
   disabled?: boolean;
 }
 
@@ -30,6 +31,9 @@ function useLaunchOptions(): LaunchOption[] {
   for (const p of profiles)
     out.push({ key: `claude:${p.id}`, label: `Claude Code`, hint: p.name, color: p.color, agent: "claude", profileId: p.id, disabled: missing("claude") });
   out.push({ key: "codex", label: "Codex", agent: "codex", disabled: missing("codex") });
+  // Other agent CLIs found on this PC (broken installs are reported by detection and skipped here).
+  for (const a of agents)
+    if (a.preset && !a.error) out.push({ key: `tool:${a.preset}`, label: a.label ?? a.preset, agent: "generic", preset: a.preset });
   return out;
 }
 
@@ -43,7 +47,7 @@ export function quickLaunch(o: LaunchOption) {
     useUi.getState().openDialog({ kind: "newSession", groupId: group.id });
     return;
   }
-  newSession({ groupId: group.id, agent: o.agent, cwd: ws.projectDir, profileId: o.profileId ?? null });
+  newSession({ groupId: group.id, agent: o.agent, cwd: ws.projectDir, profileId: o.profileId ?? null, preset: o.preset ?? null });
 }
 
 function openFullDialog() {

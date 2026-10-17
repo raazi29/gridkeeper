@@ -27,6 +27,8 @@ export interface SessionSpec {
   resume?: ResumeMode;
   /** Pin a NEW conversation id (claude --session-id). */
   agentSessionId?: string | null;
+  /** Catalog tool id for generic sessions, e.g. "hermes". */
+  preset?: string | null;
   cols: number;
   rows: number;
 }
@@ -84,6 +86,10 @@ export interface AgentAvailability {
   path: string | null;
   version: string | null;
   error: string | null;
+  /** Catalog tool id (kind = "generic"), e.g. "hermes"; null for built-in kinds. */
+  preset: string | null;
+  label: string | null;
+  supportsResume: boolean;
 }
 
 export interface WorktreeInfo {
@@ -191,6 +197,8 @@ export interface SessionMeta {
   autoStart: boolean;
   resumeOnRestore: ResumeMode;
   agentSessionId: string | null;
+  /** Catalog tool id for generic sessions. */
+  preset?: string | null;
   worktree: WorktreeRef | null;
   createdAt: string | null;
   lastExitCode: number | null;

@@ -26,6 +26,7 @@ fn spec(id: &str) -> SessionSpec {
         env: vec![],
         resume: ResumeMode::None,
         agent_session_id: None,
+        preset: None,
         cols: 120,
         rows: 30,
     }
