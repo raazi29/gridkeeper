@@ -9,6 +9,8 @@ import { onTerminalMenu } from "../terminal/menuBridge";
 import { buildSessionMenu } from "./menus/sessionMenu";
 import { Menu, type MenuItem, type MenuState } from "./ui/Menu";
 import { useApp } from "../store/appStore";
+import { useMission } from "../store/mission";
+import { useUi } from "../store/uiStore";
 
 const useAppMenu = create<{ menu: (MenuState & { seq: number }) | null }>()(() => ({ menu: null }));
 let seq = 0;
@@ -31,6 +33,22 @@ export function ContextMenuHost() {
       }),
     [],
   );
+  // A full-window overlay (Mission Control, Fleet, palette, dialogs) opening must never leave a stale menu on top.
+  useEffect(() => {
+    const unsubs = [
+      useMission.subscribe((s, p) => s.open !== p.open && closeAppMenu()),
+      useUi.subscribe((s, p) => (s.palette.open !== p.palette.open || s.dialog !== p.dialog) && closeAppMenu()),
+    ];
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && useAppMenu.getState().menu && closeAppMenu();
+    const onBlur = () => closeAppMenu();
+    window.addEventListener("keydown", onKey, true);
+    window.addEventListener("blur", onBlur);
+    return () => {
+      unsubs.forEach((u) => u());
+      window.removeEventListener("keydown", onKey, true);
+      window.removeEventListener("blur", onBlur);
+    };
+  }, []);
   if (!menu) return null;
   return <Menu key={menu.seq} x={menu.x} y={menu.y} items={menu.items} onClose={closeAppMenu} />;
 }

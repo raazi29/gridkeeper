@@ -94,12 +94,13 @@
 
   // ---- right-click terminal menu (if present)
   await check("contextMenu.terminal", async () => {
-    const el = document.querySelector(`[data-session-id="${a}"] .xterm-screen`) || document.querySelector(".gk-term .xterm-screen");
+    const term = [...document.querySelectorAll(".gk-term")].find((e) => e.offsetParent);
+    const el = term?.querySelector(".xterm-screen");
     if (!el) return "no terminal element";
     const r = el.getBoundingClientRect();
     el.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: r.x + 40, clientY: r.y + 40, button: 2 }));
-    const ok = await waitFor(() => visible('[role="menu"]'), 2000);
-    const items = [...document.querySelectorAll('[role="menuitem"]')].map((x) => x.innerText.trim()).filter(Boolean).slice(0, 30);
+    const ok = await waitFor(() => visible(".menu-item"), 2000);
+    const items = [...document.querySelectorAll(".menu-item")].filter((x) => x.offsetParent).map((x) => x.innerText.trim().split(/\r?\n/)[0]).filter(Boolean).slice(0, 30);
     esc();
     document.body.dispatchEvent(new MouseEvent("mousedown", { bubbles: true }));
     return ok ? items.join(" | ") : false;
