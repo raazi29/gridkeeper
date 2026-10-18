@@ -111,6 +111,8 @@ pub fn run() {
             commands::tools::git_changes,
             commands::tools::git_diff,
             commands::tools::git_branch_summary,
+            commands::tools::git_branch_files,
+            commands::tools::git_branch_file_diff,
             commands::mission::mission_read,
             commands::mission::mission_write,
             commands::mission::mission_watch,

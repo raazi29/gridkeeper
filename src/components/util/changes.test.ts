@@ -1,6 +1,22 @@
 import { describe, expect, it } from "vitest";
-import type { ChangedFile, SessionMeta, Workspace } from "../../lib/types";
-import { classifyDiffLine, defaultDiffSide, isInside, repoDirsFor, sameRoot, statusLetter, visibleRange } from "./changes";
+import type { BranchFile, BranchFiles, ChangedFile, SessionMeta, Workspace } from "../../lib/types";
+import {
+  branchDiffCommand,
+  branchFileLetter,
+  branchTotals,
+  classifyDiffLine,
+  committedHeading,
+  defaultDiffSide,
+  focusPick,
+  hasCommittedWork,
+  isInside,
+  letterClass,
+  repoDirsFor,
+  rootKey,
+  sameRoot,
+  statusLetter,
+  visibleRange,
+} from "./changes";
 
 const file = (p: Partial<ChangedFile>): ChangedFile => ({ path: "a.txt", origPath: null, index: ".", worktree: "M", kind: "changed", ...p });
 
@@ -31,6 +47,56 @@ describe("file status", () => {
     expect(statusLetter(file({ index: "A", worktree: "." }))).toBe("A");
     expect(statusLetter(file({ kind: "untracked" }))).toBe("?");
     expect(statusLetter(file({ kind: "unmerged", index: "U", worktree: "U" }))).toBe("U");
+  });
+});
+
+describe("committed work", () => {
+  const bfile = (p: Partial<BranchFile>): BranchFile => ({ path: "a.txt", origPath: null, status: "M", insertions: 1, deletions: 0, binary: false, ...p });
+  const list = (p: Partial<BranchFiles>): BranchFiles => ({ isRepo: true, branch: "feat", base: "main", ahead: 3, files: [bfile({})], truncated: false, ...p });
+
+  it("needs a base, a branch that is not the base and commits ahead", () => {
+    expect(hasCommittedWork(list({}))).toBe(true);
+    expect(hasCommittedWork(list({ branch: null }))).toBe(true); // detached HEAD ahead of base
+    expect(hasCommittedWork(list({ branch: "main" }))).toBe(false);
+    expect(hasCommittedWork(list({ base: null }))).toBe(false);
+    expect(hasCommittedWork(list({ ahead: 0 }))).toBe(false);
+    expect(hasCommittedWork(list({ isRepo: false }))).toBe(false);
+    expect(hasCommittedWork(null)).toBe(false);
+    expect(hasCommittedWork(undefined)).toBe(false);
+  });
+
+  it("headings, totals, letters and the terminal command", () => {
+    const l = list({ files: [bfile({ insertions: 120, deletions: 8 }), bfile({ path: "b.png", status: "A", binary: true, insertions: 0 }), bfile({ path: "c", deletions: 2 })] });
+    expect(committedHeading(l as BranchFiles & { base: string })).toBe("committed on feat vs main (3 files)");
+    expect(committedHeading(list({ branch: null }) as BranchFiles & { base: string })).toBe("committed on HEAD vs main (1 file)");
+    expect(committedHeading(list({ truncated: true }) as BranchFiles & { base: string })).toBe("committed on feat vs main (1+ files)");
+    expect(branchTotals(l.files)).toEqual({ insertions: 121, deletions: 10 });
+    expect(branchTotals([])).toEqual({ insertions: 0, deletions: 0 });
+    expect(branchFileLetter(bfile({ status: "R" }))).toBe("R");
+    expect(branchFileLetter(bfile({ status: "d" }))).toBe("D");
+    expect(branchFileLetter(bfile({ status: "" }))).toBe("M");
+    expect(branchFileLetter(bfile({ status: "?" }))).toBe("M");
+    expect(letterClass("?")).toBe("new");
+    expect(letterClass("R")).toBe("r");
+    expect(branchDiffCommand("D:\\wt\\b1", "main", "feat")).toBe('git -C "D:\\wt\\b1" diff main...feat');
+    expect(branchDiffCommand("D:\\wt\\b1", "main", null)).toBe('git -C "D:\\wt\\b1" diff main...HEAD');
+  });
+
+  it("focus picks the first uncommitted file, else the first committed one once loaded", () => {
+    const u = file({ path: "dirty.txt" });
+    const l = list({ files: [bfile({ path: "x.rs" }), bfile({ path: "y.rs" })] });
+    expect(focusPick([u], undefined)).toEqual({ kind: "status", file: u });
+    expect(focusPick([u], l)).toEqual({ kind: "status", file: u });
+    expect(focusPick([], undefined)).toBeUndefined();
+    expect(focusPick([], l)).toEqual({ kind: "branch", file: l.files[0], base: "main", branch: "feat" });
+    expect(focusPick([], null)).toBeNull();
+    expect(focusPick([], list({ files: [] }))).toBeNull();
+    expect(focusPick([], list({ branch: "main" }))).toBeNull();
+  });
+
+  it("root keys normalize Windows paths", () => {
+    expect(rootKey("D:/Repo/wt/")).toBe("d:\\repo\\wt");
+    expect(rootKey("d:\\repo\\wt")).toBe(rootKey("D:\\Repo\\WT\\\\"));
   });
 });
 

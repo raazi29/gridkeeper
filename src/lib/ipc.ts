@@ -9,6 +9,7 @@ import type {
   AgentAvailability,
   AgentKind,
   BranchSummary,
+  BranchFiles,
   MissionChanged,
   MissionFile,
   PlannedHome,
@@ -116,6 +117,12 @@ export const ipc = {
   appInfo: () => invoke<AppInfo>("app_info"),
   log: (level: "info" | "warn" | "error", message: string) =>
     invoke<void>("log_frontend", { level, message }).catch(() => {}),
+
+  // Committed work of a worktree's branch vs a base (read-only; base null = the main worktree's branch).
+  gitBranchFiles: (path: string, base: string | null) => invoke<BranchFiles>("git_branch_files", { path, base }),
+  /** One file's diff over `base...HEAD`; pass a rename's `origFile` so git pairs the rename. */
+  gitBranchFileDiff: (path: string, base: string, file: string, origFile: string | null = null) =>
+    invoke<FileDiff>("git_branch_file_diff", { path, base, file, origFile }),
 };
 
 export function onSessionState(cb: (info: SessionInfo) => void): Promise<UnlistenFn> {

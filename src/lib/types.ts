@@ -531,3 +531,31 @@ export interface BranchSummary {
   /** Last commit time in ms since the epoch. */
   lastCommitMs: number | null;
 }
+
+/** One file changed by the commits on HEAD since it left a base (`git diff -M base...HEAD`). */
+export interface BranchFile {
+  /** Repository-relative path on HEAD (forward slashes, as git prints it). */
+  path: string;
+  /** Rename / copy source. */
+  origPath: string | null;
+  /** Status letter from `--name-status`: A, M, D, R, C, T (similarity score dropped). */
+  status: string;
+  insertions: number;
+  deletions: number;
+  /** numstat printed `-\t-` (no line counts). */
+  binary: boolean;
+}
+
+/** The committed work of a worktree's branch against a base (read-only). */
+export interface BranchFiles {
+  isRepo: boolean;
+  branch: string | null;
+  /** The base actually used: the requested one, else the main worktree's branch; null when unresolvable. */
+  base: string | null;
+  /** Commits on HEAD not on base. */
+  ahead: number;
+  /** Empty when HEAD is the base, there is no base, or nothing differs. */
+  files: BranchFile[];
+  /** More than 2000 files: the list was cut. */
+  truncated: boolean;
+}

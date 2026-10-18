@@ -404,6 +404,38 @@ pub struct BranchSummary {
     pub last_commit_ms: Option<u64>,
 }
 
+/// One file changed by the commits on HEAD since it left a base (`git diff -M base...HEAD`).
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BranchFile {
+    /// Repository-relative path on HEAD (forward slashes, as git prints it).
+    pub path: String,
+    /// Rename / copy source.
+    pub orig_path: Option<String>,
+    /// Status letter from `--name-status`: A, M, D, R, C, T (similarity score dropped).
+    pub status: String,
+    pub insertions: u32,
+    pub deletions: u32,
+    /// numstat printed `-\t-` (no line counts).
+    pub binary: bool,
+}
+
+/// The committed work of a worktree's branch against a base (read-only; `git::branch_files`).
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BranchFiles {
+    pub is_repo: bool,
+    pub branch: Option<String>,
+    /// The base actually used: the requested one, else the main worktree's branch; `None` when unresolvable.
+    pub base: Option<String>,
+    /// Commits on HEAD not on base.
+    pub ahead: u32,
+    /// Empty when HEAD is the base, there is no base, or nothing differs.
+    pub files: Vec<BranchFile>,
+    /// More than `git::MAX_BRANCH_FILES` files: the list was cut.
+    pub truncated: bool,
+}
+
 // ---------------------------------------------------------------------------
 // Mission file (`mission`)
 // ---------------------------------------------------------------------------
