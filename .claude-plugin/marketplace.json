@@ -1,0 +1,12 @@
+{
+  "name": "gridkeeper",
+  "owner": { "name": "raazi29" },
+  "description": "Skills from Gridkeeper, the multi-agent workspace for Claude Code, Codex and friends.",
+  "plugins": [
+    {
+      "name": "agent-mission",
+      "source": "./",
+      "description": "Coordinate several coding agents through one shared Markdown task board (.gridkeeper/mission.md): a lead plans, builders claim tasks, reviewers sign off."
+    }
+  ]
+}

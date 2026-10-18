@@ -1,0 +1,10 @@
+{
+  "name": "agent-mission",
+  "description": "Coordinate several coding agents through one shared Markdown task board (.gridkeeper/mission.md).",
+  "author": { "name": "raazi29" },
+  "homepage": "https://github.com/raazi29/gridkeeper",
+  "repository": "https://github.com/raazi29/gridkeeper",
+  "license": "MIT",
+  "keywords": ["multi-agent", "orchestration", "task-board", "claude-code", "codex"],
+  "skills": ["./skills/agent-mission"]
+}
