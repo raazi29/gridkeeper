@@ -24,6 +24,15 @@ pub async fn git_diff(repo: String, file: String, staged: bool, untracked: bool)
         .map_err(join_err)?
 }
 
+/// The branch of the worktree at `path` against `base` (default: the main worktree's branch):
+/// ahead/behind, committed shortstat, uncommitted count, last commit. Read-only.
+#[tauri::command]
+pub async fn git_branch_summary(path: String, base: Option<String>) -> Result<BranchSummary, AppError> {
+    tauri::async_runtime::spawn_blocking(move || crate::git::branch_summary(&path, base.as_deref()))
+        .await
+        .map_err(join_err)?
+}
+
 /// LISTENING TCP ports per running session (process-tree attribution).
 #[tauri::command]
 pub async fn ports_list(ctx: State<'_, AppCtx>) -> Result<Vec<crate::ports::SessionPorts>, AppError> {

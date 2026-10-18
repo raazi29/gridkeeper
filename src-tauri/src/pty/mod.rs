@@ -47,6 +47,8 @@ pub use stream::{FLUSH_BYTES, FLUSH_DELAY, HIGH_WATER, LOW_WATER, MAX_FRAME, Out
 use crate::types::*;
 
 pub use session::{MAX_COLS, MAX_INPUT_QUEUE, MAX_ROWS, MIN_COLS, MIN_ROWS};
+/// `catch_unwind`-wrapped named thread, also used by other modules' helper threads (e.g. `mission`).
+pub(crate) use session::spawn_guarded;
 
 /// Best-effort text of a panic payload, for logs.
 pub(crate) fn panic_message(p: &Box<dyn std::any::Any + Send>) -> String {

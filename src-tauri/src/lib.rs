@@ -6,7 +6,9 @@
 //! - `profiles`    account records (`profiles.json`; historically Claude-only)
 //! - `accounts`    per-agent accounts: home discovery, status commands, launch env
 //! - `persistence` versioned, atomically written workspace state
-//! - `git`         repo info, worktrees, read-only status / diff (Changes panel)
+//! - `git`         repo info, worktrees, read-only status / diff (Changes panel), branch summary
+//! - `mission`     `<project>/.gridkeeper/mission.md`: capped read, atomic checked write, debounced watch
+//! - `sandbox`     GRIDKEEPER_SANDBOX isolated instances (own data folder + WebView2 profile)
 //! - `diagnostics` host/webview/session resource attribution
 //! - `ports`       LISTENING TCP ports per session process tree
 //! - `browser`     browser panes: URL validation, embeddability probe, pop-out windows
@@ -21,11 +23,13 @@ pub mod diagnostics;
 pub mod git;
 pub mod gpu;
 pub mod logging;
+pub mod mission;
 pub mod persistence;
 pub mod ports;
 pub mod profiles;
 pub mod pty;
 pub mod redact;
+pub mod sandbox;
 pub mod state;
 pub mod types;
 pub mod webview_guard;
@@ -34,9 +38,21 @@ use tauri::Manager;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    let mut context = tauri::generate_context!();
+    // Sandbox (GRIDKEEPER_SANDBOX): resolved first, while the process is still single-threaded, because it
+    // sets WEBVIEW2_USER_DATA_FOLDER before any window exists. An invalid name refuses to start.
+    let config_base = dirs::config_dir().map(|d| d.join(&context.config().identifier));
+    let sandbox = sandbox::init_from_env(config_base).unwrap_or_else(|e| fatal_startup_error(&e));
+    if let Some(s) = sandbox {
+        // Patching the config (not the live window) also covers webview_guard's rebuild-from-config.
+        for w in context.config_mut().app.windows.iter_mut().filter(|w| w.label == webview_guard::MAIN) {
+            w.title = sandbox::window_title(&w.title, &s.name);
+        }
+    }
     let mut builder = tauri::Builder::default();
-    // Benchmark runs (GRIDKEEPER_BENCH) may run beside a normal instance, so they skip the single-instance lock.
-    if std::env::var_os("GRIDKEEPER_BENCH").is_none() {
+    // Benchmark runs (GRIDKEEPER_BENCH) and sandboxes may run beside a normal instance, so they skip the
+    // single-instance lock.
+    if std::env::var_os("GRIDKEEPER_BENCH").is_none() && sandbox.is_none() {
         builder = builder.plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
             if let Some(w) = app.get_webview_window(webview_guard::MAIN) {
                 let _ = w.unminimize();
@@ -94,13 +110,18 @@ pub fn run() {
             commands::app::app_info,
             commands::tools::git_changes,
             commands::tools::git_diff,
+            commands::tools::git_branch_summary,
+            commands::mission::mission_read,
+            commands::mission::mission_write,
+            commands::mission::mission_watch,
+            commands::mission::mission_unwatch,
             commands::tools::ports_list,
             commands::tools::browser_probe,
             commands::tools::browser_open_window,
             commands::tools::browser_close_window,
             commands::tools::browser_devtools,
         ])
-        .build(tauri::generate_context!())
+        .build(context)
         .unwrap_or_else(|e| fatal_startup_error(&e.to_string()))
         .run(|app, event| match event {
             // Destroying a crashed main window leaves no windows for a moment; that is not a quit.

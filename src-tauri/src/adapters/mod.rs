@@ -234,6 +234,10 @@ pub fn resolve_launch(spec: &SessionSpec, profiles: &ProfileStore, settings: &Se
     for key in inherited_agent_session_vars(std::env::vars().map(|(k, _)| k)) {
         plan.remove_env(key);
     }
+    // A sandbox instance's own isolation variables are not its sessions' business.
+    for key in crate::sandbox::child_env_remove() {
+        plan.remove_env(key);
+    }
 
     let ctx = LaunchContext { spec, profiles, settings };
     match preset {

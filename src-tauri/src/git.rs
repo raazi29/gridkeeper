@@ -295,6 +295,127 @@ pub fn diff(repo: &str, file: &str, staged: bool, untracked: bool) -> AppResult<
     Ok(FileDiff { text, truncated: cut || out.truncated, binary })
 }
 
+// ---------------------------------------------------------------------------
+// Branch summary (read-only: rev-list / diff --shortstat / status / log)
+// ---------------------------------------------------------------------------
+
+/// A ref name safe to pass as a revision argument: git's `check-ref-format` rules (no `..`, `@{`,
+/// `~^:?*[\`, whitespace or control characters, no `.`-leading component, no `.lock` suffix) plus
+/// no leading `-`, so it can never be read as an option.
+pub fn is_valid_ref_name(name: &str) -> bool {
+    !name.is_empty()
+        && name.len() <= 200
+        && name != "@"
+        && !name.starts_with('-')
+        && !name.starts_with('/')
+        && !name.ends_with('/')
+        && !name.ends_with('.')
+        && !name.ends_with(".lock")
+        && !name.contains("..")
+        && !name.contains("@{")
+        && !name.contains("//")
+        && !name.chars().any(|c| c.is_control() || c.is_whitespace() || matches!(c, '~' | '^' | ':' | '?' | '*' | '[' | '\\'))
+        && !name.split('/').any(|seg| seg.starts_with('.'))
+}
+
+/// `git rev-list --left-right --count A...B` → `(left, right)` = (only in A, only in B).
+pub fn parse_left_right(s: &str) -> Option<(u32, u32)> {
+    let mut it = s.split_whitespace();
+    let left = it.next()?.parse().ok()?;
+    let right = it.next()?.parse().ok()?;
+    Some((left, right))
+}
+
+/// `git diff --shortstat` → `(files, insertions, deletions)`. Any part may be missing (" 1 file changed,
+/// 2 deletions(-)"); empty output is all zeros. Parts are told apart by the `(+)` / `(-)` markers, so
+/// translated git output parses too.
+pub fn parse_shortstat(s: &str) -> (u32, u32, u32) {
+    let (mut files, mut ins, mut del) = (0, 0, 0);
+    for part in s.trim().split(',') {
+        let Some(n) = part.split_whitespace().next().and_then(|w| w.parse::<u32>().ok()) else {
+            continue;
+        };
+        if part.contains("(+)") {
+            ins = n;
+        } else if part.contains("(-)") {
+            del = n;
+        } else {
+            files = n;
+        }
+    }
+    (files, ins, del)
+}
+
+fn git_stdout_timeout(dir: &Path, args: &[&str], timeout: Duration) -> Option<String> {
+    let out = run_git(dir, args, timeout)?;
+    out.status.success().then(|| String::from_utf8_lossy(&out.stdout).trim().to_string())
+}
+
+/// The worktree at `path` measured against `base` (default: the main worktree's branch).
+/// A non-repository (or missing) folder is `is_repo: false`, not an error. Strictly read-only.
+pub fn branch_summary(path: &str, base: Option<&str>) -> AppResult<BranchSummary> {
+    let requested = base.map(str::trim).filter(|b| !b.is_empty());
+    if let Some(b) = requested
+        && !is_valid_ref_name(b)
+    {
+        return Err(AppError::Invalid(format!("Invalid base branch: {b:?}")));
+    }
+    let Some(root) = repo_root(path)? else {
+        return Ok(BranchSummary::default());
+    };
+    let dir = root.as_path();
+    let mut out = BranchSummary { is_repo: true, ..Default::default() };
+    out.branch = git_stdout(dir, &["symbolic-ref", "--quiet", "--short", "HEAD"]).filter(|b| !b.is_empty());
+    let has_head = git_stdout(dir, &["rev-parse", "--verify", "--quiet", "HEAD^{commit}"]).is_some_and(|s| !s.is_empty());
+
+    let base = match requested {
+        Some(b) => Some(b.to_string()),
+        None => git_stdout(dir, &["worktree", "list", "--porcelain"])
+            .and_then(|s| parse_worktrees(&s).into_iter().next())
+            .and_then(|w| w.branch),
+    };
+    // Only a base that names a commit is reported.
+    out.base = base.filter(|b| {
+        git_stdout(dir, &["rev-parse", "--verify", "--quiet", &format!("{b}^{{commit}}")]).is_some_and(|s| !s.is_empty())
+    });
+
+    if let Some(b) = out.base.as_deref()
+        && has_head
+        && out.branch.as_deref() != Some(b)
+    {
+        let range = format!("{b}...HEAD");
+        if let Some((behind, ahead)) =
+            git_stdout_timeout(dir, &["rev-list", "--left-right", "--count", &range], DIFF_TIMEOUT)
+                .as_deref()
+                .and_then(parse_left_right)
+        {
+            out.behind = behind;
+            out.ahead = ahead;
+        }
+        if let Some(stat) = git_stdout_timeout(
+            dir,
+            &["diff", "--shortstat", "--no-color", "--no-ext-diff", "--no-textconv", &range],
+            DIFF_TIMEOUT,
+        ) {
+            (out.files_changed, out.insertions, out.deletions) = parse_shortstat(&stat);
+        }
+    }
+
+    if let Ok(st) = run_git_capped(dir, &["status", "--porcelain"], STATUS_TIMEOUT, MAX_STATUS_BYTES)
+        && (st.truncated || st.status.is_some_and(|s| s.success()))
+    {
+        let n = st.stdout.split(|&b| b == b'\n').filter(|l| !l.iter().all(u8::is_ascii_whitespace)).count();
+        out.uncommitted = u32::try_from(n).unwrap_or(u32::MAX);
+    }
+
+    if has_head && let Some(log) = git_stdout(dir, &["log", "-1", "--format=%s%x00%ct"]) {
+        let (subject, time) = log.split_once('\0').unwrap_or((log.as_str(), ""));
+        out.last_commit_subject = Some(subject.trim().to_string()).filter(|s| !s.is_empty());
+        out.last_commit_ms = time.trim().parse::<u64>().ok().map(|secs| secs.saturating_mul(1000));
+    }
+    Ok(out)
+}
+
 fn check_branch_name(repo: &Path, branch: &str) -> AppResult<()> {
     let sane = !branch.is_empty()
         && branch.len() <= 200
@@ -497,6 +618,120 @@ mod tests {
         let plain = tempfile::tempdir().unwrap();
         assert!(!changes(&plain.path().to_string_lossy()).unwrap().is_repo);
         assert!(changes("relative\\dir").is_err());
+    }
+
+    #[test]
+    fn parses_shortstat() {
+        assert_eq!(parse_shortstat(" 3 files changed, 10 insertions(+), 2 deletions(-)\n"), (3, 10, 2));
+        assert_eq!(parse_shortstat(" 1 file changed, 1 insertion(+)"), (1, 1, 0));
+        assert_eq!(parse_shortstat(" 1 file changed, 4 deletions(-)"), (1, 0, 4));
+        assert_eq!(parse_shortstat(" 2 files changed"), (2, 0, 0));
+        assert_eq!(parse_shortstat(""), (0, 0, 0));
+        assert_eq!(parse_shortstat("garbage"), (0, 0, 0));
+        // Translated output still parses by the (+)/(-) markers.
+        assert_eq!(parse_shortstat(" 2 Dateien geändert, 5 Zeilen hinzugefügt(+), 1 Zeile entfernt(-)"), (2, 5, 1));
+    }
+
+    #[test]
+    fn parses_left_right() {
+        assert_eq!(parse_left_right("2\t5\n"), Some((2, 5)));
+        assert_eq!(parse_left_right("0 0"), Some((0, 0)));
+        assert_eq!(parse_left_right("7"), None);
+        assert_eq!(parse_left_right(""), None);
+        assert_eq!(parse_left_right("a\tb"), None);
+    }
+
+    #[test]
+    fn validates_ref_names() {
+        for ok in ["main", "origin/main", "feature/x-1", "v1.0", "HEAD", "release_2026"] {
+            assert!(is_valid_ref_name(ok), "{ok}");
+        }
+        for bad in [
+            "", "-x", "--output=x", "a..b", "main...HEAD", "a b", "a\tb", "a~1", "a^", "a:b", "a?", "a*", "a[",
+            "a\\b", "@", "x@{1}", ".hidden", "a/.b", "a/", "/a", "a//b", "a.", "a.lock", "a\0b",
+        ] {
+            assert!(!is_valid_ref_name(bad), "{bad:?}");
+        }
+    }
+
+    #[test]
+    fn branch_summary_on_a_real_repo_and_worktree() {
+        if git_exe().is_none() {
+            eprintln!("git not installed; skipping");
+            return;
+        }
+        let commit = |dir: &Path, msg: &str| {
+            git(dir, &["-c", "user.name=t", "-c", "user.email=t@example.invalid", "commit", "-q", "-m", msg]);
+        };
+        let tmp = tempfile::tempdir().unwrap();
+        let repo = tmp.path().join("repo");
+        std::fs::create_dir_all(&repo).unwrap();
+        git(&repo, &["init", "-q", "-b", "main"]);
+        std::fs::write(repo.join("a.txt"), "one\ntwo\n").unwrap();
+        git(&repo, &["add", "a.txt"]);
+        commit(&repo, "init");
+
+        let wt = tmp.path().join("wt");
+        git(&repo, &["worktree", "add", "-q", "-b", "feature", &wt.to_string_lossy()]);
+        // feature: 2 commits touching 2 files (+4 -1).
+        std::fs::write(wt.join("a.txt"), "one\nTWO\n").unwrap();
+        git(&wt, &["add", "a.txt"]);
+        commit(&wt, "edit a");
+        std::fs::write(wt.join("b.txt"), "x\ny\nz\n").unwrap();
+        git(&wt, &["add", "b.txt"]);
+        commit(&wt, "add b");
+        // main moves on by one commit.
+        std::fs::write(repo.join("c.txt"), "c\n").unwrap();
+        git(&repo, &["add", "c.txt"]);
+        commit(&repo, "main moves");
+        // Uncommitted in the worktree: one modified, one untracked.
+        std::fs::write(wt.join("a.txt"), "dirty\n").unwrap();
+        std::fs::write(wt.join("new.txt"), "n\n").unwrap();
+
+        let wt_s = wt.to_string_lossy().into_owned();
+        let s = branch_summary(&wt_s, None).unwrap();
+        assert!(s.is_repo);
+        assert_eq!(s.branch.as_deref(), Some("feature"));
+        assert_eq!(s.base.as_deref(), Some("main"));
+        assert_eq!((s.ahead, s.behind), (2, 1), "{s:?}");
+        assert_eq!((s.files_changed, s.insertions, s.deletions), (2, 4, 1), "{s:?}");
+        assert_eq!(s.uncommitted, 2);
+        assert_eq!(s.last_commit_subject.as_deref(), Some("add b"));
+        assert!(s.last_commit_ms.is_some_and(|ms| ms > 1_600_000_000_000));
+
+        // Explicit base, same answer; blank base = default.
+        assert_eq!(branch_summary(&wt_s, Some("main")).unwrap(), s);
+        assert_eq!(branch_summary(&wt_s, Some("  ")).unwrap(), s);
+
+        // The main worktree against itself: base reported, counts zero.
+        let main = branch_summary(&repo.to_string_lossy(), None).unwrap();
+        assert_eq!(main.branch.as_deref(), Some("main"));
+        assert_eq!(main.base.as_deref(), Some("main"));
+        assert_eq!((main.ahead, main.behind, main.files_changed), (0, 0, 0));
+        assert_eq!(main.last_commit_subject.as_deref(), Some("main moves"));
+
+        // Unresolvable base: None, zeros (not an error). Invalid base: error.
+        let none = branch_summary(&wt_s, Some("no-such-branch")).unwrap();
+        assert_eq!(none.base, None);
+        assert_eq!((none.ahead, none.behind, none.files_changed), (0, 0, 0));
+        assert_eq!(none.uncommitted, 2);
+        assert!(matches!(branch_summary(&wt_s, Some("--output=x")), Err(AppError::Invalid(_))));
+        assert!(matches!(branch_summary(&wt_s, Some("main..feature")), Err(AppError::Invalid(_))));
+
+        // Not a repository / missing folder: is_repo false, not an error.
+        let plain = tmp.path().join("plain");
+        std::fs::create_dir_all(&plain).unwrap();
+        assert_eq!(branch_summary(&plain.to_string_lossy(), None).unwrap(), BranchSummary::default());
+        assert!(!branch_summary(r"C:\definitely\missing\dir", None).unwrap().is_repo);
+
+        // A fresh repository without commits.
+        let empty = tmp.path().join("empty");
+        std::fs::create_dir_all(&empty).unwrap();
+        git(&empty, &["init", "-q", "-b", "main"]);
+        let e = branch_summary(&empty.to_string_lossy(), None).unwrap();
+        assert!(e.is_repo);
+        assert_eq!(e.last_commit_subject, None);
+        assert_eq!((e.ahead, e.behind), (0, 0));
     }
 
     #[test]
