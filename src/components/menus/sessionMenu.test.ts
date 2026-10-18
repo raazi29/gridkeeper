@@ -114,6 +114,11 @@ describe("buildSessionMenu — states and surfaces", () => {
     expect(find(items, "Close…")?.hint).toBe("Del");
     for (const l of ["Copy", "Paste", "Zoom", "Split", "New session", "Hide view", "Maximize"]) expect(labels(items)).not.toContain(l);
     expect(labels(items)).toContain("Copy output");
+    expect(labels(items).indexOf("Hand off…")).toBe(labels(items).indexOf("Message…") + 1);
+  });
+
+  it("Hand off… only on the Mission Control surface", () => {
+    for (const surface of ["terminal", "header", "fleet", "comms"] as const) expect(labels(buildSessionMenu("s1", { surface }, state()))).not.toContain("Hand off…");
   });
 
   it("pane header: move left / right follow the position", () => {
@@ -208,6 +213,11 @@ describe("menu actions", () => {
   it("Restart of a live session asks first", () => {
     find(buildSessionMenu("a", { surface: "terminal" }), "Restart (resume)")!.onSelect!();
     expect(useUi.getState().confirms).toHaveLength(1);
+  });
+
+  it("Hand off… lists the other live sessions (none running = disabled, empty submenu)", () => {
+    expect(find(buildSessionMenu("b", { surface: "mission" }), "Hand off…")!.children!.map((c) => (c === "separator" ? c : c.label))).toEqual(["a"]);
+    expect(find(buildSessionMenu("a", { surface: "mission" }), "Hand off…")!.children).toEqual([]);
   });
 
   it("Message… opens the Broadcast composer preselected with the session (nothing is sent)", () => {
