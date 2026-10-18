@@ -210,6 +210,11 @@ dependency (WSL-only on Windows).
 
 ## Install
 
+> [!NOTE]
+> The v0.2.0 installers are on their way. Until the v0.2.0 release is published, the
+> [latest release](https://github.com/raazi29/gridkeeper/releases/latest) is v0.1.1 (Windows), and everything in this
+> README is available by building from source (see *Build from source* below).
+
 Download from the [latest release](https://github.com/raazi29/gridkeeper/releases/latest), or build it yourself
 (see *Build from source* below):
 
