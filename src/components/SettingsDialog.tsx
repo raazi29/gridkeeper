@@ -320,6 +320,37 @@ function AgentsSection() {
           </Field>
         );
       })}
+      <CostMeterSetting />
+    </div>
+  );
+}
+
+function CostMeterSetting() {
+  const [on, setOn] = useSetting("costMeter");
+  return (
+    <div className="cost-meter-setting">
+      <div className="micro-label">Cost meter</div>
+      <Toggle
+        checked={on ?? false}
+        onChange={(v) => {
+          setOn(v);
+          if (v) useApp.getState().updateSettings({ costMeterHintDismissed: true });
+        }}
+        label="Cost & context meter for Claude panes"
+        hint={
+          <>
+            Shows Claude Code's own estimate (list price; on a subscription that is API-equivalent value, not a bill) and context
+            use in each Claude pane header, in Mission Control and in Fleet. Gridkeeper starts Claude with a <code>--settings</code> file in
+            its own data folder that sets only <code>statusLine</code>. Claude then hands Gridkeeper the status line numbers: session id,
+            cost, durations, context size and use, token counts, the current usage breakdown, rate limits and the model name. Nothing
+            from transcripts or credentials is read. It replaces Claude's status line in Gridkeeper panes, unless you have your own: then
+            Gridkeeper runs yours and it shows as before (it finds it by reading <code>statusLine</code> from your Claude settings files,
+            read-only). A pane that passes its own <code>--settings</code> isn't metered.
+            Codex and Gemini CLI report no usage to other programs (shown as n/a). Applies to newly started Claude panes: restart a
+            pane to apply.
+          </>
+        }
+      />
     </div>
   );
 }

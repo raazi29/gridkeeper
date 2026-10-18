@@ -28,6 +28,7 @@ import { WorkspaceHeader } from "./WorkspaceHeader";
 import { BrowserLayer } from "../browser/BrowserLayer";
 import { ChangesDrawer } from "./ChangesDrawer";
 import { installPortsWatch } from "../store/ports";
+import { installMeterWatch } from "../store/meter";
 import "../browser/browser.css";
 
 export function Shell() {
@@ -41,6 +42,7 @@ export function Shell() {
     const offFocus = installFocusTracking();
     const offResume = installResumeWatch();
     const offPorts = installPortsWatch();
+    const offMeter = installMeterWatch();
     const onNewSession = (e: Event) => {
       const detail = (e as CustomEvent<{ groupId?: string } | undefined>).detail;
       const groupId = detail?.groupId ?? selectActiveGroup(useApp.getState())?.id;
@@ -52,6 +54,7 @@ export function Shell() {
       offFocus();
       offResume();
       offPorts();
+      offMeter();
       window.removeEventListener("gridkeeper:new-session", onNewSession);
     };
   }, []);

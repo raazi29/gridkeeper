@@ -332,6 +332,10 @@ export interface Settings {
   saberSound: boolean;
   /** Terminal right-click: "menu" = context menu (default); "paste" = copy selection / paste (Windows Terminal style). */
   rightClickAction: RightClickAction;
+  /** Cost & context meter for Claude panes (opt-in; applies to newly started panes). */
+  costMeter: boolean;
+  /** The one-time "turn on the cost meter" hint was dismissed. */
+  costMeterHintDismissed: boolean;
 }
 
 export type HyperspaceMode = "auto" | "on" | "off";
@@ -493,6 +497,8 @@ export const DEFAULT_SETTINGS: Settings = {
   saberSound: false,
   pasteWarning: true,
   rightClickAction: "menu",
+  costMeter: false,
+  costMeterHintDismissed: false,
 };
 
 // ---- Mission (shared task board file) ------------------------------------------------------------
@@ -558,4 +564,48 @@ export interface BranchFiles {
   files: BranchFile[];
   /** More than 2000 files: the list was cut. */
   truncated: boolean;
+}
+
+// ---- Cost & context meter (Claude Code status line; src-tauri/src/meter) --------------------------
+
+export const EVT_SESSION_METER = "session-meter";
+
+/** How the pane's last launch went for the meter. */
+export type MeterStatus =
+  /** No launch seen in this app run (data, if any, is from an earlier run). */
+  | "unknown"
+  /** Launched with Gridkeeper's status line; data arrives with Claude's first status line update. */
+  | "metered"
+  /** The session passes its own --settings, so the meter stays off. */
+  | "customSettings"
+  /** Managed settings own the status line (or turn status line commands off). */
+  | "managed"
+  /** Not possible for this launch; `note` says why. */
+  | "unavailable";
+
+/** One pane's meter (payload of EVT_SESSION_METER and of meter_snapshot). Cost is Claude Code's own estimate. */
+export interface SessionMeter {
+  sessionId: SessionId;
+  status: MeterStatus;
+  note: string | null;
+  /** The user's own status line is chained (still shown inside the pane). */
+  chained: boolean;
+  /** Claude's conversation id of the latest data (changes on /clear). */
+  claudeSessionId: string | null;
+  /** cost.total_cost_usd of the current conversation (resets on /clear). */
+  costUsd: number | null;
+  /** Running pane total: sum of the last cost per Claude conversation (survives /clear). */
+  paneCostUsd: number | null;
+  contextPct: number | null;
+  contextSize: number | null;
+  /** Tokens currently in the context window (not cumulative). */
+  inputTokens: number | null;
+  outputTokens: number | null;
+  apiDurationMs: number | null;
+  durationMs: number | null;
+  model: string | null;
+  fiveHourPct: number | null;
+  sevenDayPct: number | null;
+  /** When data was last written (ms since the epoch); null = no data yet. */
+  updatedMs: number | null;
 }

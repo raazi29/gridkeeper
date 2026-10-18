@@ -26,10 +26,11 @@ import type {
   SessionId,
   SessionAttention,
   SessionInfo,
+  SessionMeter,
   SessionSpec,
   WorktreeInfo,
 } from "./types";
-import { EVT_MISSION_CHANGED, EVT_SESSION_ATTENTION, EVT_SESSION_STATE } from "./types";
+import { EVT_MISSION_CHANGED, EVT_SESSION_ATTENTION, EVT_SESSION_METER, EVT_SESSION_STATE } from "./types";
 
 export interface AppInfo {
   version: string;
@@ -123,6 +124,9 @@ export const ipc = {
   /** One file's diff over `base...HEAD`; pass a rename's `origFile` so git pairs the rename. */
   gitBranchFileDiff: (path: string, base: string, file: string, origFile: string | null = null) =>
     invoke<FileDiff>("git_branch_file_diff", { path, base, file, origFile }),
+
+  // Meter: Claude Code cost & context per pane (status line JSON; live updates via onSessionMeter).
+  meterSnapshot: () => invoke<SessionMeter[]>("meter_snapshot"),
 };
 
 export function onSessionState(cb: (info: SessionInfo) => void): Promise<UnlistenFn> {
@@ -141,4 +145,8 @@ export function errorMessage(e: unknown): string {
 
 export function onMissionChanged(cb: (ev: MissionChanged) => void): Promise<UnlistenFn> {
   return listen<MissionChanged>(EVT_MISSION_CHANGED, (e) => cb(e.payload));
+}
+
+export function onSessionMeter(cb: (m: SessionMeter) => void): Promise<UnlistenFn> {
+  return listen<SessionMeter>(EVT_SESSION_METER, (e) => cb(e.payload));
 }

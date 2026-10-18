@@ -25,6 +25,7 @@ import { ownOrigin, useBrowserNav, viewOf, type BrowserView } from "../browser/n
 import { portChipLabel } from "../lib/browserPanes";
 import { usePorts } from "../store/ports";
 import { copyText } from "../components/util/pick";
+import { MeterChip } from "../components/MeterChip";
 import { IconGlobe } from "./icons";
 
 function browserStatus(view: BrowserView, loading: boolean): { cls: string; label: string } {
@@ -378,6 +379,7 @@ export const PaneHeader = memo(function PaneHeader({ sessionId, groupId, index, 
           </span>
         )}
         {!isBrowser && <RoleTag role={meta.role} />}
+        {!isBrowser && <MeterChip sessionId={sessionId} variant="pane" />}
         {portLabel && (
           <button
             type="button"

@@ -25,6 +25,8 @@ pub struct AppCtx {
     pub diag: Arc<DiagSampler>,
     /// Ref-counted watches of `<projectDir>/.gridkeeper/mission.md` (`mission-changed` events).
     pub missions: MissionWatchers,
+    /// Cost & context meter: `<data_dir>/meter` watch (`session-meter` events).
+    pub meter: Arc<crate::meter::MeterHub>,
     _log_guard: Option<crate::logging::LogGuard>,
 }
 
@@ -58,6 +60,21 @@ impl AppCtx {
                 tracing::warn!(error = %e, "could not emit mission-changed");
             }
         }));
+        let meter_emitter = app.clone();
+        let meter = Arc::new(crate::meter::MeterHub::new(
+            &data_dir,
+            std::env::current_exe().ok(),
+            crate::meter::launch::default_managed_paths(),
+            Arc::new(move |m: &crate::types::SessionMeter| {
+                if let Err(e) = meter_emitter.emit(crate::types::EVT_SESSION_METER, m) {
+                    tracing::warn!(error = %e, "could not emit session-meter");
+                }
+            }),
+        ));
+        if let Err(e) = meter.start_watch() {
+            tracing::warn!(error = %e, "cost meter folder watch failed; meters update on the next start");
+        }
+        crate::meter::install(Arc::clone(&meter));
         Ok(Self {
             paths: AppPaths { data_dir, logs_dir },
             sessions,
@@ -65,6 +82,7 @@ impl AppCtx {
             store,
             diag: Arc::new(DiagSampler::new()),
             missions,
+            meter,
             _log_guard: log_guard,
         })
     }
@@ -74,6 +92,7 @@ impl AppCtx {
         tracing::info!("shutting down sessions");
         self.sessions.shutdown_all(std::time::Duration::from_millis(1500));
         self.missions.clear();
+        self.meter.stop();
     }
 }
 
