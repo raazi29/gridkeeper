@@ -1,8 +1,22 @@
 import { describe, expect, it } from "vitest";
 import {
+  addTask,
+  addTaskOwner,
+  changeTaskState,
   countOwned,
   currentTaskFor,
+  deleteTask,
+  editTaskText,
+  matchesFilter,
+  moveTask,
   newMissionText,
+  ownerCompletion,
+  planAdd,
+  planMove,
+  setTaskOwners,
+  taskBlockEnd,
+  taskSource,
+  teamSlugs,
   nextState,
   ownerMatches,
   ownersFor,
@@ -216,5 +230,207 @@ describe("progress", () => {
   it("counts states and the done fraction", () => {
     expect(progress(parseMission(SAMPLE).tasks)).toEqual({ total: 4, done: 1, doing: 1, todo: 1, blocked: 1, fraction: 0.25 });
     expect(progress([])).toEqual({ total: 0, done: 0, doing: 0, todo: 0, blocked: 0, fraction: 0 });
+  });
+});
+
+// ---- structural edits ------------------------------------------------------------------------------
+
+const BOARD = [
+  "# Mission: M", // 0
+  "", // 1
+  "## Tasks", // 2
+  "- [ ] one @lead", // 3
+  "  - note: about one", // 4
+  "  more about one", // 5
+  "- [~] two @builder-1", // 6
+  "- [ ] three", // 7
+  "", // 8
+  "## Notes", // 9
+  "keep me", // 10
+  "",
+].join("\n");
+const crlf = (s: string) => s.replace(/\n/g, "\r\n");
+const lines = (s: string) => s.split("\n");
+
+describe("taskBlockEnd / taskSource", () => {
+  it("covers the task line plus deeper-indented notes", () => {
+    expect(taskBlockEnd(BOARD, 3)).toBe(6);
+    expect(taskBlockEnd(BOARD, 6)).toBe(7);
+    expect(taskBlockEnd(BOARD, 7)).toBe(8);
+    expect(taskBlockEnd(BOARD, 4)).toBeNull();
+    expect(taskSource(BOARD, 6)).toBe("- [~] two @builder-1");
+    expect(taskSource(BOARD, 10)).toBeNull();
+  });
+
+  it("includes blank lines only between deeper lines and keeps a deeper fence whole", () => {
+    const t = ["- [ ] a", "", "  cont", "", "- [ ] b", "  ```", "- [ ] not a task", "  ```", "x"].join("\n");
+    expect(taskBlockEnd(t, 0)).toBe(3);
+    expect(taskBlockEnd(t, 4)).toBe(8);
+  });
+});
+
+describe("moveTask", () => {
+  it("moves a task down with its notes, keeping every other line", () => {
+    const out = moveTask(BOARD, 3, 8)!;
+    expect(lines(out).slice(2, 9)).toEqual(["## Tasks", "- [~] two @builder-1", "- [ ] three", "- [ ] one @lead", "  - note: about one", "  more about one", ""]);
+    expect(lines(out).slice(9)).toEqual(lines(BOARD).slice(9));
+    expect(planMove(BOARD, 3, 8)!.line).toBe(5);
+  });
+
+  it("moves a task up (priority = order)", () => {
+    const r = planMove(BOARD, 7, 3)!;
+    expect(r.line).toBe(3);
+    expect(parseMission(r.text).tasks.map((t) => t.text)).toEqual(["three", "one", "two"]);
+  });
+
+  it("is a no-op inside its own block and null for a non-task line", () => {
+    expect(moveTask(BOARD, 3, 3)).toBe(BOARD);
+    expect(moveTask(BOARD, 3, 5)).toBe(BOARD);
+    expect(moveTask(BOARD, 3, 6)).toBe(BOARD); // right after its own block
+    expect(moveTask(BOARD, 4, 0)).toBeNull();
+    expect(moveTask(BOARD, 99, 0)).toBeNull();
+  });
+
+  it("snaps a target inside another task's notes to the end of that block", () => {
+    const out = moveTask(BOARD, 7, 4)!;
+    expect(parseMission(out).tasks.map((t) => t.text)).toEqual(["one", "three", "two"]);
+    expect(lines(out)[4]).toBe("  - note: about one");
+    expect(lines(out)[6]).toBe("- [ ] three");
+  });
+
+  it("keeps CRLF and mixed endings per line", () => {
+    const c = crlf(BOARD);
+    expect(moveTask(c, 7, 6)).toBe(crlf(moveTask(BOARD, 7, 6)!));
+    expect(moveTask("- [ ] a\r\n- [ ] b\n", 1, 0)).toBe("- [ ] b\n- [ ] a\r\n");
+  });
+
+  it("keeps a missing final newline missing", () => {
+    expect(moveTask("- [ ] a\n- [ ] b", 1, 0)).toBe("- [ ] b\n- [ ] a");
+    expect(moveTask("- [ ] a\r\n- [ ] b", 0, 2)).toBe("- [ ] b\r\n- [ ] a");
+  });
+
+  it("moves tasks outside ## Tasks and ignores fenced examples", () => {
+    const t = ["# M", "- [ ] loose", "```", "- [ ] example", "```", "## Tasks", "- [ ] real", ""].join("\n");
+    expect(moveTask(t, 3, 0)).toBeNull();
+    const out = moveTask(t, 1, 7)!;
+    expect(lines(out)).toEqual(["# M", "```", "- [ ] example", "```", "## Tasks", "- [ ] real", "- [ ] loose", ""]);
+  });
+});
+
+describe("deleteTask", () => {
+  it("removes the task with its notes", () => {
+    const out = deleteTask(BOARD, 3)!;
+    expect(lines(out).slice(2, 5)).toEqual(["## Tasks", "- [~] two @builder-1", "- [ ] three"]);
+    expect(lines(out)).toHaveLength(lines(BOARD).length - 3);
+    expect(deleteTask(BOARD, 2)).toBeNull();
+  });
+
+  it("keeps endings, including a missing final newline", () => {
+    expect(deleteTask("a\r\n- [ ] b\r\nc\r\n", 1)).toBe("a\r\nc\r\n");
+    expect(deleteTask("a\n- [ ] b", 1)).toBe("a");
+    expect(deleteTask("- [ ] only\n", 0)).toBe("");
+  });
+});
+
+describe("changeTaskState", () => {
+  it("changes the box like setTaskState", () => {
+    expect(changeTaskState(BOARD, 7, "doing")).toBe(setTaskState(BOARD, 7, "doing"));
+    expect(changeTaskState(BOARD, 6, "doing")).toBe(BOARD);
+    expect(changeTaskState(BOARD, 4, "done")).toBeNull();
+  });
+
+  it("writes a blocked reason right after the box and removes it when unblocked", () => {
+    const b = changeTaskState(crlf(BOARD), 6, "blocked", " needs\nthe secret ")!;
+    expect(b.split("\r\n")[6]).toBe("- [!] blocked: needs the secret — two @builder-1");
+    expect(parseMission(b).tasks[1]).toMatchObject({ state: "blocked", owners: ["builder-1"], text: "blocked: needs the secret — two" });
+    const again = changeTaskState(b, 6, "blocked", "other")!;
+    expect(again.split("\r\n")[6]).toBe("- [!] blocked: other — two @builder-1");
+    expect(changeTaskState(b, 6, "todo")).toBe(crlf(BOARD).replace("- [~] two", "- [ ] two"));
+    // An agent-written reason is left alone.
+    expect(changeTaskState("- [!] Blocked: no key @x", 0, "todo")).toBe("- [ ] Blocked: no key @x");
+  });
+});
+
+describe("addTask", () => {
+  it("appends under ## Tasks after the section's last line", () => {
+    const r = planAdd(crlf(BOARD), "  - [x] four @builder-2 ")!;
+    expect(r.line).toBe(8);
+    expect(r.text).toBe(crlf(BOARD).replace("- [ ] three\r\n", "- [ ] three\r\n- [ ] four @builder-2\r\n"));
+    expect(parseMission(r.text).tasks[3]).toMatchObject({ text: "four", owners: ["builder-2"], state: "todo" });
+  });
+
+  it("can add in another state and right after an empty heading", () => {
+    expect(addTask("# M\n## Tasks\n\n## Later\n", "x", "blocked")).toBe("# M\n## Tasks\n- [!] x\n\n## Later\n");
+  });
+
+  it("creates the heading when missing, keeping the final-newline state", () => {
+    expect(addTask("# M\r\n\r\nctx\r\n", "a")).toBe("# M\r\n\r\nctx\r\n\r\n## Tasks\r\n- [ ] a\r\n");
+    expect(addTask("# M\n", "a")).toBe("# M\n\n## Tasks\n- [ ] a\n");
+    expect(addTask("# M\n\n", "a")).toBe("# M\n\n## Tasks\n- [ ] a\n");
+    expect(addTask("# M", "a")).toBe("# M\n\n## Tasks\n- [ ] a");
+    expect(addTask("", "a")).toBe("## Tasks\n- [ ] a\n");
+  });
+
+  it("ignores a ## Tasks heading inside a fence and rejects empty text", () => {
+    expect(addTask("# M\n```\n## Tasks\n```\n", "a")).toBe("# M\n```\n## Tasks\n```\n\n## Tasks\n- [ ] a\n");
+    expect(addTask(BOARD, "  ")).toBeNull();
+    expect(addTask(BOARD, "- [ ] ")).toBeNull();
+  });
+});
+
+describe("editTaskText", () => {
+  it("replaces the text, keeping box and owners", () => {
+    expect(lines(editTaskText(BOARD, 6, "two, better")!)[6]).toBe("- [~] two, better @builder-1");
+    expect(editTaskText(BOARD, 6, " two ")).toBe(BOARD);
+    expect(editTaskText(BOARD, 6, "")).toBeNull();
+    expect(editTaskText(BOARD, 1, "x")).toBeNull();
+  });
+
+  it("typed @tokens replace the owners; CRLF stays", () => {
+    const out = editTaskText(crlf(BOARD), 3, "one for @Builder_2")!;
+    expect(out.split("\r\n")[3]).toBe("- [ ] one for @Builder_2");
+    expect(parseMission(out).tasks[0].owners).toEqual(["builder-2"]);
+    expect(out.split("\r\n")[4]).toBe("  - note: about one");
+  });
+});
+
+describe("owners on a task", () => {
+  it("setTaskOwners replaces / clears the tokens", () => {
+    expect(lines(setTaskOwners(BOARD, 3, ["@Builder 1", "reviewer", "builder-1"])!)[3]).toBe("- [ ] one @builder-1 @reviewer");
+    expect(lines(setTaskOwners(BOARD, 3, [])!)[3]).toBe("- [ ] one");
+    expect(setTaskOwners(BOARD, 3, ["lead"])).toBe(BOARD);
+    expect(setTaskOwners(BOARD, 2, ["lead"])).toBeNull();
+    expect(setTaskOwners(crlf(BOARD), 7, ["x"])).toBe(crlf(BOARD).replace("- [ ] three", "- [ ] three @x"));
+  });
+
+  it("addTaskOwner appends one token and is idempotent", () => {
+    expect(lines(addTaskOwner(BOARD, 6, "Builder 2")!)[6]).toBe("- [~] two @builder-1 @builder-2");
+    expect(addTaskOwner(BOARD, 6, "@builder-1")).toBe(BOARD);
+    expect(addTaskOwner(BOARD, 6, "!!")).toBeNull();
+    expect(addTaskOwner("- [ ] t  \r\nx", 0, "a")).toBe("- [ ] t @a\r\nx");
+  });
+
+  it("teamSlugs + ownerCompletion suggest name slugs then roles", () => {
+    const slugs = teamSlugs(team);
+    expect(slugs).toEqual(["lead", "builder-1", "builder-2", "codex-reviewer", "scratch", "builder", "reviewer"]);
+    expect(ownerCompletion("fix it @bu", 10, slugs)).toEqual({ start: 7, prefix: "bu", matches: ["builder-1", "builder-2", "builder"] });
+    expect(ownerCompletion("@", 1, slugs)?.matches).toHaveLength(slugs.length);
+    expect(ownerCompletion("mail a@b", 8, slugs)).toBeNull();
+    expect(ownerCompletion("fix @lead", 9, slugs)?.matches).toEqual([]);
+  });
+});
+
+describe("matchesFilter", () => {
+  const tasks = parseMission(SAMPLE).tasks;
+  const names = (f: Parameters<typeof matchesFilter>[1], q = "", m: TeamMember | null = null) =>
+    tasks.filter((t) => matchesFilter(t, f, q, team, m)).map((t) => t.text);
+  it("filters by owner, assignment, state and text", () => {
+    expect(names("all")).toHaveLength(4);
+    expect(names("mine", "", team[2])).toEqual(["Add login button", "Blocked: needs client secret"]);
+    expect(names("mine")).toEqual([]);
+    expect(names("blocked")).toEqual(["Blocked: needs client secret"]);
+    expect(tasks.filter((t) => matchesFilter(t, "unassigned", "", team.slice(1), null)).map((t) => t.text)).toEqual(["Design the token storage"]);
+    expect(names("all", "LOGIN")).toEqual(["Add login button"]);
+    expect(names("all", "@builder-1")).toEqual(["Implement /auth/callback"]);
   });
 });

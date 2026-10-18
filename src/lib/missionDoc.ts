@@ -20,7 +20,11 @@
 //   dropped) or its role ("@builder" = every builder, "@builders" too); "@all" / "@everyone" / "@team" =
 //   everyone.
 // - Rewrites (setTaskState) change ONLY the box of one line; every other byte, including the file's
-//   CRLF / LF endings, is preserved.
+//   CRLF / LF endings, is preserved. The board's structural edits (moveTask, addTask, editTaskText,
+//   setTaskOwners, addTaskOwner, deleteTask, changeTaskState) touch only the task line(s) they are about:
+//   unknown lines stay byte for byte, each line keeps its own ending, a file without a final newline keeps
+//   lacking one. A task "block" is the task line plus the deeper-indented lines under it (notes, sub-items);
+//   moves and deletes take the whole block.
 
 import { normalizeRole } from "./roles";
 
@@ -257,3 +261,323 @@ export function progress(tasks: readonly Pick<Task, "state">[]): MissionProgress
 
 /** Display order of the board: doing, todo, blocked, done (file order inside a state). */
 export const STATE_ORDER: readonly TaskState[] = ["doing", "todo", "blocked", "done"];
+
+// ---- structural edits (the board: drag, quick add, inline edit, assign, delete) -----------------
+
+const HEADING_RE = /^\s{0,3}(#{1,6})\s+(.*?)\s*#*\s*$/;
+const TASKS_HEADING_RE = /^\s{0,3}#{2,6}\s+tasks?\b/i;
+/** The board's own blocked-reason prefix: "[!] blocked: <reason> — <task>". */
+const BLOCK_PREFIX_RE = /^\s*blocked:\s.*?\s—\s/i;
+
+const oneLine = (s: string) => s.replace(/[\r\n]+/g, " ").replace(/\s{2,}/g, " ").trim();
+
+type LineKind = "task" | "heading" | "text" | "code";
+
+/** Line kinds with the same fence / comment rules as parseMission ("code" = fenced or commented). */
+function classify(lines: readonly string[]): LineKind[] {
+  const out: LineKind[] = [];
+  let fence: string | null = null;
+  let comment = false;
+  for (const l of lines) {
+    if (fence) {
+      if (l.trim().startsWith(fence)) fence = null;
+      out.push("code");
+      continue;
+    }
+    const f = FENCE_RE.exec(l);
+    if (f) {
+      fence = f[1];
+      out.push("code");
+      continue;
+    }
+    if (comment) {
+      if (l.includes("-->")) comment = false;
+      out.push("code");
+      continue;
+    }
+    if (/^\s*<!--/.test(l)) {
+      if (!l.includes("-->")) comment = true;
+      out.push("code");
+      continue;
+    }
+    out.push(TASK_RE.test(l) ? "task" : HEADING_RE.test(l) ? "heading" : "text");
+  }
+  return out;
+}
+
+interface Rec {
+  body: string;
+  /** This line's own ending ("\r\n", "\n"; "" for a last line without one). */
+  sep: string;
+}
+
+interface Split {
+  recs: Rec[];
+  /** Ending given to a line that had none and is no longer last: the file's first ending, else "\n". */
+  eol: string;
+  /** The file ends with a line ending (the empty piece after it is not a record). */
+  finalNewline: boolean;
+  lines: string[];
+  kinds: LineKind[];
+}
+
+function split(text: string): Split {
+  const parts = text.split(/(\r?\n)/);
+  const recs: Rec[] = [];
+  for (let i = 0; i < parts.length; i += 2) recs.push({ body: parts[i], sep: parts[i + 1] ?? "" });
+  const finalNewline = recs.length > 1 && recs[recs.length - 1].body === "";
+  if (finalNewline) recs.pop();
+  const lines = recs.map((r) => r.body);
+  return { recs, eol: parts[1] ?? "\n", finalNewline, lines, kinds: classify(lines) };
+}
+
+function join(s: Pick<Split, "eol" | "finalNewline">, recs: readonly Rec[]): string {
+  let out = "";
+  recs.forEach((r, i) => {
+    const last = i === recs.length - 1;
+    out += r.body + (last && !s.finalNewline ? "" : r.sep || s.eol);
+  });
+  return out;
+}
+
+function indentOf(l: string): number {
+  let n = 0;
+  for (const c of /^[ \t]*/.exec(l)![0]) n += c === "\t" ? 4 : 1;
+  return n;
+}
+
+/** Exclusive end of the block of the task on `line`: deeper-indented lines after it (blank lines count only between them). */
+function blockEndOf(s: Split, line: number): number {
+  const ind = indentOf(s.lines[line]);
+  let end = line + 1;
+  for (let j = line + 1; j < s.lines.length; j++) {
+    const l = s.lines[j];
+    if (l.trim() === "") continue;
+    if (indentOf(l) <= ind) break;
+    // A deeper fence / comment owns its body even when that body is not indented.
+    if (s.kinds[j] === "code") while (j + 1 < s.lines.length && s.kinds[j + 1] === "code") j++;
+    end = j + 1;
+  }
+  return end;
+}
+
+const isTaskLine = (s: Split, line: number) => Number.isInteger(line) && line >= 0 && line < s.lines.length && s.kinds[line] === "task";
+
+/** Exclusive end line of the task block starting at `line` (null when that line is not a task). */
+export function taskBlockEnd(text: string, line: number): number | null {
+  const s = split(text);
+  return isTaskLine(s, line) ? blockEndOf(s, line) : null;
+}
+
+/** The raw source line of the task on `line` (for "copy line"); null when that line is not a task. */
+export function taskSource(text: string, line: number): string | null {
+  const s = split(text);
+  return isTaskLine(s, line) ? s.lines[line] : null;
+}
+
+/**
+ * Move the block of the task on `fromLine` so it starts where line `toLine` (of the current text) starts;
+ * `toLine` = the line count appends. A target inside another task's notes snaps to the end of that block,
+ * so a task is never separated from its notes. Returns the new text and the task's new line, the same text
+ * for a no-op, null when `fromLine` is not a task.
+ */
+export function planMove(text: string, fromLine: number, toLine: number): { text: string; line: number } | null {
+  const s = split(text);
+  if (!isTaskLine(s, fromLine)) return null;
+  const end = blockEndOf(s, fromLine);
+  let at = Math.max(0, Math.min(Math.trunc(toLine), s.lines.length));
+  for (;;) {
+    if (at >= s.lines.length || s.kinds[at] === "task") break;
+    let snapped = at;
+    for (let t = at - 1; t >= 0; t--) {
+      if (s.kinds[t] !== "task") continue;
+      const e = blockEndOf(s, t);
+      if (e > at) {
+        snapped = e;
+        break;
+      }
+    }
+    if (snapped === at) break;
+    at = snapped;
+  }
+  if (at >= fromLine && at <= end) return { text, line: fromLine };
+  const block = s.recs.slice(fromLine, end);
+  const rest = [...s.recs.slice(0, fromLine), ...s.recs.slice(end)];
+  const ins = at > end ? at - (end - fromLine) : at;
+  rest.splice(ins, 0, ...block);
+  return { text: join(s, rest), line: ins };
+}
+
+/** planMove, text only (null when `fromLine` is not a task). */
+export function moveTask(text: string, fromLine: number, toLine: number): string | null {
+  return planMove(text, fromLine, toLine)?.text ?? null;
+}
+
+/** Remove the task on `line` with its notes / sub-items. Null when that line is not a task. */
+export function deleteTask(text: string, line: number): string | null {
+  const s = split(text);
+  if (!isTaskLine(s, line)) return null;
+  const rest = [...s.recs.slice(0, line), ...s.recs.slice(blockEndOf(s, line))];
+  if (rest.length === 0) return "";
+  return join(s, rest);
+}
+
+/** Rewrite one task line through `fn(match)`; null when not a task, the same text when `fn` returns the same line. */
+function rewriteTask(text: string, line: number, fn: (m: RegExpExecArray) => string | null): string | null {
+  const s = split(text);
+  if (!isTaskLine(s, line)) return null;
+  const m = TASK_RE.exec(s.lines[line])!;
+  const next = fn(m);
+  if (next === null) return null;
+  if (next === s.lines[line]) return text;
+  const recs = s.recs.slice();
+  recs[line] = { ...recs[line], body: next };
+  return join(s, recs);
+}
+
+/**
+ * The board's state change: the box, plus the blocked reason. Blocking with a reason writes it right after
+ * the box ("[!] blocked: <reason> — <task>", as the agent-mission skill asks); leaving blocked removes that
+ * board-written prefix again. Null when `line` is not a task.
+ */
+export function changeTaskState(text: string, line: number, state: TaskState, reason?: string | null): string | null {
+  return rewriteTask(text, line, (m) => {
+    const from = stateOfBox(m[2]);
+    const why = oneLine(reason ?? "");
+    let rest = m[3];
+    if (state === "blocked" && why) {
+      const bare = rest.replace(BLOCK_PREFIX_RE, " ").trim();
+      rest = ` blocked: ${why}${bare ? ` — ${bare}` : ""}`;
+    } else if (from === "blocked" && state !== "blocked") rest = rest.replace(BLOCK_PREFIX_RE, " ");
+    const box = from === state ? m[2] : BOX_CHAR[state];
+    return `${m[1]}[${box}]${rest}`;
+  });
+}
+
+/**
+ * Add a task under the "## Tasks" heading (after the section's last non-blank line), creating the heading
+ * at the end of the file when there is none. `taskText` may carry "@owner" tokens; a typed bullet / box is
+ * stripped. Null when the text is empty.
+ */
+export function addTask(text: string, taskText: string, state: TaskState = "todo"): string | null {
+  return planAdd(text, taskText, state)?.text ?? null;
+}
+
+/** addTask + the new task's line. */
+export function planAdd(text: string, taskText: string, state: TaskState = "todo"): { text: string; line: number } | null {
+  const body = cleanTaskLine(oneLine(taskText));
+  if (!body) return null;
+  const task = `- [${BOX_CHAR[state]}] ${body}`;
+  const s = split(text);
+  if (text.trim() === "") return { text: `## Tasks${s.eol}${task}${s.eol}`, line: 1 };
+  const h = s.lines.findIndex((l, i) => s.kinds[i] === "heading" && TASKS_HEADING_RE.test(l));
+  const recs = s.recs.slice();
+  if (h < 0) {
+    const add: string[] = s.lines[s.lines.length - 1].trim() === "" ? [] : [""];
+    add.push("## Tasks", task);
+    // The old last line gets an ending if it had none; the file's final-newline state carries over.
+    recs.push(...add.map((body) => ({ body, sep: s.eol })));
+    return { text: join(s, recs), line: recs.length - 1 };
+  }
+  let end = s.lines.length;
+  for (let i = h + 1; i < s.lines.length; i++)
+    if (s.kinds[i] === "heading") {
+      end = i;
+      break;
+    }
+  let at = h + 1;
+  for (let i = end - 1; i > h; i--)
+    if (s.lines[i].trim() !== "") {
+      at = i + 1;
+      break;
+    }
+  recs.splice(at, 0, { body: task, sep: s.eol });
+  return { text: join(s, recs), line: at };
+}
+
+/**
+ * Replace a task's text, keeping its box. Without "@" tokens in `newText` the task keeps its owners (appended
+ * as "@a @b"); with tokens, the typed ones are the owners. Unchanged text = same file; empty text = null.
+ */
+export function editTaskText(text: string, line: number, newText: string): string | null {
+  const body = cleanTaskLine(oneLine(newText));
+  if (!body) return null;
+  return rewriteTask(text, line, (m) => {
+    const old = ownersOf(m[3]);
+    const typed = ownersOf(body);
+    if (typed.owners.length === 0 && typed.text === old.text) return m[0];
+    const owners = typed.owners.length ? "" : old.owners.map((o) => ` @${o}`).join("");
+    return `${m[1]}[${m[2]}] ${body}${owners}`;
+  });
+}
+
+/** Set a task's owners (slugified, unique; [] = unassigned): the old tokens go, the new ones are appended. */
+export function setTaskOwners(text: string, line: number, slugs: readonly string[]): string | null {
+  const want: string[] = [];
+  for (const raw of slugs) {
+    const s = slugify(raw.replace(/^@/, ""));
+    if (s && !want.includes(s)) want.push(s);
+  }
+  return rewriteTask(text, line, (m) => {
+    const cur = ownersOf(m[3]);
+    if (cur.owners.length === want.length && cur.owners.every((o, i) => o === want[i])) return m[0];
+    return `${m[1]}[${m[2]}]${cur.text ? ` ${cur.text}` : ""}${want.map((o) => ` @${o}`).join("")}`;
+  });
+}
+
+/** Add one owner (minimal edit: " @slug" appended to the line). Same text when it already owns the task. */
+export function addTaskOwner(text: string, line: number, slug: string): string | null {
+  const s = slugify(slug.replace(/^@/, ""));
+  if (!s) return null;
+  return rewriteTask(text, line, (m) => {
+    if (ownersOf(m[3]).owners.includes(s)) return m[0];
+    return `${m[0].replace(/\s+$/, "")} @${s}`;
+  });
+}
+
+/** Owner suggestions for "@" completion: member name slugs (team order), then their roles. Unique. */
+export function teamSlugs(team: readonly Pick<TeamMember, "name" | "role">[]): string[] {
+  const out: string[] = [];
+  for (const m of team) {
+    const s = slugify(m.name);
+    if (s && !out.includes(s)) out.push(s);
+  }
+  for (const m of team) {
+    const r = normalizeRole(m.role);
+    if (r && !out.includes(r)) out.push(r);
+  }
+  return out;
+}
+
+/** The "@partial" token ending at `caret` and the slugs it can complete to (null when the caret is not in one). */
+export function ownerCompletion(value: string, caret: number, slugs: readonly string[]): { start: number; prefix: string; matches: string[] } | null {
+  const before = value.slice(0, caret);
+  const m = /(^|[\s(\[,;])@([A-Za-z0-9_-]*)$/.exec(before);
+  if (!m) return null;
+  const prefix = m[2].toLowerCase();
+  const start = caret - m[2].length - 1;
+  return { start, prefix, matches: slugs.filter((s) => s.startsWith(prefix) && s !== prefix) };
+}
+
+export type TaskFilter = "all" | "mine" | "unassigned" | "blocked";
+
+/**
+ * Board filter: "mine" = owned by `member` (the agent selected in Mission Control; nothing without one),
+ * "unassigned" = not done and owned by nobody on the team, "blocked". `query` matches text or "@owner".
+ */
+export function matchesFilter(
+  task: Task,
+  filter: TaskFilter,
+  query: string,
+  team: readonly TeamMember[],
+  member: Pick<TeamMember, "name" | "role"> | null,
+): boolean {
+  if (filter === "mine" && !(member && ownsTask(task, member))) return false;
+  if (filter === "unassigned" && (task.state === "done" || ownersFor(task, team).length > 0)) return false;
+  if (filter === "blocked" && task.state !== "blocked") return false;
+  const q = query.trim().toLowerCase();
+  if (!q) return true;
+  if (task.text.toLowerCase().includes(q)) return true;
+  const bare = q.replace(/^@/, "");
+  return !!bare && task.owners.some((o) => o.includes(bare));
+}
