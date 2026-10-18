@@ -27,10 +27,12 @@ flow control never blocks the child, never bind terminal-critical keys.
 
 ### 3. CI on GitHub Actions (S–M), mostly done
 - **Status:** `.github/workflows/ci.yml` runs `npm ci`, `tsc --noEmit`, `vitest run`, `npm run build` and
-  `cargo test` (ConPTY tests included) on `windows-latest` for every push to `main` and every PR, with npm and cargo
-  caches; `v*` tags also run `tauri build` and keep the NSIS installer as a workflow artifact.
+  `cargo test` (PTY tests included) on `windows-latest`, `ubuntu-22.04` and `macos-latest` for every push to `main`
+  and every PR, with npm and cargo caches, plus a non-fatal `cargo clippy`; `v*` tags (or a manual run with
+  `installers: true`) also run `tauri build` per OS and keep the NSIS / dmg / AppImage + deb as workflow artifacts.
 - **Remaining:** live CDP e2e on a self-hosted Windows runner (`full-verify.js`, `mission.js` in a sandbox
-  instance); publishing releases from CI once signing (item 1) exists; `cargo clippy` / `cargo fmt --check` gates.
+  instance); publishing releases from CI once signing (item 1) exists; making `cargo clippy` / `cargo fmt --check`
+  fatal gates.
 
 ## P1: Terminal fidelity and continuity
 
@@ -106,12 +108,18 @@ flow control never blocks the child, never bind terminal-critical keys.
   loaded at startup. Executable plugins (JS/WASM) only later, with a written security model, since they would run
   next to credentials.
 
-### 12. Linux and macOS ports (XL)
+### 12. Linux and macOS ports (XL), first port done: builds and tests in CI, not live-verified
 - **Why:** the multi-agent workflow isn't Windows-only, and Tauri, xterm.js and portable-pty are cross-platform.
-- **How:** abstract the Windows-specific parts behind traits: Job Objects → process groups / cgroups (Linux) and
-  process groups + `kqueue` (macOS); Toolhelp diagnostics → `/proc` / `libproc`; PDH GPU telemetry → optional;
-  ports → `/proc/net/tcp` / `lsof`-style APIs; WebView2 → WebKitGTK / WKWebView (re-verify WebGL budget, CSP and
-  iframe sandbox behaviour per engine). Keep Windows as the reference platform and gate features per OS.
+- **Shipped (v1):** `ProcessContainer` (Job Object / POSIX session with `killpg` + SIGHUP / SIGKILL), Unix
+  termination guards, sysinfo diagnostics with best-effort WebKit attribution, ports from `/proc/net/tcp` (Linux) and
+  `lsof` (macOS), login shell as the default terminal, ⌘ as the primary shortcut modifier on macOS, per-platform
+  WebGL budget, `tauri.macos.conf.json` / `tauri.linux.conf.json` bundles, CI matrix on all three OSes. Details and
+  the limitation list: [HANDOFF section 10](HANDOFF.md#10-platforms-windows-macos-linux).
+- **Remaining:** live verification on a Mac and a Linux desktop (an e2e runner: `cdp.mjs` needs a WebKit inspector
+  equivalent, or a manual checklist); a supervisor process or cgroup v2 (Linux) so a hard host crash can't orphan
+  agents; renderer-crash recovery for WKWebView / WebKitGTK; measuring the WebGL budget, CSP and iframe sandbox
+  behaviour per engine; GPU telemetry (Metal / DRM fdinfo) if worth it; signing + notarization for macOS; a
+  `sandbox.sh` equivalent of the PowerShell sandbox scripts and an isolated WebKit profile for sandboxes.
 
 ### 13. Accessibility audit (M)
 - **Why:** contrast is tested, but keyboard-only navigation, screen-reader labels and focus order haven't been
