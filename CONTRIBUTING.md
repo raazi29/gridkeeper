@@ -11,6 +11,7 @@ version.
 ## Contents
 
 - [Dev setup (Windows)](#dev-setup-windows)
+- [Running a test instance next to your own Gridkeeper (sandbox)](#running-a-test-instance-next-to-your-own-gridkeeper-sandbox)
 - [Run, test, typecheck](#run-test-typecheck)
 - [Live end-to-end checks (CDP)](#live-end-to-end-checks-cdp)
 - [Benchmarks and showcase recording](#benchmarks-and-showcase-recording)
@@ -53,6 +54,34 @@ npm run tauri build
 
 `npm run tauri build` writes the NSIS installer (per-user install) to `src-tauri\target\release\bundle\nsis\`.
 
+## Running a test instance next to your own Gridkeeper (sandbox)
+
+If you use Gridkeeper itself while you work on it (with agents running in it), don't start a second copy plainly:
+it shares the identifier `app.gridkeeper.desktop`, so it either just focuses your running window (single-instance
+lock) or shares your `workspaces.json` and WebView2 profile. Run a **sandbox** instead:
+
+```powershell
+npm run sandbox                     # dev build (npm run tauri dev) as sandbox "dev", CDP on port 9333
+npm run sandbox -- -DryRun          # show the checks, environment and command without starting anything
+npm run sandbox:stop -- -Name dev   # stop it (only the process tree the script started)
+```
+
+`scripts/dev/sandbox.ps1` sets `GRIDKEEPER_SANDBOX=<name>`, which gives the instance its own data folder
+(`%APPDATA%\app.gridkeeper.desktop\sandboxes\<name>`), its own WebView2 profile, no single-instance lock and the
+title `Gridkeeper [sandbox: <name>]`. It also:
+
+- opens the CDP port for the e2e scripts (`-CdpPort`, default 9333; 9222 is left to you);
+- refuses to start a dev build with less than 4 GB of free commit (`-MinFreeCommitGB`, `-Force` to override), because
+  a machine that runs out of memory kills WebView2 processes, including your running Gridkeeper's;
+- builds with `CARGO_BUILD_JOBS=2` (`-Jobs`), `RUST_MIN_STACK=16777216` and below-normal priority;
+- fails fast if Vite's port 1420 is taken (only one dev sandbox at a time; `-Mode release` runs
+  `src-tauri\target\release\gridkeeper.exe`, `-Mode exe -Exe <path>` any build);
+- `-Fresh` wipes that sandbox's data folder first (never anything outside `...\sandboxes\<name>`).
+
+Never stop a test instance by process name (`Stop-Process -Name gridkeeper`, `taskkill /IM ...`): that also kills
+the Gridkeeper you are working in. Use `sandbox:stop`, which verifies the recorded PID before touching it. Several
+worktrees building at once can share one cache with `$env:CARGO_TARGET_DIR` (or `-TargetDir`).
+
 ## Run, test, typecheck
 
 Run all of these before opening a pull request:
@@ -63,6 +92,8 @@ npx vitest run                   # frontend unit tests (or: npm test)
 cd src-tauri; cargo test         # Rust unit tests + ConPTY integration tests (spawn real pwsh/cmd)
 ```
 
+- CI (`.github/workflows/ci.yml`, `windows-latest`) runs the same three checks, after `npm run build`, on every
+  push to `main` and every pull request.
 - The ConPTY tests spawn real processes. Run them from PowerShell.
 - `cargo test --test live_profiles -- --ignored --nocapture` runs optional live checks against your real Claude
   profiles. It prints no e-mail addresses. Never paste its output if you are unsure what it contains.
@@ -70,27 +101,34 @@ cd src-tauri; cargo test         # Rust unit tests + ConPTY integration tests (s
 
 ## Live end-to-end checks (CDP)
 
-The e2e scripts drive the **running dev app** over the Chrome DevTools Protocol. Nothing is mocked.
+The e2e scripts drive a **running dev sandbox** over the Chrome DevTools Protocol. Nothing is mocked.
 
 ```powershell
-$env:WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS = "--remote-debugging-port=9222"
-npm run tauri dev
+npm run sandbox                    # see the sandbox section above; wait for "Gridkeeper [sandbox: dev]"
 # in a second PowerShell:
+$env:CDP_PORT = 9333
 node scripts/e2e/cdp.mjs file scripts/e2e/full-verify.js     # the full suite (dedicated "Verify" workspace, PowerShell panes only)
 node scripts/e2e/cdp.mjs file scripts/e2e/ps-basic.js        # prompt, echo, Unicode, 20,000 lines
+node scripts/e2e/cdp.mjs file scripts/e2e/mission.js         # Mission Control task board (temp git repo, PowerShell panes only)
 node scripts/e2e/cdp.mjs eval "window.__gridkeeperTerminals.list()"
 node scripts/e2e/cdp.mjs shot out.png
+npm run sandbox:stop -- -Name dev
 ```
+
+- `cdp.mjs file` refuses to run unless the instance reports a sandbox (`ipc.appInfo().sandbox`), because the scripts
+  create and close sessions and workspaces. `E2E_ALLOW_LIVE=1` overrides that for a dev instance you really mean.
+  `eval` and `shot` are not guarded.
 
 - In dev builds the page exposes stable handles for tests: `window.__gridkeeper` (`store`, `sessions`, `registry`,
   `ipc`, `mission`, `commands`), `window.__gridkeeperTerminals.list()/text(id)` and
   `window.__gridkeeperForceContextLoss(id?)`. Use these, not dynamic `import()` from a test, because Vite HMR gives a
   fresh module instance and you would be talking to a stale store.
-- Some scripts hard-code `D:\AlteraAI` as their working folder. Edit them for your checkout.
+- Scripts get their working folder as the global `E2E_CWD`, which `cdp.mjs` injects from the `E2E_CWD` environment
+  variable (default: the current directory, so run them from your checkout).
 - Scripts that start AI agents (`multi-agent.js`, `codex-*.js`) never send prompts. Keep it that way.
 - If WebView2 fails to start with `0x8007139F`, another Gridkeeper instance holds the default WebView2 profile with
-  different browser arguments. Close it, or set `WEBVIEW2_USER_DATA_FOLDER` to a separate folder (as
-  `scripts/bench/run-all.ps1` does).
+  different browser arguments. Use the sandbox script (it has its own profile), or set `WEBVIEW2_USER_DATA_FOLDER`
+  to a separate folder (as `scripts/bench/run-all.ps1` does).
 
 ## Benchmarks and showcase recording
 
@@ -107,7 +145,8 @@ the registry should include before/after numbers from these scripts (see [docs/P
 The README demo is recorded from the real app:
 
 ```powershell
-# dev app running with --remote-debugging-port=9222 (see above), ffmpeg on PATH
+# dev sandbox running (npm run sandbox), ffmpeg on PATH
+$env:CDP_PORT = 9333
 node scripts/showcase/record.mjs docs/assets/showcase
 ```
 

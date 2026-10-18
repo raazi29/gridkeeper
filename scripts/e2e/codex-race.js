@@ -9,7 +9,7 @@
     for (const id of w.groups.flatMap((g) => g.sessionIds)) await closeSession(id);
     useApp.getState().deleteWorkspace(w.id);
   }
-  const cwd = "D:\\AlteraAI";
+  const cwd = E2E_CWD;
   const wsId = app.createWorkspace("Codex race", cwd);
   const g = useApp.getState().persisted.workspaces.find((w) => w.id === wsId).groups[0].id;
   const ids = [0, 1, 2].map(() => newSession({ groupId: g, agent: "codex", cwd }));

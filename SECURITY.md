@@ -6,9 +6,13 @@ Gridkeeper runs on the same machine as your AI agents and their logins, so we ta
 
 **Please do not open a public issue for security problems.**
 
-Report privately through GitHub Security Advisories: on the repository page open **Security → Report a
-vulnerability** (direct link: `https://github.com/raazi29/gridkeeper/security/advisories/new`). Only the
+Report privately through GitHub's private vulnerability reporting: on the repository page open **Security → Report
+a vulnerability** (direct link: `https://github.com/raazi29/gridkeeper/security/advisories/new`). Only the
 maintainers can see the report.
+
+If that button isn't there yet (private reporting has to be switched on in the repository settings), open a public
+issue titled **"Security contact request"** that contains **no details** about the problem, and a maintainer will
+set up a private channel with you.
 
 Please include:
 
@@ -61,7 +65,9 @@ The full model is in [docs/ARCHITECTURE.md §12](docs/ARCHITECTURE.md#12-securit
 - **Terminal output is untrusted.** It is rendered only by xterm.js (never as HTML), links open only on Ctrl+click
   and only for http/https, and replayed output has terminal queries stripped so it can't inject replies.
 - **Git is read-only** apart from `git worktree add`, which you confirm first. The Changes drawer never stages,
-  commits, checks out or resets.
+  commits, checks out or resets. The only file Gridkeeper writes inside a project folder is the Mission Control task
+  board `.gridkeeper/mission.md` (plus a `.gitignore` in that folder that keeps it out of git). Treat that file
+  like any other text your agents read: anyone who can edit it can put words in front of your agents.
 
 ### Known gaps
 

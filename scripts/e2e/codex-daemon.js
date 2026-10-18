@@ -7,7 +7,7 @@
     for (const id of w.groups.flatMap((g) => g.sessionIds)) await closeSession(id);
     useApp.getState().deleteWorkspace(w.id);
   }
-  const cwd = "D:\\AlteraAI";
+  const cwd = E2E_CWD;
   const run = async (label, args) => {
     const wsId = useApp.getState().createWorkspace(`Codex daemon ${label}`, cwd);
     const g = useApp.getState().persisted.workspaces.find((w) => w.id === wsId).groups[0].id;

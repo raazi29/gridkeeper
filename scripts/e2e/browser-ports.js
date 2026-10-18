@@ -20,10 +20,10 @@
     for (const id of w.groups.flatMap((g) => g.sessionIds)) await G.sessions.closeSession(id);
     useApp.getState().deleteWorkspace(w.id);
   }
-  const wsId = useApp.getState().createWorkspace("Browser test", "D:\\AlteraAI\\docs");
+  const wsId = useApp.getState().createWorkspace("Browser test", E2E_CWD + "\\docs");
   const g = useApp.getState().persisted.workspaces.find((w) => w.id === wsId).groups[0].id;
   const server = G.sessions.newSession({
-    groupId: g, agent: "powershell", cwd: "D:\\AlteraAI\\docs", name: "web server",
+    groupId: g, agent: "powershell", cwd: E2E_CWD + "\\docs", name: "web server",
     args: ["-NoProfile", "-NoExit", "-Command", "python -m http.server 8765 --bind 127.0.0.1"],
   });
   out.serverRunning = await waitFor(() => useApp.getState().runtime[server]?.state.state === "running");
