@@ -168,6 +168,9 @@
     // ---- the board in Mission Control
     missionUi.getState().toggle(true);
     await check("board.renders", async () => {
+      // Done tasks are collapsed behind an "N done" toggle: expand it first.
+      await waitFor(() => missionNode(goal), 10000);
+      missionNode(goal)?.querySelector(".mb-done-toggle[aria-expanded=\"false\"]")?.click();
       const tasks = ["Write the parser", "Review the plan", "Set up the repo", "Waiting on CI"];
       const okAll = await waitFor(() => {
         const node = missionNode(goal);
