@@ -1,7 +1,9 @@
 //! Gridkeeper — multi-agent terminal workspace (Tauri host).
 //!
 //! Module ownership:
-//! - `pty`         ConPTY sessions, output ring buffer, flow control, Job Objects
+//! - `pty`         PTY sessions (ConPTY / Unix pty), output ring buffer, flow control, process containers
+//! - `platform`    per-OS bits: os name, macOS PATH/LANG, Unix termination guards
+//! - `procs`       Unix process table (sessions, trees, CPU/RAM) for containment and diagnostics
 //! - `adapters`    agent adapters (PowerShell, Claude Code, Codex, generic)
 //! - `profiles`    account records (`profiles.json`; historically Claude-only)
 //! - `accounts`    per-agent accounts: home discovery, status commands, launch env
@@ -25,7 +27,9 @@ pub mod gpu;
 pub mod logging;
 pub mod mission;
 pub mod persistence;
+pub mod platform;
 pub mod ports;
+pub mod procs;
 pub mod profiles;
 pub mod pty;
 pub mod redact;
@@ -38,6 +42,8 @@ use tauri::Manager;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // macOS: launchd's minimal PATH / missing LANG (no-op elsewhere). Single-threaded here.
+    platform::init_process_env();
     let mut context = tauri::generate_context!();
     // Sandbox (GRIDKEEPER_SANDBOX): resolved first, while the process is still single-threaded, because it
     // sets WEBVIEW2_USER_DATA_FOLDER before any window exists. An invalid name refuses to start.
@@ -68,6 +74,8 @@ pub fn run() {
         .setup(|app| {
             let ctx = state::AppCtx::init(app.handle())?;
             app.manage(ctx);
+            // Unix: stop sessions on SIGTERM/SIGINT/SIGHUP and on a main-thread panic (no-op on Windows).
+            platform::install_exit_guards(app.handle());
             if let Some(w) = app.get_webview_window(webview_guard::MAIN) {
                 webview_guard::install(&w);
             }
@@ -158,5 +166,7 @@ If another copy is already running, close it and try again.              If the 
         // SAFETY: both buffers are NUL-terminated UTF-16 and outlive the call.
         unsafe { MessageBoxW(std::ptr::null_mut(), text.as_ptr(), title.as_ptr(), MB_OK | MB_ICONERROR) };
     }
+    #[cfg(not(windows))]
+    eprintln!("Gridkeeper could not start: {message}");
     std::process::exit(1);
 }
