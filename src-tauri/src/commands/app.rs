@@ -1,4 +1,4 @@
-//! App-level commands: build/runtime info and benchmark mode.
+//! App-level commands: build/runtime info, benchmark and sandbox mode.
 
 use serde::Serialize;
 
@@ -12,6 +12,8 @@ pub struct AppInfo {
     pub bench: Option<String>,
     /// Absolute path of the repo's scripts/bench directory, when it exists (dev builds / benchmarks).
     pub bench_scripts_dir: Option<String>,
+    /// GRIDKEEPER_SANDBOX name when this is an isolated test instance (own data folder, no single-instance lock).
+    pub sandbox: Option<String>,
 }
 
 #[tauri::command]
@@ -25,7 +27,13 @@ pub fn app_info() -> AppInfo {
         })
         .and_then(|p| std::fs::canonicalize(p).ok())
         .map(|p| p.to_string_lossy().trim_start_matches(r"\\?\").to_string());
-    AppInfo { version: env!("CARGO_PKG_VERSION").into(), windows_build: windows_build(), bench, bench_scripts_dir }
+    AppInfo {
+        version: env!("CARGO_PKG_VERSION").into(),
+        windows_build: windows_build(),
+        bench,
+        bench_scripts_dir,
+        sandbox: crate::sandbox::name().map(str::to_string),
+    }
 }
 
 fn windows_build() -> Option<u32> {

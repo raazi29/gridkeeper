@@ -24,6 +24,9 @@ pub enum AppError {
     MissingExecutable(String),
     #[error("io error: {0}")]
     Io(#[from] std::io::Error),
+    /// Optimistic-concurrency failure (e.g. the mission file changed since it was read).
+    #[error("conflict: {0}")]
+    Conflict(String),
     #[error("{0}")]
     Other(String),
 }
@@ -41,6 +44,7 @@ impl AppError {
             AppError::Invalid(_) => "invalid",
             AppError::MissingExecutable(_) => "missing_executable",
             AppError::Io(_) => "io",
+            AppError::Conflict(_) => "conflict",
             AppError::Other(_) => "other",
         }
     }
@@ -376,6 +380,55 @@ pub struct FileDiff {
     pub text: String,
     pub truncated: bool,
     pub binary: bool,
+}
+
+/// A worktree's branch measured against a base branch (read-only; `git::branch_summary`).
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BranchSummary {
+    pub is_repo: bool,
+    pub branch: Option<String>,
+    /// The base actually used: the requested one, else the main worktree's branch; `None` when unresolvable.
+    pub base: Option<String>,
+    /// Commits on HEAD not on base / on base not on HEAD.
+    pub ahead: u32,
+    pub behind: u32,
+    /// `git diff --shortstat base...HEAD` (committed work only).
+    pub files_changed: u32,
+    pub insertions: u32,
+    pub deletions: u32,
+    /// Entries in `git status --porcelain` (uncommitted, incl. untracked).
+    pub uncommitted: u32,
+    pub last_commit_subject: Option<String>,
+    /// Last commit time in ms since the epoch.
+    pub last_commit_ms: Option<u64>,
+}
+
+// ---------------------------------------------------------------------------
+// Mission file (`mission`)
+// ---------------------------------------------------------------------------
+
+/// `<projectDir>/.gridkeeper/mission.md`, read by `mission_read` / written by `mission_write`.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MissionFile {
+    /// Absolute path of the mission file (whether or not it exists).
+    pub path: String,
+    pub exists: bool,
+    /// File contents (UTF-8 lossy, BOM stripped, at most 256 KiB; "" when missing).
+    pub text: String,
+    /// Last-write time in ms since the epoch; `None` when missing. Passed back to `mission_write`.
+    pub modified_ms: Option<u64>,
+}
+
+/// Emitted with payload `MissionChanged` when the mission file of a watched project folder changes.
+pub const EVT_MISSION_CHANGED: &str = "mission-changed";
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MissionChanged {
+    /// The folder exactly as the frontend passed it to `mission_watch`.
+    pub project_dir: String,
 }
 
 // ---------------------------------------------------------------------------
