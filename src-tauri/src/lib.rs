@@ -7,7 +7,8 @@
 //! - `accounts`    per-agent accounts: home discovery, status commands, launch env
 //! - `persistence` versioned, atomically written workspace state
 //! - `git`         repo info, worktrees, read-only status / diff (Changes panel), branch summary
-//! - `mission`     `<project>/.gridkeeper/mission.md`: capped read, atomic checked write, debounced watch
+//! - `mission`     `<project>/.gridkeeper/mission.md`: capped read, atomic checked write, debounced watch;
+//!               lead control outbox (list / archive) and the generated team.md
 //! - `sandbox`     GRIDKEEPER_SANDBOX isolated instances (own data folder + WebView2 profile)
 //! - `diagnostics` host/webview/session resource attribution
 //! - `ports`       LISTENING TCP ports per session process tree
@@ -117,6 +118,9 @@ pub fn run() {
             commands::mission::mission_write,
             commands::mission::mission_watch,
             commands::mission::mission_unwatch,
+            commands::mission::mission_outbox_list,
+            commands::mission::mission_outbox_archive,
+            commands::mission::mission_team_write,
             commands::tools::ports_list,
             commands::tools::browser_probe,
             commands::tools::browser_open_window,

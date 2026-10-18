@@ -11,6 +11,15 @@
 //!   Events for the mission file are debounced (trailing [`DEBOUNCE`], at most [`MAX_DEBOUNCE_DELAY`]
 //!   under a continuous stream) on one background thread per watched folder, then handed to the
 //!   injected emit callback once per spelling of the folder the frontend registered.
+//!
+//! Lead control (the lead coordinates its teammates through files):
+//! - `.gridkeeper/outbox/`: any agent creates ONE new `.md` / `.txt` file per instruction. The watch also
+//!   observes this folder (non-recursive, re-armed when it appears) and emits
+//!   [`MissionChangeKind::Outbox`] for files created, written or renamed INTO it. [`outbox_list`] reads
+//!   them (oldest first, capped), [`outbox_archive`] moves a handled file to `outbox/sent/` or
+//!   `outbox/dismissed/` (a rename, so an agent creating a new file never races with it).
+//! - `.gridkeeper/team.md`: written only by Gridkeeper ([`team_write`], redacted, atomic). It never
+//!   produces an event, so regenerating it cannot trigger itself.
 
 use std::collections::HashMap;
 use std::fs;
@@ -29,6 +38,17 @@ use crate::types::*;
 pub const DIR_NAME: &str = ".gridkeeper";
 pub const FILE_NAME: &str = "mission.md";
 pub const MAX_MISSION_BYTES: usize = 256 * 1024;
+/// Lead control instruction folder inside `.gridkeeper/`.
+pub const OUTBOX_DIR: &str = "outbox";
+/// Generated team status file inside `.gridkeeper/` (agents read it, Gridkeeper writes it).
+pub const TEAM_FILE: &str = "team.md";
+/// At most this many outbox files are returned per listing (the oldest ones).
+pub const MAX_OUTBOX_FILES: usize = 50;
+/// Each outbox file is read up to this many bytes (`OutboxItem::truncated` beyond).
+pub const MAX_OUTBOX_FILE_BYTES: usize = 16 * 1024;
+pub const MAX_TEAM_BYTES: usize = 256 * 1024;
+/// Archive subfolders of the outbox.
+pub const OUTBOX_DISPOSITIONS: [&str; 2] = ["sent", "dismissed"];
 /// Trailing debounce for watcher events.
 pub const DEBOUNCE: Duration = Duration::from_millis(150);
 /// Upper bound on the delay while events keep arriving (a continuous stream still notifies).
@@ -206,11 +226,168 @@ fn atomic_replace(path: &Path, bytes: &[u8]) -> io::Result<()> {
 }
 
 // ---------------------------------------------------------------------------
+// Lead control: outbox + team file
+// ---------------------------------------------------------------------------
+
+pub fn outbox_path(project: &Path) -> PathBuf {
+    project.join(DIR_NAME).join(OUTBOX_DIR)
+}
+
+/// An instruction file name: `.md` / `.txt`, not hidden / temporary (`.x.md`, `~x.md`).
+fn is_outbox_file_name(path: &Path) -> bool {
+    let Some(name) = path.file_name().map(|n| n.to_string_lossy()) else {
+        return false;
+    };
+    if name.starts_with('.') || name.starts_with('~') {
+        return false;
+    }
+    path.extension().is_some_and(|e| e.eq_ignore_ascii_case("md") || e.eq_ignore_ascii_case("txt"))
+}
+
+/// Regular instruction files directly in `<project>/.gridkeeper/outbox/`, oldest first (then by name),
+/// at most [`MAX_OUTBOX_FILES`], each read up to [`MAX_OUTBOX_FILE_BYTES`]. Missing folder = empty.
+/// Folders (`sent/`, `dismissed/`), links and files that cannot be opened right now (still being
+/// written and locked) are skipped; the next change event lists them again.
+pub fn outbox_list(project_dir: &str) -> AppResult<Vec<OutboxItem>> {
+    let project = validate_project_dir(project_dir)?;
+    let dir = outbox_path(&project);
+    if !dir.is_dir() {
+        return Ok(Vec::new());
+    }
+    let mut found: Vec<(u64, String, PathBuf)> = Vec::new();
+    for entry in fs::read_dir(&dir)? {
+        let Ok(entry) = entry else { continue };
+        if !entry.file_type().is_ok_and(|t| t.is_file()) {
+            continue;
+        }
+        let path = entry.path();
+        if !is_outbox_file_name(&path) {
+            continue;
+        }
+        // Names that are not valid Unicode could not be passed back to `outbox_archive`.
+        let Some(name) = entry.file_name().to_str().map(str::to_owned) else { continue };
+        let ms = entry.metadata().ok().as_ref().and_then(modified_ms).unwrap_or(0);
+        found.push((ms, name, path));
+    }
+    found.sort_by(|a, b| a.0.cmp(&b.0).then_with(|| a.1.cmp(&b.1)));
+    found.truncate(MAX_OUTBOX_FILES);
+    let mut out = Vec::with_capacity(found.len());
+    for (modified_ms, name, path) in found {
+        let Ok(file) = fs::File::open(&path) else { continue };
+        let mut bytes = Vec::new();
+        if file.take(MAX_OUTBOX_FILE_BYTES as u64 + 1).read_to_end(&mut bytes).is_err() {
+            continue;
+        }
+        let truncated = bytes.len() > MAX_OUTBOX_FILE_BYTES;
+        bytes.truncate(MAX_OUTBOX_FILE_BYTES);
+        out.push(OutboxItem { name, text: decode(&bytes), modified_ms, truncated });
+    }
+    Ok(out)
+}
+
+/// A bare file name: no separators, drive / stream colons, `..`, control characters.
+fn validate_outbox_name(name: &str) -> AppResult<()> {
+    let bad = name.trim().is_empty()
+        || name.len() > 255
+        || name.contains("..")
+        || name.chars().any(|c| matches!(c, '/' | '\\' | ':') || c.is_control());
+    if bad {
+        return Err(AppError::Invalid(format!("Not an outbox file name: {name:?}")));
+    }
+    Ok(())
+}
+
+/// `dir/name`, or `dir/<stem>-<n><.ext>` when that is taken.
+fn free_name(dir: &Path, name: &str) -> PathBuf {
+    let taken = |p: &Path| fs::symlink_metadata(p).is_ok();
+    let first = dir.join(name);
+    if !taken(&first) {
+        return first;
+    }
+    let (stem, ext) = match name.rfind('.') {
+        Some(i) if i > 0 => (&name[..i], &name[i..]),
+        _ => (name, ""),
+    };
+    for n in 1..10_000 {
+        let p = dir.join(format!("{stem}-{n}{ext}"));
+        if !taken(&p) {
+            return p;
+        }
+    }
+    let ms = std::time::SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_millis()).unwrap_or(0);
+    dir.join(format!("{stem}-{ms}{ext}"))
+}
+
+/// Move a handled instruction file from `outbox/` to `outbox/sent/` or `outbox/dismissed/` (created
+/// on demand; a name clash gets a `-<n>` suffix). Returns the archived path. The file must exist
+/// directly in the outbox (`AppError::NotFound` otherwise, e.g. when its author deleted it).
+pub fn outbox_archive(project_dir: &str, name: &str, disposition: &str) -> AppResult<String> {
+    let project = validate_project_dir(project_dir)?;
+    let Some(sub) = OUTBOX_DISPOSITIONS.iter().find(|d| **d == disposition) else {
+        return Err(AppError::Invalid(format!("Unknown outbox disposition: {disposition:?}")));
+    };
+    validate_outbox_name(name)?;
+    let dir = outbox_path(&project);
+    let src = dir.join(name);
+    match fs::symlink_metadata(&src) {
+        Ok(m) if m.is_file() => {}
+        Ok(_) => return Err(AppError::Invalid(format!("Not a file in the outbox: {name}"))),
+        Err(e) if e.kind() == io::ErrorKind::NotFound => {
+            return Err(AppError::NotFound(format!("outbox file {name}")));
+        }
+        Err(e) => return Err(e.into()),
+    }
+    let target_dir = dir.join(sub);
+    fs::create_dir_all(&target_dir)?;
+    let _guard = WRITE_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+    let dest = free_name(&target_dir, name);
+    // Its author (or an indexer) may still hold the file open for a moment.
+    let mut attempt = 0;
+    loop {
+        match fs::rename(&src, &dest) {
+            Ok(()) => return Ok(dest.to_string_lossy().into_owned()),
+            Err(e) if e.kind() == io::ErrorKind::NotFound => {
+                return Err(AppError::NotFound(format!("outbox file {name}")));
+            }
+            Err(_) if attempt < 4 => {
+                attempt += 1;
+                std::thread::sleep(Duration::from_millis(50 * attempt));
+            }
+            Err(e) => return Err(e.into()),
+        }
+    }
+}
+
+/// Atomically write `<project>/.gridkeeper/team.md` (creating the folder with its self-ignoring
+/// `.gitignore`). The text is redacted first; at most [`MAX_TEAM_BYTES`]. Identical content is not
+/// rewritten. The watcher never reports this file.
+pub fn team_write(project_dir: &str, text: &str) -> AppResult<()> {
+    let project = validate_project_dir(project_dir)?;
+    let clean = crate::redact::redact(text);
+    if clean.len() > MAX_TEAM_BYTES {
+        return Err(AppError::Invalid(format!(
+            "The team file is larger than {} KiB ({} KiB)",
+            MAX_TEAM_BYTES / 1024,
+            clean.len().div_ceil(1024)
+        )));
+    }
+    let _guard = WRITE_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+    let dir = project.join(DIR_NAME);
+    ensure_dir(&dir)?;
+    let path = dir.join(TEAM_FILE);
+    if fs::read(&path).is_ok_and(|old| old == clean.as_bytes()) {
+        return Ok(());
+    }
+    atomic_replace(&path, clean.as_bytes())?;
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
 // Watchers
 // ---------------------------------------------------------------------------
 
-/// Receives the project folder (as the frontend spelled it) after a debounced change.
-pub type EmitFn = Arc<dyn Fn(&str) + Send + Sync>;
+/// Receives the project folder (as the frontend spelled it) and what changed, after a debounced change.
+pub type EmitFn = Arc<dyn Fn(&str, MissionChangeKind) + Send + Sync>;
 
 /// Registry key: one watch per folder, case-insensitive, `/` and trailing separators ignored.
 pub fn normalize_key(project_dir: &str) -> String {
@@ -315,8 +492,8 @@ struct Pending {
     stop: bool,
     first: Option<Instant>,
     last: Option<Instant>,
-    /// `.gridkeeper` appeared, vanished or was replaced: re-establish its watch before emitting.
-    rearm: bool,
+    /// What the events since the last emit were about (merged).
+    fired: Relevance,
 }
 
 impl Pending {
@@ -332,21 +509,55 @@ struct Shared {
 }
 
 impl Shared {
-    fn poke(&self, rearm: bool) {
+    fn poke(&self, rel: Relevance) {
         let mut st = self.state.lock();
         let now = Instant::now();
         st.first.get_or_insert(now);
         st.last = Some(now);
-        st.rearm |= rearm;
+        st.fired.merge(rel);
         self.cv.notify_one();
     }
 }
 
-#[derive(Debug, PartialEq, Eq)]
-enum Relevance {
-    Ignore,
-    Mission,
-    Rearm,
+/// What a watcher event is about. Several flags can be set (a debounced batch merges them).
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+struct Relevance {
+    /// `.gridkeeper/mission.md` changed.
+    mission: bool,
+    /// An instruction file arrived in (or was written in) `.gridkeeper/outbox/`.
+    outbox: bool,
+    /// `.gridkeeper` appeared, vanished or was replaced: re-establish its watch (and the outbox's)
+    /// before emitting both kinds.
+    rearm: bool,
+    /// `.gridkeeper/outbox` appeared, vanished or was replaced: re-establish its watch.
+    rearm_outbox: bool,
+}
+
+impl Relevance {
+    const IGNORE: Self = Self { mission: false, outbox: false, rearm: false, rearm_outbox: false };
+
+    fn any(&self) -> bool {
+        self.mission || self.outbox || self.rearm || self.rearm_outbox
+    }
+
+    fn merge(&mut self, o: Relevance) {
+        self.mission |= o.mission;
+        self.outbox |= o.outbox;
+        self.rearm |= o.rearm;
+        self.rearm_outbox |= o.rearm_outbox;
+    }
+
+    /// The `mission-changed` kinds to emit for this batch.
+    fn kinds(&self) -> Vec<MissionChangeKind> {
+        let mut out = Vec::with_capacity(2);
+        if self.mission || self.rearm {
+            out.push(MissionChangeKind::Mission);
+        }
+        if self.outbox || self.rearm || self.rearm_outbox {
+            out.push(MissionChangeKind::Outbox);
+        }
+        out
+    }
 }
 
 fn same_path(a: &Path, b: &Path) -> bool {
@@ -357,26 +568,33 @@ fn is_name(path: &Path, name: &str) -> bool {
     path.file_name().is_some_and(|n| n.to_string_lossy().eq_ignore_ascii_case(name))
 }
 
-/// Which watcher events matter: the mission file itself, or `.gridkeeper` coming and going
-/// (its content-driven "modified" events are ignored; the inner watch reports those).
-fn classify(event: &notify::Event, project: &Path, gk: &Path) -> Relevance {
-    let mut out = Relevance::Ignore;
-    for path in &event.paths {
+/// Which watcher events matter: the mission file itself, `.gridkeeper` or `.gridkeeper/outbox` coming
+/// and going (their content-driven "modified" events are ignored; the inner watches report those), and
+/// instruction files arriving in the outbox (created, written, renamed in; never removals or the old
+/// name of a rename, so archiving a file to `outbox/sent/` stays silent). `team.md` never matters.
+fn classify(event: &notify::Event, project: &Path, gk: &Path, outbox: &Path) -> Relevance {
+    use notify::event::{ModifyKind, RenameMode};
+    let structural = matches!(
+        event.kind,
+        EventKind::Create(_) | EventKind::Remove(_) | EventKind::Modify(ModifyKind::Name(_)) | EventKind::Any | EventKind::Other
+    );
+    let leaving = matches!(
+        event.kind,
+        EventKind::Remove(_) | EventKind::Modify(ModifyKind::Name(RenameMode::From))
+    );
+    let rename_pair = matches!(event.kind, EventKind::Modify(ModifyKind::Name(RenameMode::Both)));
+    let mut out = Relevance::IGNORE;
+    for (i, path) in event.paths.iter().enumerate() {
         let parent = path.parent().unwrap_or(Path::new(""));
         if is_name(path, FILE_NAME) && same_path(parent, gk) {
-            out = Relevance::Mission;
+            out.mission = true;
         } else if is_name(path, DIR_NAME) && same_path(parent, project) {
-            let structural = matches!(
-                event.kind,
-                EventKind::Create(_)
-                    | EventKind::Remove(_)
-                    | EventKind::Modify(notify::event::ModifyKind::Name(_))
-                    | EventKind::Any
-                    | EventKind::Other
-            );
-            if structural {
-                return Relevance::Rearm;
-            }
+            out.rearm |= structural;
+        } else if is_name(path, OUTBOX_DIR) && same_path(parent, gk) {
+            out.rearm_outbox |= structural;
+        } else if same_path(parent, outbox) && is_outbox_file_name(path) {
+            // A rename pair lists [from, to]: only the destination arrives.
+            out.outbox |= !leaving && !(rename_pair && i == 0);
         }
     }
     out
@@ -396,28 +614,59 @@ impl DirWatch {
     fn start(project: PathBuf, names: Arc<Mutex<Vec<(String, usize)>>>, emit: EmitFn) -> AppResult<Self> {
         let shared = Arc::new(Shared::default());
         let gk = project.join(DIR_NAME);
+        let outbox = gk.join(OUTBOX_DIR);
         let mut watcher = {
             let shared = Arc::clone(&shared);
-            let (project, gk) = (project.clone(), gk.clone());
+            let (project, gk, outbox) = (project.clone(), gk.clone(), outbox.clone());
             notify::recommended_watcher(move |res: notify::Result<notify::Event>| {
                 let relevance = match &res {
-                    Ok(ev) => classify(ev, &project, &gk),
-                    // Lost events / dead handle: re-check the folder and let the UI re-read.
-                    Err(_) => Relevance::Rearm,
+                    Ok(ev) => classify(ev, &project, &gk, &outbox),
+                    // Lost events / dead handle: re-check the folders and let the UI re-read.
+                    Err(_) => Relevance { rearm: true, rearm_outbox: true, ..Relevance::IGNORE },
                 };
-                if relevance != Relevance::Ignore {
-                    shared.poke(relevance == Relevance::Rearm);
+                if relevance.any() {
+                    shared.poke(relevance);
                 }
             })
             .map_err(watch_err)?
         };
         watcher.watch(&project, RecursiveMode::NonRecursive).map_err(watch_err)?;
         let gk_watched = gk.is_dir() && watcher.watch(&gk, RecursiveMode::NonRecursive).is_ok();
+        let outbox_watched = outbox.is_dir() && watcher.watch(&outbox, RecursiveMode::NonRecursive).is_ok();
         let thread_shared = Arc::clone(&shared);
         let thread = crate::pty::spawn_guarded("mission-watch".into(), move || {
-            debounce_loop(watcher, gk, gk_watched, &thread_shared, &names, &emit)
+            let mut armed = Armed { watcher, gk, outbox, gk_watched, outbox_watched };
+            debounce_loop(&mut armed, &thread_shared, &names, &emit)
         })?;
         Ok(Self { shared, thread: Some(thread) })
+    }
+}
+
+/// The watcher plus which inner folders it currently observes.
+struct Armed {
+    watcher: notify::RecommendedWatcher,
+    gk: PathBuf,
+    outbox: PathBuf,
+    gk_watched: bool,
+    outbox_watched: bool,
+}
+
+impl Armed {
+    /// The old handles may be dead (folder deleted / replaced): always start over.
+    fn rearm(&mut self, gk: bool, outbox: bool) {
+        if gk {
+            if self.gk_watched {
+                let _ = self.watcher.unwatch(&self.gk);
+            }
+            self.gk_watched = self.gk.is_dir() && self.watcher.watch(&self.gk, RecursiveMode::NonRecursive).is_ok();
+        }
+        if gk || outbox {
+            if self.outbox_watched {
+                let _ = self.watcher.unwatch(&self.outbox);
+            }
+            self.outbox_watched =
+                self.outbox.is_dir() && self.watcher.watch(&self.outbox, RecursiveMode::NonRecursive).is_ok();
+        }
     }
 }
 
@@ -431,20 +680,13 @@ impl Drop for DirWatch {
     }
 }
 
-fn debounce_loop(
-    mut watcher: notify::RecommendedWatcher,
-    gk: PathBuf,
-    mut gk_watched: bool,
-    shared: &Shared,
-    names: &Mutex<Vec<(String, usize)>>,
-    emit: &EmitFn,
-) {
+fn debounce_loop(armed: &mut Armed, shared: &Shared, names: &Mutex<Vec<(String, usize)>>, emit: &EmitFn) {
     loop {
-        let rearm = {
+        let fired = {
             let mut st = shared.state.lock();
             loop {
                 if st.stop {
-                    return; // drops the watcher (closes the directory handles)
+                    return; // the caller drops the watcher (closes the directory handles)
                 }
                 match st.deadline() {
                     None => shared.cv.wait(&mut st),
@@ -456,19 +698,16 @@ fn debounce_loop(
             }
             st.first = None;
             st.last = None;
-            std::mem::take(&mut st.rearm)
+            std::mem::take(&mut st.fired)
         };
-        if rearm {
-            // The old handle may be dead (folder deleted / replaced): always start over.
-            if gk_watched {
-                let _ = watcher.unwatch(&gk);
-            }
-            gk_watched = gk.is_dir() && watcher.watch(&gk, RecursiveMode::NonRecursive).is_ok();
-        }
+        armed.rearm(fired.rearm, fired.rearm_outbox);
+        let kinds = fired.kinds();
         let targets: Vec<String> = names.lock().iter().map(|(n, _)| n.clone()).collect();
         for name in targets {
-            if catch_unwind(AssertUnwindSafe(|| emit(&name))).is_err() {
-                tracing::error!("mission-changed emit panicked");
+            for &kind in &kinds {
+                if catch_unwind(AssertUnwindSafe(|| emit(&name, kind))).is_err() {
+                    tracing::error!("mission-changed emit panicked");
+                }
             }
         }
     }
@@ -625,34 +864,98 @@ mod tests {
         assert_ne!(normalize_key(r"D:\repo"), normalize_key(r"D:\repo2"));
     }
 
+    const IGNORE: Relevance = Relevance::IGNORE;
+    const MISSION: Relevance = Relevance { mission: true, ..Relevance::IGNORE };
+    const OUTBOX: Relevance = Relevance { outbox: true, ..Relevance::IGNORE };
+    const REARM: Relevance = Relevance { rearm: true, ..Relevance::IGNORE };
+    const REARM_OUTBOX: Relevance = Relevance { rearm_outbox: true, ..Relevance::IGNORE };
+
     #[test]
     fn classifies_events() {
         use notify::event::{CreateKind, ModifyKind, RemoveKind, RenameMode};
         let project = Path::new(r"D:\proj");
         let gk = project.join(DIR_NAME);
+        let ob = gk.join(OUTBOX_DIR);
+        let classify = |e: &notify::Event| classify(e, project, &gk, &ob);
         let ev = |kind, p: PathBuf| notify::Event::new(kind).add_path(p);
         let modify = EventKind::Modify(ModifyKind::Any);
-        assert_eq!(classify(&ev(modify, gk.join(FILE_NAME)), project, &gk), Relevance::Mission);
-        assert_eq!(classify(&ev(modify, gk.join("MISSION.MD")), project, &gk), Relevance::Mission);
-        assert_eq!(classify(&ev(modify, gk.join(".mission.md.1.0.tmp")), project, &gk), Relevance::Ignore);
-        assert_eq!(classify(&ev(modify, gk.join(".gitignore")), project, &gk), Relevance::Ignore);
-        assert_eq!(classify(&ev(modify, project.join("package.json")), project, &gk), Relevance::Ignore);
-        assert_eq!(classify(&ev(modify, project.join(FILE_NAME)), project, &gk), Relevance::Ignore);
+        assert_eq!(classify(&ev(modify, gk.join(FILE_NAME))), MISSION);
+        assert_eq!(classify(&ev(modify, gk.join("MISSION.MD"))), MISSION);
+        assert_eq!(classify(&ev(modify, gk.join(".mission.md.1.0.tmp"))), IGNORE);
+        assert_eq!(classify(&ev(modify, gk.join(".gitignore"))), IGNORE);
+        assert_eq!(classify(&ev(modify, project.join("package.json"))), IGNORE);
+        assert_eq!(classify(&ev(modify, project.join(FILE_NAME))), IGNORE);
         // The folder's own last-write time changes on every save: not structural.
-        assert_eq!(classify(&ev(modify, gk.clone()), project, &gk), Relevance::Ignore);
-        assert_eq!(classify(&ev(EventKind::Create(CreateKind::Any), gk.clone()), project, &gk), Relevance::Rearm);
-        assert_eq!(classify(&ev(EventKind::Remove(RemoveKind::Any), gk.clone()), project, &gk), Relevance::Rearm);
-        assert_eq!(
-            classify(&ev(EventKind::Modify(ModifyKind::Name(RenameMode::To)), gk.clone()), project, &gk),
-            Relevance::Rearm
-        );
+        assert_eq!(classify(&ev(modify, gk.clone())), IGNORE);
+        assert_eq!(classify(&ev(EventKind::Create(CreateKind::Any), gk.clone())), REARM);
+        assert_eq!(classify(&ev(EventKind::Remove(RemoveKind::Any), gk.clone())), REARM);
+        assert_eq!(classify(&ev(EventKind::Modify(ModifyKind::Name(RenameMode::To)), gk.clone())), REARM);
     }
 
-    fn recv_within(rx: &mpsc::Receiver<String>, ms: u64) -> Option<String> {
+    #[test]
+    fn classifies_outbox_and_team_events() {
+        use notify::event::{CreateKind, ModifyKind, RemoveKind, RenameMode};
+        let project = Path::new(r"D:\proj");
+        let gk = project.join(DIR_NAME);
+        let ob = gk.join(OUTBOX_DIR);
+        let classify = |e: &notify::Event| classify(e, project, &gk, &ob);
+        let ev = |kind, p: PathBuf| notify::Event::new(kind).add_path(p);
+        let create = EventKind::Create(CreateKind::File);
+        let modify = EventKind::Modify(ModifyKind::Any);
+        // team.md (and its temp file) is written by Gridkeeper itself: never an event.
+        for kind in [create, modify, EventKind::Modify(ModifyKind::Name(RenameMode::To))] {
+            assert_eq!(classify(&ev(kind, gk.join(TEAM_FILE))), IGNORE);
+            assert_eq!(classify(&ev(kind, gk.join(".team.md.7.0.tmp"))), IGNORE);
+        }
+        // Instruction files arriving in the outbox.
+        assert_eq!(classify(&ev(create, ob.join("0007-builder-1.md"))), OUTBOX);
+        assert_eq!(classify(&ev(create, ob.join("note.TXT"))), OUTBOX);
+        assert_eq!(classify(&ev(modify, ob.join("0007-builder-1.md"))), OUTBOX, "written after creation");
+        assert_eq!(classify(&ev(EventKind::Modify(ModifyKind::Name(RenameMode::To)), ob.join("a.md"))), OUTBOX);
+        let pair = notify::Event::new(EventKind::Modify(ModifyKind::Name(RenameMode::Both)))
+            .add_path(ob.join("a.tmp"))
+            .add_path(ob.join("a.md"));
+        assert_eq!(classify(&pair), OUTBOX, "renamed into an instruction name");
+        let away = notify::Event::new(EventKind::Modify(ModifyKind::Name(RenameMode::Both)))
+            .add_path(ob.join("a.md"))
+            .add_path(ob.join("a.bak"));
+        assert_eq!(classify(&away), IGNORE, "renamed away from an instruction name");
+        // Leaving the outbox (archived to sent/ or deleted) is silent; so are other names.
+        assert_eq!(classify(&ev(EventKind::Remove(RemoveKind::Any), ob.join("a.md"))), IGNORE);
+        assert_eq!(classify(&ev(EventKind::Modify(ModifyKind::Name(RenameMode::From)), ob.join("a.md"))), IGNORE);
+        assert_eq!(classify(&ev(create, ob.join(".a.md"))), IGNORE);
+        assert_eq!(classify(&ev(create, ob.join("~a.md"))), IGNORE);
+        assert_eq!(classify(&ev(create, ob.join("a.json"))), IGNORE);
+        assert_eq!(classify(&ev(create, ob.join("sent"))), IGNORE);
+        assert_eq!(classify(&ev(modify, ob.join("sent"))), IGNORE);
+        assert_eq!(classify(&ev(create, ob.join("sent").join("a.md"))), IGNORE);
+        assert_eq!(classify(&ev(create, gk.join("a.md"))), IGNORE, "not in the outbox");
+        // The outbox folder itself coming and going.
+        assert_eq!(classify(&ev(EventKind::Create(CreateKind::Folder), ob.clone())), REARM_OUTBOX);
+        assert_eq!(classify(&ev(EventKind::Remove(RemoveKind::Any), ob.clone())), REARM_OUTBOX);
+        assert_eq!(classify(&ev(modify, ob.clone())), IGNORE);
+        assert_eq!(classify(&ev(EventKind::Create(CreateKind::Folder), project.join(OUTBOX_DIR))), IGNORE);
+    }
+
+    #[test]
+    fn relevance_kinds() {
+        assert_eq!(MISSION.kinds(), vec![MissionChangeKind::Mission]);
+        assert_eq!(OUTBOX.kinds(), vec![MissionChangeKind::Outbox]);
+        assert_eq!(REARM_OUTBOX.kinds(), vec![MissionChangeKind::Outbox]);
+        assert_eq!(REARM.kinds(), vec![MissionChangeKind::Mission, MissionChangeKind::Outbox]);
+        assert!(IGNORE.kinds().is_empty());
+        let mut m = MISSION;
+        m.merge(OUTBOX);
+        assert_eq!(m.kinds(), vec![MissionChangeKind::Mission, MissionChangeKind::Outbox]);
+        let v = serde_json::to_value(MissionChanged { project_dir: "D:\\p".into(), file: MissionChangeKind::Outbox }).unwrap();
+        assert_eq!(v, serde_json::json!({ "projectDir": "D:\\p", "file": "outbox" }));
+    }
+
+    fn recv_within<T>(rx: &mpsc::Receiver<T>, ms: u64) -> Option<T> {
         rx.recv_timeout(Duration::from_millis(ms)).ok()
     }
 
-    fn drain(rx: &mpsc::Receiver<String>, ms: u64) -> usize {
+    fn drain<T>(rx: &mpsc::Receiver<T>, ms: u64) -> usize {
         let mut n = 0;
         while rx.recv_timeout(Duration::from_millis(ms)).is_ok() {
             n += 1;
@@ -660,15 +963,37 @@ mod tests {
         n
     }
 
+    /// Watchers whose emits of `only` (all kinds when `None`) arrive on the returned channel.
+    fn channel_watchers(only: Option<MissionChangeKind>) -> (MissionWatchers, mpsc::Receiver<(String, MissionChangeKind)>) {
+        let (tx, rx) = mpsc::channel();
+        let tx = std::sync::Mutex::new(tx);
+        let watchers = MissionWatchers::new(Arc::new(move |dir: &str, kind: MissionChangeKind| {
+            if only.is_none_or(|k| k == kind) {
+                let _ = tx.lock().unwrap().send((dir.to_string(), kind));
+            }
+        }));
+        (watchers, rx)
+    }
+
+    /// Mission-file watchers reporting only the folder name (the shape the original tests use).
+    fn mission_watchers() -> (MissionWatchers, mpsc::Receiver<String>) {
+        let (watchers, rx) = channel_watchers(Some(MissionChangeKind::Mission));
+        let (tx, names) = mpsc::channel();
+        std::thread::spawn(move || {
+            while let Ok((dir, _)) = rx.recv() {
+                if tx.send(dir).is_err() {
+                    break;
+                }
+            }
+        });
+        (watchers, names)
+    }
+
     #[test]
     fn watcher_emits_debounced_changes() {
         let t = tempfile::tempdir().unwrap();
         let project = dir_s(t.path());
-        let (tx, rx) = mpsc::channel::<String>();
-        let tx = std::sync::Mutex::new(tx);
-        let watchers = MissionWatchers::new(Arc::new(move |dir: &str| {
-            let _ = tx.lock().unwrap().send(dir.to_string());
-        }));
+        let (watchers, rx) = mission_watchers();
 
         // .gridkeeper does not exist yet: the folder watch must notice it and re-arm.
         watchers.watch(&project).unwrap();
@@ -720,11 +1045,7 @@ mod tests {
         let t = tempfile::tempdir().unwrap();
         let project = dir_s(t.path());
         write(&project, "one", None, false).unwrap();
-        let (tx, rx) = mpsc::channel::<String>();
-        let tx = std::sync::Mutex::new(tx);
-        let watchers = MissionWatchers::new(Arc::new(move |dir: &str| {
-            let _ = tx.lock().unwrap().send(dir.to_string());
-        }));
+        let (watchers, rx) = mission_watchers();
         watchers.watch(&project).unwrap();
 
         fs::remove_dir_all(t.path().join(DIR_NAME)).unwrap();
@@ -740,8 +1061,236 @@ mod tests {
     }
 
     #[test]
+    fn watcher_reports_outbox_files_but_not_team_or_archives() {
+        use MissionChangeKind::{Mission, Outbox};
+        let t = tempfile::tempdir().unwrap();
+        let project = dir_s(t.path());
+        write(&project, "mission", None, false).unwrap();
+        let (watchers, rx) = channel_watchers(None);
+        watchers.watch(&project).unwrap();
+        let gk = t.path().join(DIR_NAME);
+        let ob = gk.join(OUTBOX_DIR);
+
+        // The outbox does not exist yet: creating it re-arms its watch and notifies.
+        fs::create_dir(&ob).unwrap();
+        assert_eq!(recv_within(&rx, 3000), Some((project.clone(), Outbox)));
+        drain(&rx, 400);
+
+        // A new instruction file in the (now watched) outbox.
+        fs::write(ob.join("0001-builder-1.md"), "to: builder-1\n---\nhi").unwrap();
+        assert_eq!(recv_within(&rx, 3000), Some((project.clone(), Outbox)));
+        assert_eq!(drain(&rx, 400), 0, "one debounced event, no mission event");
+
+        // Written elsewhere, then renamed into the outbox (how careful agents write files).
+        fs::write(gk.join("draft.tmp"), "to: all\n---\nstop and commit").unwrap();
+        drain(&rx, 400);
+        fs::rename(gk.join("draft.tmp"), ob.join("0002-all.md")).unwrap();
+        assert_eq!(recv_within(&rx, 3000), Some((project.clone(), Outbox)));
+        drain(&rx, 400);
+
+        // team.md never notifies (no self-trigger loop), nor do other files in the outbox.
+        team_write(&project, "# Team\n").unwrap();
+        team_write(&project, "# Team v2\n").unwrap();
+        fs::write(ob.join("notes.json"), "{}").unwrap();
+        assert_eq!(drain(&rx, 600), 0, "team.md / non-instruction files are silent");
+
+        // Archiving a handled file (rename into outbox/sent/) is silent too.
+        outbox_archive(&project, "0001-builder-1.md", "sent").unwrap();
+        outbox_archive(&project, "0002-all.md", "dismissed").unwrap();
+        assert_eq!(drain(&rx, 600), 0, "archiving is silent");
+
+        // The mission file still reports as "mission" only.
+        write(&project, "mission 2", None, false).unwrap();
+        assert_eq!(recv_within(&rx, 3000), Some((project.clone(), Mission)));
+        assert_eq!(drain(&rx, 400), 0);
+
+        // The outbox deleted and re-created: still watched. (Deleting a watched folder may also surface
+        // as a watcher error, which re-arms everything and reports both kinds.)
+        fs::remove_dir_all(&ob).unwrap();
+        let mut kinds = vec![recv_within(&rx, 3000).expect("deleting the outbox notifies").1];
+        while let Some((_, k)) = recv_within(&rx, 600) {
+            kinds.push(k);
+        }
+        assert!(kinds.contains(&Outbox), "{kinds:?}");
+        fs::create_dir(&ob).unwrap();
+        drain(&rx, 600);
+        fs::write(ob.join("0003-lead.txt"), "to: lead\n---\ndone").unwrap();
+        assert_eq!(recv_within(&rx, 3000), Some((project.clone(), Outbox)));
+        watchers.clear();
+    }
+
+    #[test]
+    fn watcher_rearm_of_gridkeeper_reports_both_kinds() {
+        let t = tempfile::tempdir().unwrap();
+        let project = dir_s(t.path());
+        let (watchers, rx) = channel_watchers(None);
+        watchers.watch(&project).unwrap();
+        // `.gridkeeper/outbox/x.md` created in one go before any inner watch exists.
+        let ob = outbox_path(t.path());
+        fs::create_dir_all(&ob).unwrap();
+        fs::write(ob.join("x.md"), "to: all\n---\nhi").unwrap();
+        let mut got = vec![recv_within(&rx, 3000).unwrap().1];
+        while let Some((_, k)) = recv_within(&rx, 600) {
+            got.push(k);
+        }
+        assert!(got.contains(&MissionChangeKind::Mission) && got.contains(&MissionChangeKind::Outbox), "{got:?}");
+        // The re-armed outbox watch reports new files.
+        fs::write(ob.join("y.md"), "to: all\n---\nhi").unwrap();
+        assert_eq!(recv_within(&rx, 3000).map(|e| e.1), Some(MissionChangeKind::Outbox));
+        watchers.clear();
+    }
+
+    // ---- outbox / team file ----
+
+    fn set_mtime(path: &Path, secs_ago: u64) {
+        let f = fs::File::options().write(true).open(path).unwrap();
+        f.set_modified(std::time::SystemTime::now() - Duration::from_secs(secs_ago)).unwrap();
+    }
+
+    #[test]
+    fn outbox_list_reads_instruction_files_oldest_first() {
+        let t = tempfile::tempdir().unwrap();
+        let project = dir_s(t.path());
+        assert!(outbox_list(&project).unwrap().is_empty(), "no .gridkeeper yet");
+        let ob = outbox_path(t.path());
+        fs::create_dir_all(ob.join("sent")).unwrap();
+        assert!(outbox_list(&project).unwrap().is_empty(), "empty outbox");
+
+        fs::write(ob.join("b.md"), "to: builder-1\n---\nsecond").unwrap();
+        fs::write(ob.join("a.txt"), "to: lead\n---\nfirst").unwrap();
+        let mut bom = UTF8_BOM.to_vec();
+        bom.extend_from_slice("to: all\n---\nthird ✓".as_bytes());
+        fs::write(ob.join("C.MD"), &bom).unwrap();
+        set_mtime(&ob.join("a.txt"), 30);
+        set_mtime(&ob.join("b.md"), 20);
+        set_mtime(&ob.join("C.MD"), 10);
+        // Skipped: hidden / temp names, other extensions, folders, archived files.
+        fs::write(ob.join(".hidden.md"), "x").unwrap();
+        fs::write(ob.join("~lock.md"), "x").unwrap();
+        fs::write(ob.join("data.json"), "x").unwrap();
+        fs::write(ob.join(".b.md.12.0.tmp"), "x").unwrap();
+        fs::create_dir(ob.join("folder.md")).unwrap();
+        fs::write(ob.join("sent").join("old.md"), "x").unwrap();
+
+        let items = outbox_list(&project).unwrap();
+        let names: Vec<&str> = items.iter().map(|i| i.name.as_str()).collect();
+        assert_eq!(names, vec!["a.txt", "b.md", "C.MD"]);
+        assert_eq!(items[0].text, "to: lead\n---\nfirst");
+        assert_eq!(items[2].text, "to: all\n---\nthird ✓", "BOM stripped");
+        assert!(items.iter().all(|i| !i.truncated && i.modified_ms > 1_600_000_000_000));
+        assert!(items[0].modified_ms < items[1].modified_ms && items[1].modified_ms < items[2].modified_ms);
+        assert!(outbox_list("relative").is_err());
+    }
+
+    #[test]
+    fn outbox_list_caps_count_and_size() {
+        let t = tempfile::tempdir().unwrap();
+        let project = dir_s(t.path());
+        let ob = outbox_path(t.path());
+        fs::create_dir_all(&ob).unwrap();
+        for i in 0..(MAX_OUTBOX_FILES + 5) {
+            let p = ob.join(format!("{i:03}.md"));
+            fs::write(&p, format!("to: all\n---\n{i}")).unwrap();
+            set_mtime(&p, 1000 - i as u64);
+        }
+        fs::write(ob.join("big.md"), vec![b'x'; MAX_OUTBOX_FILE_BYTES + 10]).unwrap();
+        set_mtime(&ob.join("big.md"), 5000); // the oldest
+        let items = outbox_list(&project).unwrap();
+        assert_eq!(items.len(), MAX_OUTBOX_FILES);
+        assert_eq!(items[0].name, "big.md");
+        assert!(items[0].truncated);
+        assert_eq!(items[0].text.len(), MAX_OUTBOX_FILE_BYTES);
+        assert_eq!(items[1].name, "000.md");
+        assert!(!items[1].truncated);
+        assert_eq!(items.last().unwrap().name, format!("{:03}.md", MAX_OUTBOX_FILES - 2));
+
+        // Exactly at the cap is not truncated.
+        fs::write(ob.join("big.md"), vec![b'y'; MAX_OUTBOX_FILE_BYTES]).unwrap();
+        set_mtime(&ob.join("big.md"), 5000);
+        let items = outbox_list(&project).unwrap();
+        assert!(!items[0].truncated);
+        assert_eq!(items[0].text.len(), MAX_OUTBOX_FILE_BYTES);
+    }
+
+    #[test]
+    fn outbox_archive_moves_files_with_validation() {
+        let t = tempfile::tempdir().unwrap();
+        let project = dir_s(t.path());
+        let ob = outbox_path(t.path());
+        fs::create_dir_all(&ob).unwrap();
+        fs::write(ob.join("0001-a.md"), "one").unwrap();
+
+        let dest = outbox_archive(&project, "0001-a.md", "sent").unwrap();
+        assert_eq!(PathBuf::from(&dest), ob.join("sent").join("0001-a.md"));
+        assert!(!ob.join("0001-a.md").exists());
+        assert_eq!(fs::read_to_string(ob.join("sent").join("0001-a.md")).unwrap(), "one");
+
+        // Same name again: a counter is appended, nothing is overwritten.
+        fs::write(ob.join("0001-a.md"), "two").unwrap();
+        let dest = outbox_archive(&project, "0001-a.md", "sent").unwrap();
+        assert_eq!(PathBuf::from(&dest), ob.join("sent").join("0001-a-1.md"));
+        fs::write(ob.join("0001-a.md"), "three").unwrap();
+        outbox_archive(&project, "0001-a.md", "sent").unwrap();
+        assert_eq!(fs::read_to_string(ob.join("sent").join("0001-a.md")).unwrap(), "one");
+        assert_eq!(fs::read_to_string(ob.join("sent").join("0001-a-1.md")).unwrap(), "two");
+        assert_eq!(fs::read_to_string(ob.join("sent").join("0001-a-2.md")).unwrap(), "three");
+
+        fs::write(ob.join("noext"), "x").unwrap();
+        outbox_archive(&project, "noext", "dismissed").unwrap();
+        fs::write(ob.join("noext"), "y").unwrap();
+        let d = outbox_archive(&project, "noext", "dismissed").unwrap();
+        assert_eq!(PathBuf::from(&d), ob.join("dismissed").join("noext-1"));
+
+        // Missing file: not_found (its author deleted it).
+        let e = outbox_archive(&project, "gone.md", "sent").unwrap_err();
+        assert_eq!(e.code(), "not_found");
+        // Bad dispositions and names never touch the file system outside the outbox.
+        fs::write(ob.join("keep.md"), "k").unwrap();
+        assert_eq!(outbox_archive(&project, "keep.md", "deleted").unwrap_err().code(), "invalid");
+        fs::write(t.path().join(DIR_NAME).join(FILE_NAME), "m").unwrap();
+        for bad in ["", " ", "..", "../mission.md", "..\\mission.md", "sub/x.md", "sub\\x.md", "C:x.md", "a.md:stream", "a\0b.md", "a\nb.md"] {
+            let e = outbox_archive(&project, bad, "sent").unwrap_err();
+            assert_eq!(e.code(), "invalid", "{bad:?}");
+        }
+        assert!(t.path().join(DIR_NAME).join(FILE_NAME).exists());
+        // Folders are not files.
+        assert_eq!(outbox_archive(&project, "sent", "dismissed").unwrap_err().code(), "invalid");
+        assert!(ob.join("keep.md").exists());
+        assert!(outbox_archive("relative", "keep.md", "sent").is_err());
+    }
+
+    #[test]
+    fn team_write_is_atomic_redacted_and_capped() {
+        let t = tempfile::tempdir().unwrap();
+        let project = dir_s(t.path());
+        team_write(&project, "# Team\n@builder-1 — working\nANTHROPIC_API_KEY=sk-ant-api03-abcdefghijklmnop\n").unwrap();
+        let gk = t.path().join(DIR_NAME);
+        assert_eq!(fs::read_to_string(gk.join(".gitignore")).unwrap(), "*\n", "self-ignoring folder");
+        let text = fs::read_to_string(gk.join(TEAM_FILE)).unwrap();
+        assert!(text.starts_with("# Team\n@builder-1 — working\n"), "{text}");
+        assert!(!text.contains("abcdefghijklmnop"), "redacted: {text}");
+        assert!(tmp_files(&gk).is_empty());
+
+        // Identical content: not rewritten (mtime unchanged).
+        let p = gk.join(TEAM_FILE);
+        set_mtime(&p, 100);
+        let before = fs::metadata(&p).unwrap().modified().unwrap();
+        team_write(&project, &text).unwrap();
+        assert_eq!(fs::metadata(&p).unwrap().modified().unwrap(), before);
+        team_write(&project, "v2").unwrap();
+        assert_eq!(fs::read_to_string(&p).unwrap(), "v2");
+
+        assert_eq!(team_write(&project, &"x".repeat(MAX_TEAM_BYTES + 1)).unwrap_err().code(), "invalid");
+        assert_eq!(fs::read_to_string(&p).unwrap(), "v2", "oversize never writes");
+        team_write(&project, &"x".repeat(MAX_TEAM_BYTES)).unwrap();
+        assert!(team_write("relative", "x").is_err());
+        // The mission file is untouched by team writes.
+        assert!(!mission_path(t.path()).exists());
+    }
+
+    #[test]
     fn watch_requires_an_existing_folder() {
-        let watchers = MissionWatchers::new(Arc::new(|_: &str| {}));
+        let watchers = MissionWatchers::new(Arc::new(|_: &str, _: MissionChangeKind| {}));
         assert!(watchers.watch("relative").is_err());
         assert!(watchers.watch(r"C:\definitely\missing\gridkeeper\dir").is_err());
         assert!(watchers.is_empty());

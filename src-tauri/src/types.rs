@@ -461,6 +461,31 @@ pub const EVT_MISSION_CHANGED: &str = "mission-changed";
 pub struct MissionChanged {
     /// The folder exactly as the frontend passed it to `mission_watch`.
     pub project_dir: String,
+    /// What changed: the mission file, or the lead control outbox (`.gridkeeper/outbox/`).
+    pub file: MissionChangeKind,
+}
+
+/// `MissionChanged.file`: `"mission"` (`.gridkeeper/mission.md`) or `"outbox"` (a file created in or
+/// renamed into `.gridkeeper/outbox/`). `team.md` (written by Gridkeeper) never produces an event.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum MissionChangeKind {
+    Mission,
+    Outbox,
+}
+
+/// One instruction file directly in `<projectDir>/.gridkeeper/outbox/` (`mission_outbox_list`).
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OutboxItem {
+    /// File name only (no folder), e.g. `0007-builder-1.md`.
+    pub name: String,
+    /// Contents (UTF-8 lossy, BOM stripped), at most `mission::MAX_OUTBOX_FILE_BYTES`.
+    pub text: String,
+    /// Last-write time in ms since the epoch (0 when unknown).
+    pub modified_ms: u64,
+    /// The file is larger than the cap: `text` is only its beginning.
+    pub truncated: bool,
 }
 
 // ---------------------------------------------------------------------------

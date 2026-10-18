@@ -1,0 +1,273 @@
+/* Lead control (Mission Control lead box, header badge, status bar chip). Theme variables only. */
+
+.lc {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px dashed var(--mc-line);
+  text-align: left;
+}
+.lc-hint {
+  margin-top: 6px;
+  color: var(--text-2);
+  font-size: var(--mc-fs-micro);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.lc .lc-hint {
+  margin-top: 0;
+}
+.lc-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  flex-wrap: wrap;
+}
+.lc-label {
+  color: var(--role-lead);
+}
+.lc-explain {
+  flex: 1 1 220px;
+  min-width: 0;
+  color: var(--text-2);
+  font-size: var(--mc-fs-micro);
+  line-height: 1.35;
+}
+
+/* segmented control: off · advisor · autopilot */
+.lc-seg {
+  display: inline-flex;
+  flex-shrink: 0;
+  border: 1px solid var(--mc-line);
+  border-radius: var(--radius-s);
+  overflow: hidden;
+}
+.lc-seg-btn {
+  height: 22px;
+  padding: 0 9px;
+  border: 0;
+  border-left: 1px solid var(--mc-line);
+  background: transparent;
+  color: var(--text-2);
+  font-family: var(--font-mono);
+  font-size: var(--mc-fs-micro);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+.lc-seg-btn:first-child {
+  border-left: 0;
+}
+.lc-seg-btn:hover {
+  color: var(--text-0);
+  background: var(--bg-2);
+}
+.lc-seg-btn.is-on {
+  color: var(--text-0);
+  background: color-mix(in srgb, var(--role-lead) 18%, transparent);
+}
+.lc-seg-btn.is-autopilot.is-on {
+  background: color-mix(in srgb, var(--accent) 24%, transparent);
+  box-shadow: inset 0 -2px 0 var(--accent);
+}
+.lc-seg-btn:focus-visible {
+  outline: 1px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.lc-options {
+  gap: 12px;
+}
+.lc-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--text-1);
+  font-size: var(--mc-fs-micro);
+  cursor: pointer;
+}
+.lc-check input {
+  margin: 0;
+  accent-color: var(--accent);
+}
+.lc-files {
+  color: var(--text-2);
+  font-size: var(--mc-fs-micro);
+}
+.lc-empty {
+  color: var(--text-2);
+  font-size: var(--mc-fs-micro);
+}
+
+/* proposals */
+.lc-props {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 340px;
+  overflow: auto;
+}
+.lc-prop {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px 8px;
+  border: 1px solid var(--mc-line);
+  border-left: 2px solid var(--role-lead);
+  border-radius: var(--radius-s);
+  background: var(--bg-0);
+}
+.lc-prop.is-queued {
+  border-left-color: var(--accent);
+}
+.lc-prop.is-busy {
+  opacity: 0.7;
+}
+.lc-prop-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  font-size: var(--mc-fs-micro);
+}
+.lc-prop-from {
+  color: var(--role-lead);
+  white-space: nowrap;
+}
+.lc-arrow {
+  color: var(--text-2);
+}
+.lc-prop-to {
+  color: var(--text-0);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lc-action,
+.lc-tag {
+  padding: 0 5px;
+  border: 1px solid var(--mc-line);
+  border-radius: var(--radius-s);
+  color: var(--text-1);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.lc-action.is-review {
+  color: var(--role-reviewer);
+  border-color: color-mix(in srgb, var(--role-reviewer) 50%, var(--mc-line));
+}
+.lc-action.is-stop,
+.lc-action.is-restart {
+  color: var(--err);
+  border-color: color-mix(in srgb, var(--err) 50%, var(--mc-line));
+}
+.lc-tag.is-auto {
+  color: var(--text-0);
+  border-color: color-mix(in srgb, var(--accent) 60%, transparent);
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+}
+.lc-file {
+  color: var(--text-2);
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lc-text {
+  width: 100%;
+  min-height: 38px;
+  padding: 3px 6px;
+  border: 1px solid var(--mc-line);
+  border-radius: var(--radius-s);
+  background: var(--bg-1);
+  color: var(--text-0);
+  font-family: var(--font-mono);
+  font-size: var(--mc-fs);
+  resize: vertical;
+  user-select: text;
+}
+.lc-text:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+.lc-life {
+  color: var(--text-0);
+  font-size: var(--mc-fs);
+}
+.lc-warn {
+  color: var(--warn);
+  font-size: var(--mc-fs-micro);
+}
+.lc-reason {
+  color: var(--text-2);
+  font-size: var(--mc-fs-micro);
+  user-select: text;
+}
+.lc-prop-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+/* header badge (portal into .mc-head) */
+.lc-head-slot {
+  display: inline-flex;
+}
+.lc-head-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 22px;
+  padding: 0 4px 0 8px;
+  border: 1px solid var(--mc-line);
+  border-radius: var(--radius-s);
+  color: var(--text-1);
+  font-size: var(--mc-fs-micro);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.lc-head-badge.is-auto {
+  color: var(--text-0);
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+}
+.lc-head-btn {
+  height: 16px;
+  padding: 0 6px;
+  border: 1px solid var(--mc-line);
+  border-radius: var(--radius-s);
+  background: var(--bg-0);
+  color: var(--text-0);
+  font-family: var(--font-mono);
+  font-size: var(--mc-fs-micro);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+.lc-head-btn:hover {
+  border-color: var(--text-2);
+}
+
+/* status bar chip */
+.lc-sb.is-auto {
+  color: var(--text-0);
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+}
+.lc-sb.is-paused {
+  color: var(--text-1);
+}
+.lc-sb-glyph {
+  color: var(--accent);
+}
+.lc-sb-pause {
+  color: var(--text-1);
+}

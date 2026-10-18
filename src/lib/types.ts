@@ -510,7 +510,27 @@ export interface MissionFile {
 
 export interface MissionChanged {
   projectDir: string;
+  /** What changed: `.gridkeeper/mission.md`, or a file arriving in the lead control outbox
+   *  (`.gridkeeper/outbox/`). Missing from older hosts: treat as both. `team.md` never emits. */
+  file?: MissionChangeKind;
 }
+
+export type MissionChangeKind = "mission" | "outbox";
+
+/** One instruction file directly in `<projectDir>/.gridkeeper/outbox/` (mission_outbox_list). */
+export interface OutboxItem {
+  /** File name only, e.g. "0007-builder-1.md". */
+  name: string;
+  /** Contents (UTF-8, BOM stripped), at most 16 KiB. */
+  text: string;
+  /** Last-write time in ms since the epoch (0 when unknown). */
+  modifiedMs: number;
+  /** The file is larger than 16 KiB: `text` is only its beginning. */
+  truncated: boolean;
+}
+
+/** Where mission_outbox_archive moves a handled instruction file (outbox/sent/ or outbox/dismissed/). */
+export type OutboxDisposition = "sent" | "dismissed";
 
 /** A worktree's branch measured against a base branch (read-only, for Mission Control sign-off). */
 export interface BranchSummary {

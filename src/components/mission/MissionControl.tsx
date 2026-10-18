@@ -33,6 +33,7 @@ import { QuickLaunchButton } from "../QuickLaunch";
 import { useContextMenu, type MenuItem } from "../ui/Menu";
 import { ActivityRiver } from "./ActivityRiver";
 import { deriveMission, laneProgress, phaseMark, sessionStatus, type LaneModel } from "./derive";
+import { LeadControl } from "./LeadControl";
 import { Links, type LinkSpec } from "./Links";
 import { MissionNode } from "./MissionNode";
 import { roleStyle } from "./RoleTag";
@@ -484,6 +485,7 @@ function LeadNode({ leads, lanes, allIds, selected, onSelect, onJump, onMenu, no
         {phases}
         <div>no lead yet — pick the session that coordinates the others</div>
         <AssignLead ids={allIds} />
+        <LeadControl leads={leads} />
       </div>
     );
   return (
@@ -518,6 +520,7 @@ function LeadNode({ leads, lanes, allIds, selected, onSelect, onJump, onMenu, no
           />
         ))}
       </div>
+      <LeadControl leads={leads} />
     </div>
   );
 }

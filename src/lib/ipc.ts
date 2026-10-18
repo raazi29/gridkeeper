@@ -12,6 +12,8 @@ import type {
   BranchFiles,
   MissionChanged,
   MissionFile,
+  OutboxDisposition,
+  OutboxItem,
   PlannedHome,
   ClaudeProfile,
   Diagnostics,
@@ -123,6 +125,16 @@ export const ipc = {
   /** One file's diff over `base...HEAD`; pass a rename's `origFile` so git pairs the rename. */
   gitBranchFileDiff: (path: string, base: string, file: string, origFile: string | null = null) =>
     invoke<FileDiff>("git_branch_file_diff", { path, base, file, origFile }),
+
+  // Lead control: <projectDir>/.gridkeeper/outbox/ (instruction files any agent creates) + team.md (generated).
+  /** Instruction files directly in the outbox (.md / .txt), oldest first, at most 50 × 16 KiB. Missing folder = []. */
+  missionOutboxList: (projectDir: string) => invoke<OutboxItem[]>("mission_outbox_list", { projectDir }),
+  /** Move a handled file to outbox/sent/ or outbox/dismissed/ (a name clash gets "-<n>"). Rejects with code
+   *  "not_found" when the file is gone. Returns the archived path. */
+  missionOutboxArchive: (projectDir: string, name: string, disposition: OutboxDisposition) =>
+    invoke<string>("mission_outbox_archive", { projectDir, name, disposition }),
+  /** Atomic write of .gridkeeper/team.md (redacted by the host, <= 256 KiB; never emits mission-changed). */
+  missionTeamWrite: (projectDir: string, text: string) => invoke<void>("mission_team_write", { projectDir, text }),
 };
 
 export function onSessionState(cb: (info: SessionInfo) => void): Promise<UnlistenFn> {
