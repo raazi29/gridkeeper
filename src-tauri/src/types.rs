@@ -842,3 +842,185 @@ impl Default for PersistedState {
         }
     }
 }
+
+// ---------------------------------------------------------------------------
+// Skills: Agent Skills from GitHub (user-initiated discovery) installed into a project (crate::skills)
+// ---------------------------------------------------------------------------
+
+/// A GitHub repository from a skills search.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SkillRepo {
+    /// `owner/name`.
+    pub full_name: String,
+    pub description: Option<String>,
+    pub stars: u64,
+    /// ISO 8601.
+    pub pushed_at: Option<String>,
+    /// SPDX id (or license name).
+    pub license: Option<String>,
+    pub topics: Vec<String>,
+    pub html_url: String,
+    pub default_branch: String,
+    pub archived: bool,
+}
+
+/// One page of `skills_search`. A rate limit is a result, not an error.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SkillRepoPage {
+    pub items: Vec<SkillRepo>,
+    /// Total matches GitHub reports (it serves at most 1000).
+    pub total: u64,
+    pub page: u32,
+    pub rate_limited: bool,
+    /// Epoch seconds when the rate limit resets (`rate_limited` only, when GitHub said).
+    pub reset_at: Option<u64>,
+    pub message: Option<String>,
+    /// The search query sent to api.github.com (shown in the UI).
+    pub query: String,
+    /// When GitHub answered (epoch ms).
+    pub fetched_at_ms: u64,
+    /// Served from the 10-minute in-memory cache.
+    pub cached: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SkillFile {
+    /// Relative to the skill folder, forward slashes.
+    pub path: String,
+    pub size: u64,
+    /// Script / binary by extension (.ps1 .sh .bat .cmd .exe .js .py ...) or git's executable bit.
+    pub executable: bool,
+}
+
+/// One skill (a folder with a SKILL.md) in a repository at a pinned commit.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SkillInfo {
+    /// Folder in the repository ("" = the repository root), forward slashes.
+    pub path: String,
+    /// Frontmatter `name`, else the folder name.
+    pub name: String,
+    /// Folder name used on install (`.claude/skills/<installName>`).
+    pub install_name: String,
+    pub description: Option<String>,
+    /// SKILL.md first.
+    pub files: Vec<SkillFile>,
+    pub total_bytes: u64,
+    /// Has `scripts/` or executable-looking files.
+    pub has_scripts: bool,
+    /// Full SKILL.md text; None when not fetched (many skills) or unreadable: use `skills_file`.
+    pub skill_md: Option<String>,
+    /// Git tree SHA of the skill folder (recorded on install, compared by update checks).
+    pub tree_sha: String,
+    /// Why it cannot be installed (over 200 files / 5 MB / 1 MB per file, unsafe names), if so.
+    pub blocked: Option<String>,
+}
+
+/// `skills_inspect`: a repository's skills, pinned to one commit.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RepoSkills {
+    pub repo: String,
+    /// The ref that was resolved (the default branch when none was given).
+    pub git_ref: String,
+    pub commit_sha: String,
+    pub default_branch: Option<String>,
+    pub description: Option<String>,
+    pub stars: Option<u64>,
+    pub license: Option<String>,
+    pub pushed_at: Option<String>,
+    pub html_url: String,
+    pub archived: bool,
+    pub skills: Vec<SkillInfo>,
+    pub warnings: Vec<String>,
+    pub fetched_at_ms: u64,
+}
+
+/// `skills_file`: one file of a repository at a pinned commit, for reading before install.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SkillFileText {
+    pub path: String,
+    /// UTF-8 text (empty for binary files), at most 256 KiB.
+    pub text: String,
+    pub size: u64,
+    pub binary: bool,
+    pub truncated: bool,
+}
+
+/// `<skill folder>/.gridkeeper-skill.json`: where an installed skill came from.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SkillProvenance {
+    pub repo: String,
+    pub commit_sha: String,
+    /// Skill folder in the repository ("" = root).
+    pub path: String,
+    #[serde(default)]
+    pub tree_sha: Option<String>,
+    #[serde(default)]
+    pub name: Option<String>,
+    /// RFC 3339 (UTC).
+    pub installed_at: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct InstallResult {
+    pub name: String,
+    /// Installed folders relative to the project, e.g. `.claude/skills/pdf`.
+    pub installed: Vec<String>,
+    /// The subset of `installed` that replaced an existing folder.
+    pub replaced: Vec<String>,
+    pub files: usize,
+    pub total_bytes: u64,
+    pub commit_sha: String,
+    pub warnings: Vec<String>,
+}
+
+/// A skill found in the project's `.claude/skills/*/SKILL.md` or `.agents/skills/*/SKILL.md`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct InstalledSkill {
+    /// Frontmatter `name`, else the folder name.
+    pub name: String,
+    /// Folder name.
+    pub folder: String,
+    pub description: Option<String>,
+    /// `.claude/skills` or `.agents/skills`.
+    pub target: String,
+    /// `<target>/<folder>` (forward slashes): pass to `skills_remove`.
+    pub dir_rel: String,
+    pub dir_abs: String,
+    /// None: a local skill (not installed by Gridkeeper, or provenance missing).
+    pub provenance: Option<SkillProvenance>,
+    pub has_scripts: bool,
+    pub file_count: usize,
+    /// The folder is a junction / symbolic link: listed, never removed.
+    pub is_link: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum SkillUpdateStatus {
+    /// Same commit, or the skill folder is unchanged since the pinned commit.
+    Current,
+    /// The skill folder changed on the default branch (or could not be compared).
+    Update,
+    /// The skill folder no longer exists on the default branch.
+    Missing,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SkillUpdateCheck {
+    pub repo: String,
+    pub path: String,
+    pub status: SkillUpdateStatus,
+    pub pinned_sha: String,
+    /// The default branch's commit now.
+    pub current_sha: String,
+}

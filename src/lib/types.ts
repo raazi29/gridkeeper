@@ -559,3 +559,156 @@ export interface BranchFiles {
   /** More than 2000 files: the list was cut. */
   truncated: boolean;
 }
+
+// ---- Skills (Agent Skills from GitHub, installed into a project's .claude/skills / .agents/skills) -----
+
+/** A GitHub repository from skills_search. */
+export interface SkillRepo {
+  /** `owner/name`. */
+  fullName: string;
+  description: string | null;
+  stars: number;
+  /** ISO 8601. */
+  pushedAt: string | null;
+  /** SPDX id (or license name). */
+  license: string | null;
+  topics: string[];
+  htmlUrl: string;
+  defaultBranch: string;
+  archived: boolean;
+}
+
+/** skills_search sort: trending / top (skill topics, by stars) or a free-text search (best match / stars). */
+export type SkillSort = "trending" | "top" | "best" | "stars";
+
+/** One page of skills_search. A rate limit is a result (`rateLimited`), not an error. */
+export interface SkillRepoPage {
+  items: SkillRepo[];
+  /** Total matches GitHub reports (it serves at most 1000). */
+  total: number;
+  page: number;
+  rateLimited: boolean;
+  /** Epoch seconds when the rate limit resets (when GitHub said). */
+  resetAt: number | null;
+  message: string | null;
+  /** The query sent to api.github.com. */
+  query: string;
+  /** When GitHub answered (epoch ms). */
+  fetchedAtMs: number;
+  /** Served from the 10-minute in-memory cache. */
+  cached: boolean;
+}
+
+export interface SkillFile {
+  /** Relative to the skill folder, forward slashes. */
+  path: string;
+  size: number;
+  /** Script / binary by extension (.ps1 .sh .bat .cmd .exe .js .py ...) or git's executable bit. */
+  executable: boolean;
+}
+
+/** One skill (a folder with a SKILL.md) in a repository at a pinned commit. */
+export interface SkillInfo {
+  /** Folder in the repository ("" = the repository root). */
+  path: string;
+  /** Frontmatter `name`, else the folder name. */
+  name: string;
+  /** Folder name used on install (`.claude/skills/<installName>`). */
+  installName: string;
+  description: string | null;
+  /** SKILL.md first. */
+  files: SkillFile[];
+  totalBytes: number;
+  hasScripts: boolean;
+  /** Full SKILL.md; null when not fetched (many skills) or unreadable: use skills_file. */
+  skillMd: string | null;
+  /** Git tree SHA of the skill folder (recorded on install, compared by update checks). */
+  treeSha: string;
+  /** Why it cannot be installed (over 200 files / 5 MB / 1 MB per file, unsafe names), if so. */
+  blocked: string | null;
+}
+
+/** skills_inspect: a repository's skills, pinned to one commit. */
+export interface RepoSkills {
+  repo: string;
+  /** The ref that was resolved (the default branch when none was given). */
+  gitRef: string;
+  commitSha: string;
+  defaultBranch: string | null;
+  description: string | null;
+  stars: number | null;
+  license: string | null;
+  pushedAt: string | null;
+  htmlUrl: string;
+  archived: boolean;
+  skills: SkillInfo[];
+  warnings: string[];
+  fetchedAtMs: number;
+}
+
+/** skills_file: one file at a pinned commit, for reading before install. */
+export interface SkillFileText {
+  path: string;
+  /** UTF-8 text ("" for binary files), at most 256 KiB. */
+  text: string;
+  size: number;
+  binary: boolean;
+  truncated: boolean;
+}
+
+/** `<skill folder>/.gridkeeper-skill.json`. */
+export interface SkillProvenance {
+  repo: string;
+  commitSha: string;
+  /** Skill folder in the repository ("" = root). */
+  path: string;
+  treeSha: string | null;
+  name: string | null;
+  /** RFC 3339 (UTC). */
+  installedAt: string;
+}
+
+/** Install targets, relative to the project folder. */
+export type SkillTarget = ".claude/skills" | ".agents/skills";
+
+export interface InstallResult {
+  name: string;
+  /** Installed folders relative to the project, e.g. ".claude/skills/pdf". */
+  installed: string[];
+  /** The subset of `installed` that replaced an existing folder. */
+  replaced: string[];
+  files: number;
+  totalBytes: number;
+  commitSha: string;
+  warnings: string[];
+}
+
+/** A skill in the project's `.claude/skills/*` or `.agents/skills/*` (skills_installed). */
+export interface InstalledSkill {
+  /** Frontmatter `name`, else the folder name. */
+  name: string;
+  folder: string;
+  description: string | null;
+  target: SkillTarget;
+  /** `<target>/<folder>`: pass to skills_remove. */
+  dirRel: string;
+  dirAbs: string;
+  /** null: a local skill (not installed by Gridkeeper). */
+  provenance: SkillProvenance | null;
+  hasScripts: boolean;
+  fileCount: number;
+  /** A junction / symbolic link: listed, never removed. */
+  isLink: boolean;
+}
+
+/** current: unchanged since the pinned commit; update: the skill folder changed; missing: gone upstream. */
+export type SkillUpdateStatus = "current" | "update" | "missing";
+
+export interface SkillUpdateCheck {
+  repo: string;
+  path: string;
+  status: SkillUpdateStatus;
+  pinnedSha: string;
+  /** The default branch's commit now. */
+  currentSha: string;
+}

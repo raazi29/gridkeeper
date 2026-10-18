@@ -20,6 +20,7 @@ import { GroupTabs } from "./GroupTabs";
 import { IconClose, IconWarn } from "./icons";
 import { Inspector } from "./Inspector";
 import { MissionLayer } from "./mission/MissionLayer";
+import { SkillsLayer } from "./skills/SkillsPanel";
 import { Sidebar } from "./Sidebar";
 import { StatusBar } from "./StatusBar";
 import { Toasts } from "./Toasts";
@@ -82,6 +83,7 @@ export function Shell() {
       <Toasts />
       <AttentionLayer />
       <MissionLayer />
+      <SkillsLayer />
       <ExperienceLayer />
       <ContextMenuHost />
     </div>
