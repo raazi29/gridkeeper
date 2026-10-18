@@ -3,7 +3,8 @@
 import { memo, useEffect, useState } from "react";
 import { COMMANDS, THEME_COMMAND_PREFIX } from "../actions/commands";
 import { notify } from "../actions/notify";
-import { DEFAULT_BINDINGS, displayCombo, eventToCombo, forbiddenReason } from "../keybindings/combo";
+import { defaultBindings, displayCombo, eventToCombo, forbiddenReason } from "../keybindings/combo";
+import { OS, isWindows, shellLabel } from "../lib/platform";
 import { errorMessage, ipc } from "../lib/ipc";
 import type { AgentPaths, LayoutPreset, RendererPref, RightClickAction, Settings, UiDensity } from "../lib/types";
 import { DEFAULT_SETTINGS } from "../lib/types";
@@ -117,7 +118,7 @@ function AppearanceSection() {
             options={TERMINAL_FONTS.map((f) => ({ value: f.value, label: f.label }))}
           />
         </Field>
-        <Toggle checked={reduceMotion} onChange={setReduceMotion} label="Reduce motion" hint="Turns off transitions, lamp pulses, the holo band, the hyperspace jump, saber effects and the CRT overlay. Also follows the Windows animation setting." />
+        <Toggle checked={reduceMotion} onChange={setReduceMotion} label="Reduce motion" hint={`Turns off transitions, lamp pulses, the holo band, the hyperspace jump, saber effects and the CRT overlay. Also follows the ${isWindows ? "Windows animation" : "system reduce-motion"} setting.`} />
         <HyperspaceToggle />
       </section>
 
@@ -252,11 +253,18 @@ function TerminalSection() {
   );
 }
 
-const AGENT_ROWS: { key: keyof AgentPaths; label: string; hint: string }[] = [
-  { key: "claude", label: "Claude Code", hint: "claude.exe (native install preferred over the npm claude.cmd shim)" },
-  { key: "codex", label: "Codex", hint: "codex.exe or codex.cmd" },
-  { key: "powershell", label: "PowerShell", hint: "pwsh.exe (PowerShell 7) or powershell.exe" },
-];
+const AGENT_ROWS: { key: keyof AgentPaths; label: string; hint: string }[] =
+  OS === "windows"
+    ? [
+        { key: "claude", label: "Claude Code", hint: "claude.exe (native install preferred over the npm claude.cmd shim)" },
+        { key: "codex", label: "Codex", hint: "codex.exe or codex.cmd" },
+        { key: "powershell", label: "PowerShell", hint: "pwsh.exe (PowerShell 7) or powershell.exe" },
+      ]
+    : [
+        { key: "claude", label: "Claude Code", hint: "claude (native install in ~/.local/bin preferred, else PATH)" },
+        { key: "codex", label: "Codex", hint: "codex on PATH" },
+        { key: "powershell", label: shellLabel(), hint: "Login shell ($SHELL), e.g. /bin/zsh; any shell path works, including pwsh" },
+      ];
 
 function AgentsSection() {
   const paths = useApp((s) => s.persisted.settings.agentPaths);
@@ -320,6 +328,37 @@ function AgentsSection() {
           </Field>
         );
       })}
+      <CostMeterSetting />
+    </div>
+  );
+}
+
+function CostMeterSetting() {
+  const [on, setOn] = useSetting("costMeter");
+  return (
+    <div className="cost-meter-setting">
+      <div className="micro-label">Cost meter</div>
+      <Toggle
+        checked={on ?? false}
+        onChange={(v) => {
+          setOn(v);
+          if (v) useApp.getState().updateSettings({ costMeterHintDismissed: true });
+        }}
+        label="Cost & context meter for Claude panes"
+        hint={
+          <>
+            Shows Claude Code's own estimate (list price; on a subscription that is API-equivalent value, not a bill) and context
+            use in each Claude pane header, in Mission Control and in Fleet. Gridkeeper starts Claude with a <code>--settings</code> file in
+            its own data folder that sets only <code>statusLine</code>. Claude then hands Gridkeeper the status line numbers: session id,
+            cost, durations, context size and use, token counts, the current usage breakdown, rate limits and the model name. Nothing
+            from transcripts or credentials is read. It replaces Claude's status line in Gridkeeper panes, unless you have your own: then
+            Gridkeeper runs yours and it shows as before (it finds it by reading <code>statusLine</code> from your Claude settings files,
+            read-only). A pane that passes its own <code>--settings</code> isn't metered.
+            Codex and Gemini CLI report no usage to other programs (shown as n/a). Applies to newly started Claude panes: restart a
+            pane to apply.
+          </>
+        }
+      />
     </div>
   );
 }
@@ -354,7 +393,8 @@ function KeysSection() {
     const owner = combo ? Object.entries(effective).find(([cid, c]) => c === combo && cid !== id)?.[0] : undefined;
     if (owner) next[owner] = "";
     // Drop overrides equal to the default to keep the file tidy.
-    for (const [cid, c] of Object.entries(next)) if (DEFAULT_BINDINGS[cid] === c || (!(cid in DEFAULT_BINDINGS) && c === "")) delete next[cid];
+    const defaults = defaultBindings();
+    for (const [cid, c] of Object.entries(next)) if (defaults[cid] === c || (!(cid in defaults) && c === "")) delete next[cid];
     useApp.getState().updateSettings({ keybindings: next });
     setMessage(owner ? { id, text: `Removed from “${titles[owner] ?? owner}”`, tone: "info" } : null);
   };
@@ -369,7 +409,9 @@ function KeysSection() {
   return (
     <div className="keys">
       <p className="explain explain-top">
-        Click a shortcut to record a new one. Terminal keys are protected: plain Ctrl+letter, Alt+letter, arrows, Tab, Enter, Esc and function keys always go to the terminal.
+        {OS === "macos"
+          ? "Click a shortcut to record a new one. Terminal keys are protected: ⌃ Control combinations, ⌥+letter, arrows, Tab, Return, Esc and function keys always go to the terminal, and macOS / Edit-menu shortcuts (⌘C, ⌘V, ⌘Q, ⌘Tab …) stay with the system."
+          : "Click a shortcut to record a new one. Terminal keys are protected: plain Ctrl+letter, Alt+letter, arrows, Tab, Enter, Esc and function keys always go to the terminal."}
       </p>
       <div className="keys-list" role="table">
         {ids.map((id) => (

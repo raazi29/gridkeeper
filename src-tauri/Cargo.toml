@@ -1,6 +1,6 @@
 [package]
 name = "gridkeeper"
-version = "0.1.2"
+version = "0.2.0"
 description = "Gridkeeper — GPU-accelerated multi-agent terminal workspace"
 authors = ["Gridkeeper"]
 license = "MIT"
@@ -38,6 +38,10 @@ regex = "1"
 once_cell = "1"
 chrono = { version = "0.4", default-features = false, features = ["clock", "serde"] }
 base64 = "0.22"
+# Mission file watcher (ReadDirectoryChangesW on Windows, inotify on Linux, FSEvents on macOS; no
+# polling backend is used). `macos_fsevent` is required on macOS: without it notify's fsevent module
+# has no `fsevent-sys` and the crate does not compile there.
+notify = { version = "8", default-features = false, features = ["macos_fsevent"] }
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.61", features = [
@@ -56,6 +60,11 @@ windows-sys = { version = "0.61", features = [
 # Same versions tauri-runtime-wry uses: WebView2 crash recovery (webview_guard).
 webview2-com = "0.39"
 windows-core = "0.62"
+
+[target.'cfg(unix)'.dependencies]
+# Process groups / sessions (kill, killpg, getsid), signal handling, getpwuid_r. Already in the
+# lock file through portable-pty.
+libc = "0.2"
 
 [dev-dependencies]
 tempfile = "3"

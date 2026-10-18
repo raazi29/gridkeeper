@@ -70,6 +70,15 @@ export interface AppStore {
   setActiveGroup: (workspaceId: string, groupId: string) => void;
   updateLayout: (groupId: string, patch: Partial<Layout>) => void;
   moveSession: (groupId: string, from: number, to: number) => void;
+  /**
+   * Move a session to `toIndex` of another group of the SAME workspace (or reorder inside its own group).
+   * `toIndex` is the final position, counted in the target list without the moved session (clamped).
+   * No-op for unknown ids or a cross-workspace move. The session's metadata is untouched, so its terminal
+   * (registry entry) and process survive; the pane simply re-mounts in the target group's grid.
+   */
+  moveSessionToGroup: (sessionId: SessionId, toGroupId: string, toIndex: number) => void;
+  /** Reorder a workspace's groups (lane / tab order). No-op for invalid indices. */
+  moveGroup: (workspaceId: string, from: number, to: number) => void;
 
   // --- session metadata
   addSessionMeta: (groupId: string, meta: SessionMeta) => void;
@@ -252,6 +261,42 @@ export const useApp = create<AppStore>()((set, get) => ({
         }),
       },
     })),
+
+  moveSessionToGroup: (sessionId, toGroupId, toIndex) =>
+    set((s) => {
+      const ws = s.persisted.workspaces.find((w) => w.groups.some((g) => g.sessionIds.includes(sessionId)));
+      const from = ws?.groups.find((g) => g.sessionIds.includes(sessionId));
+      const to = ws?.groups.find((g) => g.id === toGroupId);
+      if (!ws || !from || !to || !Number.isFinite(toIndex)) return s;
+      const rest = to.sessionIds.filter((x) => x !== sessionId);
+      const at = Math.max(0, Math.min(rest.length, Math.trunc(toIndex)));
+      if (from.id === to.id && to.sessionIds.indexOf(sessionId) === at) return s;
+      rest.splice(at, 0, sessionId);
+      const groups = ws.groups.map((g) => {
+        if (g.id === to.id) return { ...g, sessionIds: rest };
+        if (g.id === from.id)
+          return {
+            ...g,
+            sessionIds: g.sessionIds.filter((x) => x !== sessionId),
+            layout: g.layout.maximized === sessionId ? { ...g.layout, maximized: null } : g.layout,
+          };
+        return g;
+      });
+      // The focused pane stays on screen: when it leaves the active group, the active group follows it.
+      const follow = s.focusedSessionId === sessionId && ws.activeGroupId === from.id && from.id !== to.id;
+      const next: Workspace = { ...ws, groups, activeGroupId: follow ? to.id : ws.activeGroupId };
+      return { persisted: { ...s.persisted, workspaces: s.persisted.workspaces.map((w) => (w.id === ws.id ? next : w)) } };
+    }),
+  moveGroup: (workspaceId, from, to) =>
+    set((s) => {
+      const ws = s.persisted.workspaces.find((w) => w.id === workspaceId);
+      const n = ws?.groups.length ?? 0;
+      if (!ws || from === to || !Number.isInteger(from) || !Number.isInteger(to) || from < 0 || to < 0 || from >= n || to >= n) return s;
+      const groups = [...ws.groups];
+      const [g] = groups.splice(from, 1);
+      groups.splice(to, 0, g);
+      return { persisted: { ...s.persisted, workspaces: s.persisted.workspaces.map((w) => (w.id === workspaceId ? { ...w, groups } : w)) } };
+    }),
 
   addSessionMeta: (groupId, meta) =>
     set((s) => ({

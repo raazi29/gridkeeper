@@ -6,15 +6,15 @@
   const { getRendererStatus } = window.__gridkeeper.registry;
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   const app = useApp.getState();
-  const wsId = app.createWorkspace("E2E Agents", "D:\\AlteraAI");
+  const wsId = app.createWorkspace("E2E Agents", E2E_CWD);
   const ws = useApp.getState().persisted.workspaces.find((w) => w.id === wsId);
   const groupId = ws.groups[0].id;
   const profiles = useApp.getState().profiles;
   const ids = [];
-  for (const p of profiles.slice(0, 3)) ids.push(["claude:" + p.name, newSession({ groupId, agent: "claude", cwd: "D:\\AlteraAI", profileId: p.id, name: "Claude " + p.name })]);
-  ids.push(["codex:1", newSession({ groupId, agent: "codex", cwd: "D:\\AlteraAI", name: "Codex review" })]);
-  ids.push(["codex:2", newSession({ groupId, agent: "codex", cwd: "D:\\AlteraAI", name: "Codex fix" })]);
-  ids.push(["pwsh", newSession({ groupId, agent: "powershell", cwd: "D:\\AlteraAI", name: "Git" })]);
+  for (const p of profiles.slice(0, 3)) ids.push(["claude:" + p.name, newSession({ groupId, agent: "claude", cwd: E2E_CWD, profileId: p.id, name: "Claude " + p.name })]);
+  ids.push(["codex:1", newSession({ groupId, agent: "codex", cwd: E2E_CWD, name: "Codex review" })]);
+  ids.push(["codex:2", newSession({ groupId, agent: "codex", cwd: E2E_CWD, name: "Codex fix" })]);
+  ids.push(["pwsh", newSession({ groupId, agent: "powershell", cwd: E2E_CWD, name: "Git" })]);
   await sleep(20000);
   const out = {};
   for (const [label, id] of ids) {

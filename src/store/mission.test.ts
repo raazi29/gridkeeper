@@ -61,3 +61,19 @@ describe("mission store", () => {
     expect(useMission.getState().formationGroupId).toBeNull();
   });
 });
+
+describe("mission collapsed boxes", () => {
+  it("toggleCollapsed flips or sets one box, keeping the others", () => {
+    useMission.setState({ collapsed: {} });
+    useMission.getState().toggleCollapsed("g1");
+    useMission.getState().toggleCollapsed("lead");
+    expect(useMission.getState().collapsed).toEqual({ g1: true, lead: true });
+    useMission.getState().toggleCollapsed("g1");
+    expect(useMission.getState().collapsed).toEqual({ lead: true });
+    const before = useMission.getState().collapsed;
+    useMission.getState().toggleCollapsed("lead", true); // already collapsed: same object
+    expect(useMission.getState().collapsed).toBe(before);
+    useMission.getState().toggleCollapsed("lead", false);
+    expect(useMission.getState().collapsed).toEqual({});
+  });
+});

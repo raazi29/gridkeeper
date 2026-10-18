@@ -134,3 +134,38 @@ export function phaseMark(l: LaneModel): string {
   if (l.working > 0) return "●";
   return "○";
 }
+
+// ---- drag & drop / lane helpers (pure) ----------------------------------------------------------
+
+export type DropSide = "before" | "after";
+
+/**
+ * Final index for `moveSessionToGroup` when a card is dropped next to `anchor` (null = end of the
+ * lane). Counted in the target group's list WITHOUT the moved session; an anchor that is not in the
+ * group (or is the moved session itself) means "at the end".
+ */
+export function insertIndex(groupIds: readonly string[], movedId: string, anchor: { id: string; side: DropSide } | null): number {
+  const rest = groupIds.filter((x) => x !== movedId);
+  const i = anchor ? rest.indexOf(anchor.id) : -1;
+  if (!anchor || i < 0) return rest.length;
+  return anchor.side === "before" ? i : i + 1;
+}
+
+/** `to` for `moveGroup(from, to)` when the dragged item lands before / after the item at `anchor`. */
+export function reorderTarget(from: number, anchor: number, side: DropSide): number {
+  const slot = side === "before" ? anchor : anchor + 1;
+  return slot > from ? slot - 1 : slot;
+}
+
+/** "Lane N" for a new group: the first N (from count + 1) that no group uses yet. */
+export function nextLaneName(names: readonly string[]): string {
+  const used = new Set(names.map((n) => n.trim().toLowerCase()));
+  let n = names.length + 1;
+  while (used.has(`lane ${n}`)) n++;
+  return `Lane ${n}`;
+}
+
+/** Which side of a box the pointer is on (horizontal halves). */
+export function sideOf(clientX: number, rect: { left: number; width: number }): DropSide {
+  return clientX < rect.left + rect.width / 2 ? "before" : "after";
+}

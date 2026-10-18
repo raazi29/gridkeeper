@@ -2,6 +2,7 @@
 // No store or IPC access here, so everything is unit-testable.
 
 import type { Account, AccountAgentInfo, AgentAvailability, AgentKind, ClaudeProfile, SessionInfo } from "./types";
+import { OS, shellLabel, type Os } from "./platform";
 
 /** Which agent an account or launch belongs to: "claude", "codex", or a catalog preset id ("hermes"). */
 export function agentKey(agent: AgentKind, preset?: string | null): string {
@@ -117,7 +118,7 @@ export interface LaunchOption {
  * Quick-launch cards: one per signed-in account per agent ("Codex · work"). An agent with no
  * signed-in account gets one plain card (its default login), so nothing disappears before the scan.
  */
-export function launchOptions(accounts: Account[], agents: AgentAvailability[]): LaunchOption[] {
+export function launchOptions(accounts: Account[], agents: AgentAvailability[], os: Os = OS): LaunchOption[] {
   const missing = (k: AgentKind) => agents.some((a) => a.kind === k && !a.path);
   const perAccount = (agent: AgentKind, label: string, preset: string | undefined, disabled: boolean): LaunchOption[] => {
     const signed = accountsFor(accounts, agent, preset ?? null).filter(isSignedIn);
@@ -125,7 +126,7 @@ export function launchOptions(accounts: Account[], agents: AgentAvailability[]):
     if (signed.length === 0) return [{ key: base, label, agent, preset, disabled }];
     return signed.map((a) => ({ key: `${base}:${a.id}`, label, hint: a.name, color: a.color, agent, profileId: a.id, preset, disabled }));
   };
-  const out: LaunchOption[] = [{ key: "ps", label: "PowerShell", agent: "powershell", disabled: missing("powershell") }];
+  const out: LaunchOption[] = [{ key: "ps", label: shellLabel(os), agent: "powershell", disabled: missing("powershell") }];
   out.push(...perAccount("claude", "Claude Code", undefined, missing("claude")));
   out.push(...perAccount("codex", "Codex", undefined, missing("codex")));
   // Other agent CLIs found on this PC (broken installs are reported by detection and skipped here).

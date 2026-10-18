@@ -5,7 +5,20 @@
 // The allocator is stable: terminals that already hold a context keep it (no thrash when another
 // terminal becomes visible); free slots go to the highest-priority candidates.
 
-export const MAX_WEBGL = 12;
+import { OS, type Os } from "../lib/platform";
+
+/**
+ * Context budget per platform. Windows (WebView2 / Chromium, measured): 12 of Chromium's 16.
+ * macOS (WKWebView) and Linux (WebKitGTK) are UNVERIFIED: WebKit's own cap is also 16 active contexts
+ * per page, but WebKitGTK often runs on weaker GL stacks (software / DMABUF fallbacks), so Linux starts
+ * lower. Re-measure both on real hardware (context loss count in Diagnostics) and adjust.
+ */
+export function maxWebglFor(os: Os): number {
+  if (os === "linux") return 8;
+  return 12;
+}
+
+export const MAX_WEBGL = maxWebglFor(OS);
 
 export interface WebglCandidate {
   id: string;

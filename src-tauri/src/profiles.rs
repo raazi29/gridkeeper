@@ -751,8 +751,11 @@ mod tests {
         assert!(matches!(store.create("work".into(), Some(data.path().join("x").to_string_lossy().into()), None), Err(AppError::Invalid(_))));
         assert!(matches!(store.create("rel".into(), Some("relative\\dir".into()), None), Err(AppError::Invalid(_))));
         assert!(matches!(store.create("dup-default".into(), None, None), Err(AppError::Invalid(_))));
-        let existing = home.path().join(".claude-account1").to_string_lossy().to_uppercase();
-        assert!(matches!(store.create("same".into(), Some(existing), None), Err(AppError::Invalid(_))));
+        let existing = home.path().join(".claude-account1").to_string_lossy().into_owned();
+        assert!(matches!(store.create("same".into(), Some(existing.clone()), None), Err(AppError::Invalid(_))));
+        // Windows paths compare case-insensitively.
+        #[cfg(windows)]
+        assert!(matches!(store.create("same".into(), Some(existing.to_uppercase()), None), Err(AppError::Invalid(_))));
         assert!(matches!(
             store.create("bad-color".into(), Some(data.path().join("y").to_string_lossy().into()), Some("red".into())),
             Err(AppError::Invalid(_))
@@ -911,7 +914,7 @@ mod tests {
         std::fs::create_dir_all(h.join(".codex")).unwrap();
         std::fs::create_dir_all(h.join(".codex-work")).unwrap();
         std::fs::write(h.join(".codex-work").join("config.toml"), b"").unwrap();
-        let hermes_root = h.join(r"AppData\Local\hermes");
+        let hermes_root = accounts::test_hermes_root(h);
         std::fs::create_dir_all(&hermes_root).unwrap();
         std::fs::write(hermes_root.join("config.yaml"), b"").unwrap();
         let data = tempfile::tempdir().unwrap();

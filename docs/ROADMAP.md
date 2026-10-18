@@ -22,14 +22,17 @@ flow control never blocks the child, never bind terminal-critical keys.
 - **How:** `tauri-plugin-updater` with a signed update manifest (`latest.json`) published as a release asset
   (requires the updater key pair; the public key goes in `tauri.conf.json`). The check is **user-visible and
   opt-out**: once at startup and from the palette, never on a timer in the background. Release notes go in a toast;
-  install on next restart so running agents aren't killed by surprise. Needs a public download URL (the repo is
-  private today), so decide on public release hosting first. Depends on item 1.
+  install on next restart so running agents aren't killed by surprise. Needs a public download URL: the repo is
+  public now, so GitHub Releases can host `latest.json` and the installers. Depends on item 1.
 
-### 3. CI on GitHub Actions (S–M)
-- **Why:** checks run only on the developer machine today.
-- **How:** `windows-latest` workflow: `npm ci`, `tsc --noEmit`, `vitest run`, `cargo test` (ConPTY tests run on
-  hosted Windows runners), `tauri build` artifact on tags. Cache cargo/npm. Live CDP e2e stays local at first;
-  later a self-hosted runner could run `full-verify.js`.
+### 3. CI on GitHub Actions (S–M), mostly done
+- **Status:** `.github/workflows/ci.yml` runs `npm ci`, `tsc --noEmit`, `vitest run`, `npm run build` and
+  `cargo test` (PTY tests included) on `windows-latest`, `ubuntu-22.04` and `macos-latest` for every push to `main`
+  and every PR, with npm and cargo caches, plus a non-fatal `cargo clippy`; `v*` tags (or a manual run with
+  `installers: true`) also run `tauri build` per OS and keep the NSIS / dmg / AppImage + deb as workflow artifacts.
+- **Remaining:** live CDP e2e on a self-hosted Windows runner (`full-verify.js`, `mission.js` in a sandbox
+  instance); publishing releases from CI once signing (item 1) exists; making `cargo clippy` / `cargo fmt --check`
+  fatal gates.
 
 ## P1: Terminal fidelity and continuity
 
@@ -68,14 +71,18 @@ flow control never blocks the child, never bind terminal-critical keys.
 
 ## P1: Multi-agent coordination
 
-### 8. Agent-to-agent handoff and a shared task board for Formations (L)
+### 8. Agent-to-agent handoff and a shared task board for Formations (L), v1 shipped: mission.md board
 - **Why:** Formations launch a team, but coordination is manual. A shared, visible task list is the missing piece
   for lead/builder/reviewer flows.
-- **How:** a `tasks.json` in the workspace (or `.gridkeeper/tasks.json` in the repo, user's choice) with tasks,
-  owner role, status and links to worktrees. Mission Control shows it as a board; agents read and write it as a
-  plain file (every agent CLI can edit files), and Gridkeeper watches it with a filesystem notification, not
-  polling. "Hand off" sends a short, user-confirmed prompt to the target pane (reusing the held starter-prompt
-  machinery so nothing is auto-approved).
+- **Shipped (v1):** `<projectDir>/.gridkeeper/mission.md`, a plain Markdown file every agent CLI can edit
+  (`# Mission: <goal>`, `## Tasks`, `- [ ] text @owner`, `[~]` doing, `[x]` done, `[!]` blocked). Rust reads and
+  writes it atomically with a conflict check and watches it with filesystem notifications (no polling); Mission
+  Control renders it as a live board with clickable task states, sign-off cards with branch evidence
+  (`git_branch_summary`), and "brief team…" / "hand off…" actions.
+  Live check: `scripts/e2e/mission.js`.
+- **Remaining ideas:** link tasks to worktrees, branches and PRs explicitly (not only via `@owner`); task history
+  and "who changed what" from git; a board that spans several project folders; agent status hooks (item 9) updating
+  task states automatically; templates per formation (a starter `mission.md` for "Plan · Build · Verify").
 
 ### 9. MCP / agent status hooks integration (M)
 - **Why:** attention detection relies on terminal signals and output activity. Claude Code hooks and MCP can
@@ -101,12 +108,18 @@ flow control never blocks the child, never bind terminal-critical keys.
   loaded at startup. Executable plugins (JS/WASM) only later, with a written security model, since they would run
   next to credentials.
 
-### 12. Linux and macOS ports (XL)
+### 12. Linux and macOS ports (XL), first port done: builds and tests in CI, not live-verified
 - **Why:** the multi-agent workflow isn't Windows-only, and Tauri, xterm.js and portable-pty are cross-platform.
-- **How:** abstract the Windows-specific parts behind traits: Job Objects → process groups / cgroups (Linux) and
-  process groups + `kqueue` (macOS); Toolhelp diagnostics → `/proc` / `libproc`; PDH GPU telemetry → optional;
-  ports → `/proc/net/tcp` / `lsof`-style APIs; WebView2 → WebKitGTK / WKWebView (re-verify WebGL budget, CSP and
-  iframe sandbox behaviour per engine). Keep Windows as the reference platform and gate features per OS.
+- **Shipped (v1):** `ProcessContainer` (Job Object / POSIX session with `killpg` + SIGHUP / SIGKILL), Unix
+  termination guards, sysinfo diagnostics with best-effort WebKit attribution, ports from `/proc/net/tcp` (Linux) and
+  `lsof` (macOS), login shell as the default terminal, ⌘ as the primary shortcut modifier on macOS, per-platform
+  WebGL budget, `tauri.macos.conf.json` / `tauri.linux.conf.json` bundles, CI matrix on all three OSes. Details and
+  the limitation list: [HANDOFF section 10](HANDOFF.md#10-platforms-windows-macos-linux).
+- **Remaining:** live verification on a Mac and a Linux desktop (an e2e runner: `cdp.mjs` needs a WebKit inspector
+  equivalent, or a manual checklist); a supervisor process or cgroup v2 (Linux) so a hard host crash can't orphan
+  agents; renderer-crash recovery for WKWebView / WebKitGTK; measuring the WebGL budget, CSP and iframe sandbox
+  behaviour per engine; GPU telemetry (Metal / DRM fdinfo) if worth it; signing + notarization for macOS; a
+  `sandbox.sh` equivalent of the PowerShell sandbox scripts and an isolated WebKit profile for sandboxes.
 
 ### 13. Accessibility audit (M)
 - **Why:** contrast is tested, but keyboard-only navigation, screen-reader labels and focus order haven't been
@@ -124,7 +137,6 @@ flow control never blocks the child, never bind terminal-critical keys.
 ## Smaller ideas (S each)
 
 - Remove the unused `@fontsource-variable/inter` dependency.
-- Make e2e scripts take the working folder from an env var instead of hard-coded `D:\AlteraAI`.
 - `THIRD_PARTY_NOTICES` generated from `cargo about` / `license-checker` at release time.
 - Per-workspace default account per agent.
 - Export / import a workspace definition (no processes, no env secrets) to share team layouts.

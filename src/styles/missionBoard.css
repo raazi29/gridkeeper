@@ -1,0 +1,562 @@
+/* Mission board (MissionNode) + the mission bits on Mission Control cards and the mission dialogs.
+   Same thin-box terminal style as mission.css; theme variables only. */
+
+.mb-node {
+  width: min(760px, 100%);
+  --rc: var(--accent);
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--mc-line));
+  outline: none;
+}
+.mb-node.is-placeholder {
+  color: var(--text-2);
+  text-align: center;
+  padding: 16px 12px;
+}
+.mb-muted {
+  color: var(--text-2);
+  font-style: italic;
+}
+.mb-error {
+  color: var(--err);
+  padding: 4px 2px;
+}
+
+/* goal / context / progress */
+.mb-goal {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+.mb-goal-label {
+  flex-shrink: 0;
+}
+.mb-goal-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+}
+.mb-context {
+  margin-top: 4px;
+  color: var(--text-2);
+  white-space: pre-line;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.mb-progress {
+  margin: 8px 0 6px;
+}
+
+/* task groups */
+.mb-groups {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 300px;
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+.mb-group-head {
+  margin: 2px 0 2px;
+}
+.mb-group.is-doing .mb-group-head {
+  color: var(--role-builder);
+}
+.mb-group.is-blocked .mb-group-head {
+  color: var(--err);
+}
+.mb-tasks {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.mb-task {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 1px 2px;
+  border-radius: var(--radius-s);
+}
+.mb-task:hover {
+  background: var(--bg-2);
+}
+.mb-box {
+  flex-shrink: 0;
+  padding: 0 2px;
+  border: 0;
+  background: none;
+  font-family: var(--font-mono);
+  font-size: var(--mc-fs);
+  color: var(--text-1);
+  cursor: pointer;
+  white-space: pre;
+}
+.mb-box:hover:not(:disabled) {
+  color: var(--text-0);
+  background: var(--bg-3);
+}
+.mb-box:disabled {
+  cursor: progress;
+  opacity: 0.6;
+}
+.mb-task.is-doing .mb-box {
+  color: var(--role-builder);
+}
+.mb-task.is-done .mb-box {
+  color: var(--ok);
+}
+.mb-task.is-blocked .mb-box {
+  color: var(--err);
+}
+.mb-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-0);
+}
+.mb-task.is-done .mb-text {
+  color: var(--text-2);
+  text-decoration: line-through;
+  text-decoration-color: var(--border-strong);
+}
+.mb-owners {
+  display: inline-flex;
+  flex-shrink: 0;
+  gap: 4px;
+  max-width: 45%;
+  overflow: hidden;
+}
+.mb-owner {
+  --rc: var(--role-custom);
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  height: 16px;
+  padding: 0 5px;
+  border: 1px solid color-mix(in srgb, var(--rc) 55%, transparent);
+  border-radius: var(--radius-s);
+  background: color-mix(in srgb, var(--rc) 10%, transparent);
+  color: var(--rc);
+  font-family: var(--font-mono);
+  font-size: var(--mc-fs-micro);
+  white-space: nowrap;
+  cursor: pointer;
+}
+.mb-owner:hover {
+  background: color-mix(in srgb, var(--rc) 22%, transparent);
+}
+.mb-owner.is-unknown {
+  border-style: dashed;
+  color: var(--text-2);
+  border-color: var(--mc-line);
+  background: none;
+  cursor: help;
+}
+.mb-owner-n {
+  color: var(--text-2);
+}
+.mb-flag {
+  height: 16px;
+  padding: 0 5px;
+  border: 1px dashed var(--accent);
+  border-radius: var(--radius-s);
+  color: var(--accent);
+  font-size: var(--mc-fs-micro);
+  letter-spacing: 0.06em;
+  line-height: 14px;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.mb-done-toggle {
+  align-self: flex-start;
+  padding: 1px 2px;
+  border: 0;
+  background: none;
+  color: var(--text-2);
+  font-family: var(--font-mono);
+  cursor: pointer;
+}
+.mb-done-toggle:hover {
+  color: var(--text-0);
+}
+
+/* ---- board interactions: collapse, filters, focus, drag, edit, quick add, blocked reason ----
+   No transitions or animations here, so reduced motion (.mc.is-still / the OS setting) needs nothing extra. */
+.mb-board {
+  min-width: 0;
+}
+.mb-collapse {
+  flex-shrink: 0;
+  width: 16px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--text-2);
+  font-family: var(--font-mono);
+  cursor: pointer;
+}
+.mb-collapse:hover,
+.mb-collapse:focus-visible {
+  color: var(--text-0);
+}
+.mb-summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.mb-summary .mb-goal-text {
+  flex: 0 1 auto;
+}
+.mb-summary .mc-progress {
+  flex: 0 0 90px;
+}
+
+.mb-filters {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin: 0 0 6px;
+}
+.mb-filter {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 18px;
+  padding: 0 6px;
+  border: 1px solid var(--mc-line);
+  border-radius: var(--radius-s);
+  background: none;
+  color: var(--text-2);
+  font-family: var(--font-mono);
+  font-size: var(--mc-fs-micro);
+  cursor: pointer;
+}
+.mb-filter:hover:not(:disabled) {
+  color: var(--text-0);
+  background: var(--bg-2);
+}
+.mb-filter.is-on {
+  color: var(--text-0);
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+}
+.mb-filter:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.mb-filter-n {
+  color: var(--text-2);
+}
+.mb-search {
+  flex: 1 1 100px;
+  width: auto;
+  min-width: 80px;
+  max-width: 220px;
+  height: 18px;
+  margin-left: auto;
+  padding: 0 6px;
+  font-size: var(--mc-fs-micro);
+}
+
+/* rows: focus, ⋯ menu button, inline edit */
+.mb-task {
+  position: relative;
+  outline: none;
+}
+.mb-task:focus-visible {
+  box-shadow: inset 0 0 0 1px var(--accent);
+  background: var(--bg-2);
+}
+.mb-task[draggable="true"] {
+  cursor: grab;
+}
+.mb-task .mb-box,
+.mb-task .mb-owner {
+  cursor: pointer;
+}
+.mb-more {
+  flex-shrink: 0;
+  width: 16px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-s);
+  background: none;
+  color: var(--text-2);
+  font-family: var(--font-mono);
+  cursor: pointer;
+  visibility: hidden;
+}
+.mb-task:hover .mb-more,
+.mb-task:focus-visible .mb-more,
+.mb-task:focus-within .mb-more {
+  visibility: visible;
+}
+.mb-more:hover {
+  color: var(--text-0);
+  background: var(--bg-3);
+}
+.mb-edit {
+  flex: 1;
+  min-width: 0;
+  height: 18px;
+  padding: 0 4px;
+}
+.mb-box.is-static {
+  cursor: default;
+  color: var(--err);
+}
+
+/* drag and drop */
+.mb-task.is-dragged {
+  opacity: 0.4;
+}
+.mb-task.is-drop-before::before,
+.mb-task.is-drop-after::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 2px;
+  border-radius: 1px;
+  background: var(--accent);
+  pointer-events: none;
+}
+.mb-task.is-drop-before::before {
+  top: -1px;
+}
+.mb-task.is-drop-after::after {
+  bottom: -1px;
+}
+.mb-board.is-dragging .mb-group {
+  border: 1px dashed transparent;
+  border-radius: var(--radius-s);
+  padding: 0 2px 2px;
+}
+.mb-board.is-dragging .mb-group.is-drop,
+.mb-done-toggle.is-drop {
+  border: 1px dashed var(--accent);
+  background: color-mix(in srgb, var(--accent) 7%, transparent);
+}
+.mb-drop-empty {
+  padding: 3px 4px;
+  border: 1px dashed var(--mc-line);
+  border-radius: var(--radius-s);
+  color: var(--text-2);
+  font-size: var(--mc-fs-micro);
+  text-align: center;
+}
+.mb-owner.is-drop {
+  outline: 1px solid var(--accent);
+  outline-offset: 1px;
+  background: color-mix(in srgb, var(--rc) 28%, transparent);
+}
+
+/* blocked reason prompt */
+.mb-ask {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 1px 0 3px 18px;
+  padding: 3px 4px;
+  border: 1px dashed var(--err);
+  border-radius: var(--radius-s);
+}
+.mb-ask-input {
+  flex: 1;
+  min-width: 0;
+  height: 20px;
+  padding: 0 6px;
+}
+
+/* quick add */
+.mb-add {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+  min-width: 0;
+}
+.mb-add-plus {
+  flex-shrink: 0;
+  width: 16px;
+  text-align: center;
+  color: var(--text-2);
+  font-family: var(--font-mono);
+}
+.mb-add-input {
+  flex: 1;
+  min-width: 0;
+  height: 20px;
+  padding: 0 6px;
+  border-style: dashed;
+}
+.mb-add-input:focus {
+  border-style: solid;
+}
+.mb-add-hint {
+  flex-shrink: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-2);
+}
+
+/* actions */
+.mb-actions {
+  margin: 8px 0 0;
+  min-width: 0;
+}
+.mb-path {
+  flex: 1 1 120px;
+  font-size: var(--mc-fs-micro);
+  white-space: nowrap;
+}
+
+/* "set a mission" form */
+.mb-form {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  text-align: left;
+}
+.mb-field {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.mb-input {
+  width: 100%;
+  padding: 3px 6px;
+  border: 1px solid var(--mc-line);
+  border-radius: var(--radius-s);
+  background: var(--bg-0);
+  color: var(--text-0);
+  font-family: var(--font-mono);
+  font-size: var(--mc-fs);
+  user-select: text;
+}
+.mb-input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+.mb-textarea {
+  resize: vertical;
+  min-height: 48px;
+}
+.mb-form-actions {
+  justify-content: flex-end;
+  margin-top: 2px;
+}
+
+/* current task line on a session card */
+.mc-card-task {
+  display: flex;
+  gap: 5px;
+  min-width: 0;
+  font-size: var(--mc-fs-micro);
+  color: var(--text-0);
+  white-space: nowrap;
+}
+.mc-card-task-box {
+  flex-shrink: 0;
+  white-space: pre;
+  color: var(--text-2);
+}
+.mc-card-task.is-doing .mc-card-task-box {
+  color: var(--role-builder);
+}
+.mc-card-task-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* dialogs (portaled to body: no .mc ancestor) */
+.mb-editor {
+  display: block;
+  width: 100%;
+  min-height: 360px;
+  max-height: 60vh;
+  resize: vertical;
+  padding: 8px 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-s);
+  background: var(--term-bg, var(--bg-0));
+  color: var(--text-0);
+  font-family: var(--font-mono);
+  font-size: var(--fs-s);
+  line-height: 1.45;
+  tab-size: 2;
+}
+.mb-editor:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+.mb-editor-hint {
+  margin-top: 6px;
+  font-size: var(--fs-xs);
+}
+.mb-editor-warn {
+  margin-bottom: 8px;
+  padding: 6px 8px;
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-s);
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+  font-size: var(--fs-xs);
+}
+.mb-editor-path {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-2);
+  font-size: var(--fs-xs);
+}
+.mb-brief {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-height: 56vh;
+  overflow: auto;
+}
+.mb-brief-row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.mb-brief-row.is-off .mb-brief-text {
+  opacity: 0.5;
+}
+.mb-brief-who {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.mb-brief-name {
+  font-weight: 600;
+}
+.mb-brief-text {
+  min-height: 56px;
+}
+.mb-brief-skipped {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding-top: 6px;
+  border-top: 1px solid var(--border);
+  font-size: var(--fs-xs);
+}

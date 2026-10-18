@@ -59,6 +59,8 @@ export const EVT_SESSION_STATE = "session-state";
 
 /** Attention signal from Rust (see src-tauri/src/pty/attention.rs). */
 export const EVT_SESSION_ATTENTION = "session-attention";
+/** Payload { projectDir } — the mission file of a watched project folder changed (see mission_watch). */
+export const EVT_MISSION_CHANGED = "mission-changed";
 export type AttentionKind = "bell" | "notify" | "status" | "idle" | "active";
 
 export interface SessionAttention {
@@ -330,6 +332,10 @@ export interface Settings {
   saberSound: boolean;
   /** Terminal right-click: "menu" = context menu (default); "paste" = copy selection / paste (Windows Terminal style). */
   rightClickAction: RightClickAction;
+  /** Cost & context meter for Claude panes (opt-in; applies to newly started panes). */
+  costMeter: boolean;
+  /** The one-time "turn on the cost meter" hint was dismissed. */
+  costMeterHintDismissed: boolean;
 }
 
 export type HyperspaceMode = "auto" | "on" | "off";
@@ -491,4 +497,309 @@ export const DEFAULT_SETTINGS: Settings = {
   saberSound: false,
   pasteWarning: true,
   rightClickAction: "menu",
+  costMeter: false,
+  costMeterHintDismissed: false,
 };
+
+// ---- Mission (shared task board file) ------------------------------------------------------------
+
+/** `<projectDir>/.gridkeeper/mission.md`, read by mission_read / written by mission_write. */
+export interface MissionFile {
+  /** Absolute path of the mission file (whether or not it exists). */
+  path: string;
+  exists: boolean;
+  /** File contents (UTF-8, at most 256 KiB; "" when missing). */
+  text: string;
+  /** Last-write time in ms since the epoch; null when missing. Pass back to mission_write for conflict checks. */
+  modifiedMs: number | null;
+}
+
+export interface MissionChanged {
+  projectDir: string;
+  /** What changed: `.gridkeeper/mission.md`, or a file arriving in the lead control outbox
+   *  (`.gridkeeper/outbox/`). Missing from older hosts: treat as both. `team.md` never emits. */
+  file?: MissionChangeKind;
+}
+
+export type MissionChangeKind = "mission" | "outbox";
+
+/** One instruction file directly in `<projectDir>/.gridkeeper/outbox/` (mission_outbox_list). */
+export interface OutboxItem {
+  /** File name only, e.g. "0007-builder-1.md". */
+  name: string;
+  /** Contents (UTF-8, BOM stripped), at most 16 KiB. */
+  text: string;
+  /** Last-write time in ms since the epoch (0 when unknown). */
+  modifiedMs: number;
+  /** The file is larger than 16 KiB: `text` is only its beginning. */
+  truncated: boolean;
+}
+
+/** Where mission_outbox_archive moves a handled instruction file (outbox/sent/ or outbox/dismissed/). */
+export type OutboxDisposition = "sent" | "dismissed";
+
+/** A worktree's branch measured against a base branch (read-only, for Mission Control sign-off). */
+export interface BranchSummary {
+  isRepo: boolean;
+  branch: string | null;
+  /** The base actually used: the requested one, else the main worktree's branch; null when unresolvable. */
+  base: string | null;
+  /** Commits on HEAD not on base / on base not on HEAD. */
+  ahead: number;
+  behind: number;
+  /** `git diff --shortstat base...HEAD` (committed work only). */
+  filesChanged: number;
+  insertions: number;
+  deletions: number;
+  /** Entries in `git status --porcelain` (uncommitted, incl. untracked). */
+  uncommitted: number;
+  lastCommitSubject: string | null;
+  /** Last commit time in ms since the epoch. */
+  lastCommitMs: number | null;
+}
+
+/** One file changed by the commits on HEAD since it left a base (`git diff -M base...HEAD`). */
+export interface BranchFile {
+  /** Repository-relative path on HEAD (forward slashes, as git prints it). */
+  path: string;
+  /** Rename / copy source. */
+  origPath: string | null;
+  /** Status letter from `--name-status`: A, M, D, R, C, T (similarity score dropped). */
+  status: string;
+  insertions: number;
+  deletions: number;
+  /** numstat printed `-\t-` (no line counts). */
+  binary: boolean;
+}
+
+/** The committed work of a worktree's branch against a base (read-only). */
+export interface BranchFiles {
+  isRepo: boolean;
+  branch: string | null;
+  /** The base actually used: the requested one, else the main worktree's branch; null when unresolvable. */
+  base: string | null;
+  /** Commits on HEAD not on base. */
+  ahead: number;
+  /** Empty when HEAD is the base, there is no base, or nothing differs. */
+  files: BranchFile[];
+  /** More than 2000 files: the list was cut. */
+  truncated: boolean;
+}
+
+// ---- Skills (Agent Skills from GitHub, installed into a project's .claude/skills / .agents/skills) -----
+
+/** A GitHub repository from skills_search. */
+export interface SkillRepo {
+  /** `owner/name`. */
+  fullName: string;
+  description: string | null;
+  stars: number;
+  /** ISO 8601. */
+  pushedAt: string | null;
+  /** SPDX id (or license name). */
+  license: string | null;
+  topics: string[];
+  htmlUrl: string;
+  defaultBranch: string;
+  archived: boolean;
+}
+
+/** skills_search sort: trending / top (skill topics, by stars) or a free-text search (best match / stars). */
+export type SkillSort = "trending" | "top" | "best" | "stars";
+
+/** One page of skills_search. A rate limit is a result (`rateLimited`), not an error. */
+export interface SkillRepoPage {
+  items: SkillRepo[];
+  /** Total matches GitHub reports (it serves at most 1000). */
+  total: number;
+  page: number;
+  rateLimited: boolean;
+  /** Epoch seconds when the rate limit resets (when GitHub said). */
+  resetAt: number | null;
+  message: string | null;
+  /** The query sent to api.github.com. */
+  query: string;
+  /** When GitHub answered (epoch ms). */
+  fetchedAtMs: number;
+  /** Served from the 10-minute in-memory cache. */
+  cached: boolean;
+}
+
+export interface SkillFile {
+  /** Relative to the skill folder, forward slashes. */
+  path: string;
+  size: number;
+  /** Script / binary by extension (.ps1 .sh .bat .cmd .exe .js .py ...) or git's executable bit. */
+  executable: boolean;
+}
+
+/** One skill (a folder with a SKILL.md) in a repository at a pinned commit. */
+export interface SkillInfo {
+  /** Folder in the repository ("" = the repository root). */
+  path: string;
+  /** Frontmatter `name`, else the folder name. */
+  name: string;
+  /** Folder name used on install (`.claude/skills/<installName>`). */
+  installName: string;
+  description: string | null;
+  /** SKILL.md first. */
+  files: SkillFile[];
+  totalBytes: number;
+  hasScripts: boolean;
+  /** Full SKILL.md; null when not fetched (many skills) or unreadable: use skills_file. */
+  skillMd: string | null;
+  /** Git tree SHA of the skill folder (recorded on install, compared by update checks). */
+  treeSha: string;
+  /** Why it cannot be installed (over 200 files / 5 MB / 1 MB per file, unsafe names), if so. */
+  blocked: string | null;
+}
+
+/** skills_inspect: a repository's skills, pinned to one commit. */
+export interface RepoSkills {
+  repo: string;
+  /** The ref that was resolved (the default branch when none was given). */
+  gitRef: string;
+  commitSha: string;
+  defaultBranch: string | null;
+  description: string | null;
+  stars: number | null;
+  license: string | null;
+  pushedAt: string | null;
+  htmlUrl: string;
+  archived: boolean;
+  skills: SkillInfo[];
+  warnings: string[];
+  fetchedAtMs: number;
+}
+
+/** skills_file: one file at a pinned commit, for reading before install. */
+export interface SkillFileText {
+  path: string;
+  /** UTF-8 text ("" for binary files), at most 256 KiB. */
+  text: string;
+  size: number;
+  binary: boolean;
+  truncated: boolean;
+}
+
+/** `<skill folder>/.gridkeeper-skill.json`. */
+export interface SkillProvenance {
+  repo: string;
+  commitSha: string;
+  /** Skill folder in the repository ("" = root). */
+  path: string;
+  treeSha: string | null;
+  name: string | null;
+  /** RFC 3339 (UTC). */
+  installedAt: string;
+}
+
+/** Install targets, relative to the project folder. */
+export type SkillTarget = ".claude/skills" | ".agents/skills";
+
+export interface InstallResult {
+  name: string;
+  /** Installed folders relative to the project, e.g. ".claude/skills/pdf". */
+  installed: string[];
+  /** The subset of `installed` that replaced an existing folder. */
+  replaced: string[];
+  files: number;
+  totalBytes: number;
+  commitSha: string;
+  warnings: string[];
+}
+
+/** A skill in the project's `.claude/skills/*` or `.agents/skills/*` (skills_installed). */
+export interface InstalledSkill {
+  /** Frontmatter `name`, else the folder name. */
+  name: string;
+  folder: string;
+  description: string | null;
+  target: SkillTarget;
+  /** `<target>/<folder>`: pass to skills_remove. */
+  dirRel: string;
+  dirAbs: string;
+  /** null: a local skill (not installed by Gridkeeper). */
+  provenance: SkillProvenance | null;
+  hasScripts: boolean;
+  fileCount: number;
+  /** A junction / symbolic link: listed, never removed. */
+  isLink: boolean;
+}
+
+/** current: unchanged since the pinned commit; update: the skill folder changed; missing: gone upstream. */
+export type SkillUpdateStatus = "current" | "update" | "missing";
+
+export interface SkillUpdateCheck {
+  repo: string;
+  path: string;
+  status: SkillUpdateStatus;
+  pinnedSha: string;
+  /** The default branch's commit now. */
+  currentSha: string;
+}
+// ---- Mission replay (src-tauri/src/replay.rs) ----
+
+/** One recording in `<projectDir>/.gridkeeper/replay/`. */
+export interface ReplayInfo {
+  name: string;
+  sizeBytes: number;
+  modifiedMs: number;
+}
+
+/** `replay_append` result: file size afterwards; `full` = the 5 MB cap was reached and the batch was NOT written. */
+export interface ReplayAppend {
+  sizeBytes: number;
+  full: boolean;
+}
+
+/** A save destination chosen in the native dialog, authorized for one `replay_save_file` by `token`. */
+export interface ReplaySaveTarget {
+  token: string;
+  path: string;
+}
+
+export type ReplayExportKind = "mp4" | "webm" | "gif";
+// ---- Cost & context meter (Claude Code status line; src-tauri/src/meter) --------------------------
+
+export const EVT_SESSION_METER = "session-meter";
+
+/** How the pane's last launch went for the meter. */
+export type MeterStatus =
+  /** No launch seen in this app run (data, if any, is from an earlier run). */
+  | "unknown"
+  /** Launched with Gridkeeper's status line; data arrives with Claude's first status line update. */
+  | "metered"
+  /** The session passes its own --settings, so the meter stays off. */
+  | "customSettings"
+  /** Managed settings own the status line (or turn status line commands off). */
+  | "managed"
+  /** Not possible for this launch; `note` says why. */
+  | "unavailable";
+
+/** One pane's meter (payload of EVT_SESSION_METER and of meter_snapshot). Cost is Claude Code's own estimate. */
+export interface SessionMeter {
+  sessionId: SessionId;
+  status: MeterStatus;
+  note: string | null;
+  /** The user's own status line is chained (still shown inside the pane). */
+  chained: boolean;
+  /** Claude's conversation id of the latest data (changes on /clear). */
+  claudeSessionId: string | null;
+  /** cost.total_cost_usd of the current conversation (resets on /clear). */
+  costUsd: number | null;
+  /** Running pane total: sum of the last cost per Claude conversation (survives /clear). */
+  paneCostUsd: number | null;
+  contextPct: number | null;
+  contextSize: number | null;
+  /** Tokens currently in the context window (not cumulative). */
+  inputTokens: number | null;
+  outputTokens: number | null;
+  apiDurationMs: number | null;
+  durationMs: number | null;
+  model: string | null;
+  fiveHourPct: number | null;
+  sevenDayPct: number | null;
+  /** When data was last written (ms since the epoch); null = no data yet. */
+  updatedMs: number | null;
+}

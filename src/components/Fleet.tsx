@@ -21,6 +21,7 @@ import { fleetLamp, formatUptime, matchesFleetFilter, tailLines, type FleetFilte
 import { formatCpu, formatMb, taskManagerCpu } from "./util/text";
 import { buildSessionMenu } from "./menus/sessionMenu";
 import { useContextMenu } from "./ui/Menu";
+import { CostMeterHint, MeterChip } from "./MeterChip";
 import "../styles/attention.css";
 
 const LAMP_LABEL: Record<FleetLamp, string> = { ...ATTN_LABEL, exited: "Exited", stopped: "Not started" };
@@ -75,6 +76,7 @@ export function FleetOverlay() {
     [groups, filter, runtime, attn],
   );
   const flat = useMemo(() => visible.flatMap((g) => g.ids), [visible]);
+  const allIds = useMemo(() => groups.flatMap((g) => g.ids), [groups]);
 
   // Modal semantics: suspend app shortcuts, restore focus on close.
   useLayoutEffect(() => {
@@ -225,6 +227,7 @@ export function FleetOverlay() {
             ))}
           </div>
           <span className="attn-spacer" />
+          <CostMeterHint ids={allIds} variant="fleet" />
           <span className="attn-fleet-hint">Arrows to move · Enter to jump · Esc to close</span>
           <button type="button" className="icon-btn icon-btn-sm" aria-label="Close" title="Close (Esc)" onClick={close}>
             <IconClose size={14} />
@@ -333,6 +336,7 @@ const FleetTile = memo(function FleetTile({
             {profile.name}
           </span>
         )}
+        <MeterChip sessionId={id} variant="tile" />
       </div>
       <div className="attn-tile-meta">
         <span>{LAMP_LABEL[lamp]}</span>

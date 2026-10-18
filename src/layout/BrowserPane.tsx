@@ -9,6 +9,7 @@ import { registerHost } from "../browser/frameHosts";
 import { PortsList } from "../browser/PortsList";
 import type { SessionId } from "../lib/types";
 import { displayUrl, normalizeUrlInput, urlForPort } from "../lib/url";
+import { webviewLabel } from "../lib/platform";
 import { useApp } from "../store/appStore";
 import { PaneHeader } from "./PaneHeader";
 import type { PaneProps } from "./Pane";
@@ -205,7 +206,7 @@ const BrowserCards = memo(function BrowserCards({ sessionId, visible }: { sessio
               Open window
             </button>
           </div>
-          <div className="browser-card-hint">WebView2 does not show file: pages inside the app frame.</div>
+          <div className="browser-card-hint">{webviewLabel()} does not show file: pages inside the app frame.</div>
         </div>
       );
     case "blocked":

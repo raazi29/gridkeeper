@@ -40,6 +40,8 @@ import { confirmDialogEx, useUi } from "../store/uiStore";
 import { checkPaste, pasteTitle } from "./pasteGuard";
 import { PRESENTATION_FONT_BOOST, getSearchDecorations, getTerminalTheme } from "./theme";
 import { MAX_WEBGL, allocateWebgl, type WebglCandidate } from "./webglBudget";
+import { clipboardKeyAction, linkHint, linkModifierHeld } from "./terminalKeys";
+import { isWindows } from "../lib/platform";
 import { splitForWrite } from "./writeChunks";
 import { emitTerminalMenu, rightClickDecision } from "./menuBridge";
 import { clampZoom, zoomStep } from "./zoom";
@@ -191,14 +193,6 @@ function toBytes(m: unknown): Uint8Array | null {
   return null;
 }
 
-function keyLetter(ev: KeyboardEvent): string {
-  const k = ev.key.length === 1 ? ev.key.toLowerCase() : "";
-  if (k >= "a" && k <= "z") return k;
-  // Non-Latin layouts: fall back to the physical key.
-  if (ev.code.startsWith("Key") && ev.code.length === 4) return ev.code.slice(3).toLowerCase();
-  return k;
-}
-
 function safeUrl(uri: string): string | null {
   try {
     const u = new URL(uri);
@@ -209,9 +203,9 @@ function safeUrl(uri: string): string | null {
 }
 
 function openLink(ev: MouseEvent, uri: string, sessionId?: SessionId) {
-  // Ctrl+click like Windows Terminal / VS Code, so clicks meant for selection never open a browser.
-  // Ctrl+Shift+click opens the link in a Gridkeeper browser pane next to this terminal instead.
-  if (!ev.ctrlKey) return;
+  // Ctrl+click like Windows Terminal / VS Code (⌘-click on macOS), so clicks meant for selection never
+  // open a browser. Ctrl+Shift+click (⇧⌘-click) opens the link in a Gridkeeper browser pane instead.
+  if (!linkModifierHeld(ev)) return;
   const url = safeUrl(uri);
   if (!url) return;
   if (ev.shiftKey) {
@@ -689,36 +683,20 @@ function installKeyHandler(e: Entry) {
   const term = e.term;
   term.attachCustomKeyEventHandler((ev) => {
     if (isAppShortcut(ev)) return false;
-    // Only plain Ctrl(+Shift) combos are ours; AltGr (Ctrl+Alt) and everything else go to xterm.
-    if (!ev.ctrlKey || ev.altKey || ev.metaKey) return true;
-    const k = keyLetter(ev);
-    if (k === "c") {
-      if (ev.shiftKey) {
-        if (ev.type === "keydown") {
-          ev.preventDefault();
-          copySelection(e, false);
-        }
-        return false;
-      }
-      if (term.hasSelection()) {
-        if (ev.type === "keydown") {
-          ev.preventDefault();
-          copySelection(e, true);
-        }
-        return false;
-      }
-      return true; // no selection: xterm sends ^C
-    }
-    if (k === "v") {
-      if (ev.type === "keydown") {
-        // preventDefault suppresses WebView2's native paste event -> exactly one paste.
-        ev.preventDefault();
+    // Ctrl(+Shift)+C / V on Windows and Linux, ⌘(+⇧)+C / V on macOS (terminalKeys.ts); the rest goes to xterm.
+    const action = clipboardKeyAction(ev, term.hasSelection());
+    if (action === "pass") return true; // e.g. no selection: xterm sends ^C
+    if (ev.type === "keydown") {
+      ev.preventDefault();
+      if (action === "copy") copySelection(e, false);
+      else if (action === "copy-clear") copySelection(e, true);
+      else {
+        // preventDefault suppresses the webview's native paste event -> exactly one paste.
         e.lastKeyPasteAt = Date.now();
         void pasteFromClipboard(e);
       }
-      return false;
     }
-    return true;
+    return false;
   });
 }
 
@@ -832,7 +810,8 @@ function createEntry(id: SessionId): Entry {
     cursorBlink: false,
     cursorStyle: "block",
     cursorInactiveStyle: "outline",
-    windowsPty: { backend: "conpty", buildNumber: windowsBuild },
+    // ConPTY heuristics only on Windows; macOS / Linux PTYs need none.
+    ...(isWindows ? { windowsPty: { backend: "conpty" as const, buildNumber: windowsBuild } } : {}),
     macOptionIsMeta: false,
     rightClickSelectsWord: false,
     theme: getTerminalTheme(s),
@@ -897,7 +876,7 @@ function createEntry(id: SessionId): Entry {
 
   term.loadAddon(
     new WebLinksAddon((ev, uri) => openLink(ev, uri, id), {
-      hover: () => (el.title = "Ctrl+click: open in browser · Ctrl+Shift+click: open in a Gridkeeper browser pane"),
+      hover: () => (el.title = linkHint()),
       leave: () => (el.title = ""),
     }),
   );

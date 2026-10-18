@@ -23,7 +23,8 @@ import {
 
 export { shouldNotify } from "./notifyRules";
 
-const BASE_TITLE = APP_NAME;
+// A sandbox instance (GRIDKEEPER_SANDBOX) keeps its marker so it is never mistaken for the live app.
+let baseTitle = APP_NAME;
 
 // ---- window focus (synchronous; DOM events, not the async window API) ----------------
 
@@ -168,7 +169,7 @@ async function flashTaskbar() {
 
 let lastTitle = "";
 function syncTitle(unread: number) {
-  const title = unread > 0 ? `(${unread}) ${BASE_TITLE}` : BASE_TITLE;
+  const title = unread > 0 ? `(${unread}) ${baseTitle}` : baseTitle;
   if (title === lastTitle) return;
   lastTitle = title;
   document.title = title;
@@ -277,6 +278,15 @@ export function installAttention(): () => void {
     }
   });
   syncTitle(countUnread(useAttention.getState().sessions));
+  void ipc
+    .appInfo()
+    .then((info) => {
+      if (disposed || !info.sandbox) return;
+      baseTitle = `${APP_NAME} [sandbox: ${info.sandbox}]`;
+      lastTitle = "";
+      syncTitle(countUnread(useAttention.getState().sessions));
+    })
+    .catch(() => {});
 
   return () => {
     disposed = true;

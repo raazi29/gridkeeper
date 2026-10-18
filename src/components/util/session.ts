@@ -1,9 +1,10 @@
 // Session display helpers shared by status bar, inspector, palette and dialogs.
 
 import type { AgentKind, ClaudeProfile, SessionState } from "../../lib/types";
+import { shellLabel } from "../../lib/platform";
 
 export const AGENT_LABEL: Record<AgentKind, string> = {
-  powershell: "PowerShell",
+  powershell: shellLabel(), // the platform default terminal: PowerShell on Windows, the login shell elsewhere
   claude: "Claude Code",
   codex: "Codex",
   generic: "Custom",

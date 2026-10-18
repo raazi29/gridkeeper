@@ -4,9 +4,17 @@ Working notes for the next session's agents (and humans). Read this first, then
 [ARCHITECTURE.md](ARCHITECTURE.md) for depth and [TECHNICAL_DECISIONS.md](TECHNICAL_DECISIONS.md) for the why.
 Ideas for what to build next are in [ROADMAP.md](ROADMAP.md).
 
-**State as of 2026-10-17:** v0.1.0 released (`gh release view v0.1.0 -R raazi29/gridkeeper`, private repo,
-installer `Gridkeeper_0.1.1_x64-setup.exe`, ≈6 MB). 164 Rust and 400 frontend tests, 22/22 live e2e checks at
-release. License MIT. Main checkout: `D:\AlteraAI`. Agents work in `D:\AlteraAI\.claude\worktrees\agent-*`.
+**State as of 2026-10-18:** the repo is **public** (github.com/raazi29/gridkeeper, MIT). v0.2.0 adds the mission
+board, lead control (off / advisor / autopilot, `team.md` + `outbox/`), Mission Control drag and drop, sign-off
+evidence with committed branch diffs, Mission Replay (MP4/WebM/GIF), the Skills panel, the Claude cost & context
+meter, macOS/Linux support (preview) and sandbox instances for testing next to a live app. At v0.2.0: 252 Rust
+lib tests and 714 frontend tests on Windows; installers are built by CI from the `v0.2.0` tag (never locally on a
+machine that is running agents). CI runs on every push to `main` and every PR (`.github/workflows/ci.yml`), on Windows, Ubuntu 22.04 and macOS
+(macOS / Linux support: [section 10](#10-platforms-windows-macos-linux); Windows stays the reference platform and the
+only one verified by hand so far). Main checkout: `D:\AlteraAI`. Agents work
+in `D:\AlteraAI\.claude\worktrees\agent-*`, usually **while the developer runs the installed Gridkeeper with those
+very agents inside it**: read [section 6](#6-testing-next-to-a-live-gridkeeper) before you start, build or test
+anything.
 
 ## 1. Project map
 
@@ -14,7 +22,7 @@ release. License MIT. Main checkout: `D:\AlteraAI`. Agents work in `D:\AlteraAI\
 
 | Path | What lives there |
 |---|---|
-| `lib.rs` | App setup: plugins (single-instance, opener, dialog, clipboard, notification), `generate_handler![…]` (every IPC command), the `Exit` handler (`shutdown_all`). |
+| `lib.rs` | App setup: plugins (single-instance, opener, dialog, clipboard, notification), `generate_handler![…]` (every IPC command), the `Exit` handler (`shutdown_all`). Sandbox mode (`GRIDKEEPER_SANDBOX`) skips the single-instance lock and uses its own data and WebView2 folders. |
 | `main.rs` | Entry point; calls `gridkeeper_lib::run()`. |
 | `state.rs` | `AppCtx`, the context shared by all commands (session manager, stores, paths). |
 | `types.rs` | **The IPC contract** (serde `camelCase`). Mirrored by `src/lib/types.ts`. |
@@ -22,30 +30,35 @@ release. License MIT. Main checkout: `D:\AlteraAI`. Agents work in `D:\AlteraAI\
 | `commands/services.rs` | Persistence (`state_load/save`), profiles and accounts, `agents_detect`, path/git info, `git_worktree_add`, diagnostics, `log_frontend`. |
 | `commands/app.rs` | `app_info` (version, Windows build). |
 | `commands/tools.rs` | Changes drawer (`git_changes`, `git_diff`), ports, browser probe and pop-out windows. |
-| `pty/session.rs` | `SessionManager` / `SessionCore` / `Session`: ConPTY launch, stop sequences, exit detection. |
+| `pty/session.rs` | `SessionManager` / `SessionCore` / `Session`: PTY launch (ConPTY / Unix pty), stop sequences, exit detection. |
 | `pty/stream.rs` | Output attachment, pump threads, frames, ack flow control (`HIGH_WATER` 1 MiB / `LOW_WATER` 256 KiB), CPR invariant. |
 | `pty/ring.rs` | Bounded replay ring with absolute offsets. |
-| `pty/job.rs` | One Job Object per session (`KILL_ON_JOB_CLOSE`). |
+| `pty/job.rs` | `ProcessContainer`: one Job Object per session (`KILL_ON_JOB_CLOSE`) on Windows; the POSIX session / process groups (`killpg`, SIGHUP, SIGKILL) on macOS / Linux. |
 | `pty/text.rs` | Escape-sequence tools: query filtering, ANSI stripping, CPR scanner. |
 | `pty/attention.rs` | BEL / OSC 9/777/99 / OSC 7501 scanner and activity monitor → `session-attention` events (works with no view attached). |
-| `pty/tests.rs` | ConPTY integration tests (spawn real pwsh/cmd). |
+| `pty/tests.rs`, `pty/tests_unix.rs` | PTY integration tests: ConPTY with real pwsh/cmd (Windows), Unix pty with `sh`/`sleep` (macOS / Linux). |
 | `adapters/mod.rs` | `AgentAdapter` trait, `ADAPTERS`, `resolve_launch` (env plan, identity stripping), `detect`. |
-| `adapters/{powershell,claude,codex,generic}.rs` | First-class adapters. |
+| `adapters/{powershell,claude,codex,generic}.rs` | First-class adapters. `powershell` is the platform's default terminal: PowerShell on Windows, the login shell (`$SHELL`) elsewhere. |
 | `adapters/catalog.rs` | Catalog of extra agent CLIs (Hermes, OpenCode, Gemini, Copilot, Aider, Droid, Kimi, Qwen, Cursor, Goose, Crush, Amp, OpenClaw). **Adding a tool = one entry.** |
 | `adapters/discovery.rs` | Executable discovery, npm `.cmd` shim → real `.exe`. |
 | `adapters/process.rs` | Helper processes: `run_with_timeout`, `run_capped`, `CREATE_NO_WINDOW`. |
 | `accounts.rs` | Accounts for every agent with an isolated home (`CLAUDE_CONFIG_DIR`, `CODEX_HOME`, `HERMES_HOME`): discovery, status commands, launch env. Existence checks only. |
 | `profiles.rs` | `profiles.json` store and `claude auth status --json`. |
 | `persistence.rs` | Versioned, atomic, lenient `workspaces.json` (sanitize, migrate, read-only on newer versions). |
-| `git.rs` | Repo info, `git worktree add`, read-only status/diff for the Changes drawer. |
-| `ports.rs` | Listening TCP ports (`GetExtendedTcpTable`) attributed to session trees. |
+| `git.rs` | Repo info, `git worktree add`, read-only status/diff for the Changes drawer, branch summaries for sign-off (`git_branch_summary`). |
+| *(mission file)* | `mission_read` / `mission_write` (atomic, conflict check) / `mission_watch` (filesystem watch, no polling → `mission-changed`) for `<projectDir>/.gridkeeper/mission.md`. |
+| `ports.rs` | Listening TCP ports attributed to session trees: `GetExtendedTcpTable` (Windows), `/proc/net/tcp{,6}` + `/proc/<pid>/fd` (Linux), `lsof` (macOS). |
 | `browser.rs` | URL validation, `curl.exe` embed probe (`frame_verdict`, `html_title`), pop-out `WebviewWindow`s. |
-| `diagnostics.rs` | CPU/RAM attribution via one Toolhelp snapshot (host / WebView2 / session trees), export bundle. |
-| `gpu.rs` | GPU telemetry from PDH counters (engine utilization, GPU memory), opened lazily. |
+| `diagnostics.rs` | CPU/RAM attribution via one Toolhelp snapshot (host / WebView2 / session trees), export bundle. macOS / Linux: one sysinfo walk (`procs.rs`); the webview bucket is the WebKit helper processes, best effort. |
+| `gpu.rs` | GPU telemetry from PDH counters (engine utilization, GPU memory), opened lazily. Windows only ("unavailable" elsewhere). |
+| `platform.rs` | Per-OS bits: `os()` for `app_info`, macOS PATH/LANG fix-up at startup, Unix termination guards (SIGTERM/SIGINT/SIGHUP → normal exit; main-thread panic → kill sessions). |
+| `procs.rs` | Unix process table (one shared `sysinfo::System`): session membership for containment, trees and CPU/RAM for diagnostics. |
+| `webview_guard.rs` | WebView2 crash recovery (Windows only). |
 | `logging.rs`, `redact.rs` | JSON-lines logs with daily rotation; secret redaction at every sink. |
 | `src-tauri/tests/live_profiles.rs` | Optional live checks against real Claude profiles (`--ignored`). |
 | `src-tauri/capabilities/default.json` | IPC permissions, **scoped to webview `main`**. |
 | `src-tauri/tauri.conf.json` | CSP, window `main`, NSIS per-user bundle, identifier `app.gridkeeper.desktop`. |
+| `src-tauri/tauri.macos.conf.json`, `tauri.linux.conf.json` | Platform overrides (merged by Tauri): bundle targets `app` + `dmg` (macOS 11+, ad-hoc signed) and `appimage` + `deb`. The Windows config is untouched. |
 
 ### Frontend: `src/`
 
@@ -66,13 +79,15 @@ release. License MIT. Main checkout: `D:\AlteraAI`. Agents work in `D:\AlteraAI\
 | `actions/formationPlan.ts`, `formations.ts`, `starterPrompt.ts` | Formations: pure planner, executor, held starter prompts. |
 | `actions/broadcast.ts`, `attentionNotify.ts`, `notify*.ts`, `accounts.ts`, `browser.ts`, `resume.ts`, `groupActions.ts` | Feature actions. |
 | `terminal/registry.ts` | **Single owner of xterm.js instances**, outside React: attach generations, parking, WebGL budget, context-loss recovery. |
-| `terminal/webglBudget.ts` | `MAX_WEBGL = 12` and the stable allocation algorithm. |
+| `terminal/webglBudget.ts` | `MAX_WEBGL` per platform (`maxWebglFor`: Windows 12, macOS 12, Linux 8) and the stable allocation algorithm. |
+| `terminal/terminalKeys.ts` | Terminal copy / paste keys and link modifier per platform (Ctrl on Windows / Linux, ⌘ on macOS; ⌃C always reaches the program on a Mac). |
+| `lib/platform.ts` | `OS` / `isMac` / `isLinux` / `isWindows` from `navigator`, `shellLabel()`, `webviewLabel()`. Platform-dependent helpers take an explicit `os` so tests are host-independent. |
 | `terminal/ackBatcher.ts`, `writeChunks.ts`, `pasteGuard.ts`, `zoom.ts`, `findState.ts`, `menuBridge.ts`, `theme.ts` | Terminal plumbing. |
 | `layout/GroupGrid.tsx`, `Pane.tsx`, `PaneHeader.tsx`, `BrowserPane.tsx`, `gridGeometry.ts`, `paneDrag.ts` | Grid, panes, headers, drag and drop. |
 | `browser/BrowserLayer.tsx`, `frameHosts.ts`, `nav.ts`, `OpenUrlDialog.tsx`, `PortsList.tsx` | Browser panes: one persistent iframe layer positioned over host boxes. |
 | `components/*` | Shell, sidebar, dialogs, palette, Fleet, Broadcast, Comms, Inspector, Diagnostics, ChangesDrawer, settings, welcome, theme switcher, menus. |
-| `components/mission/*` | Mission Control, Formations UI, activity river, session log. |
-| `keybindings/combo.ts`, `index.ts` | `DEFAULT_BINDINGS`, `forbiddenReason()`, capture-phase listener. |
+| `components/mission/*` | Mission Control (mission board from `mission.md`, lanes, sign-off with branch evidence, "brief team…" / "hand off…"), Formations UI, activity river, session log. |
+| `keybindings/combo.ts`, `index.ts` | `DEFAULT_BINDINGS` (+ `MAC_DEFAULT_OVERRIDES`), `forbiddenReason(combo, os)`, capture-phase listener. On macOS the stored `ctrl` token means ⌘ and `meta` means ⌃ (saved bindings keep working; display `⇧⌘P`). |
 | `theme/themes.ts`, `applyTheme.ts`, `saber.ts`, `effectPrefs.ts` | 12 themes (pure data), CSS variable application, saber colours, effect prefs. |
 | `styles/*.css` | `tokens.css` (derived tokens), `signature.css` (theme-specific accents), feature CSS. |
 | `audio/sounds.ts` | Synthesized notification sounds (no audio files). |
@@ -82,30 +97,36 @@ release. License MIT. Main checkout: `D:\AlteraAI`. Agents work in `D:\AlteraAI\
 
 | Path | What |
 |---|---|
-| `scripts/e2e/` | `cdp.mjs` (CDP driver) + live test scripts (`full-verify.js`, `ps-basic.js`, `multi-agent.js`, `formation.js`, `browser-ports.js`, `reliability.js`, `codex-*.js`). |
+| `scripts/e2e/` | `cdp.mjs` (CDP driver; `file` mode refuses non-sandbox instances and injects `E2E_CWD`) + live test scripts (`full-verify.js`, `ps-basic.js`, `multi-agent.js`, `formation.js`, `mission.js`, `browser-ports.js`, `reliability.js`, `codex-*.js`). |
 | `scripts/bench/` | `flood.ps1` (output generator), `sample.ps1` (CPU/RAM/GPU sampler), `run-all.ps1` (standard scenarios). |
 | `scripts/showcase/record.mjs` | Scripted CDP tour → MP4/GIF/screenshots in `docs/assets/showcase/`. |
+| `scripts/dev/sandbox.ps1`, `sandbox-stop.ps1` | Run / stop an isolated test instance next to the live app (section 6). `npm run sandbox`, `npm run sandbox:stop`. |
 | `scripts/dev/eol-merge.sh` | Re-run a conflicted merge with CRLF/LF normalized. |
+| `scripts/dev/unix-check.ps1` | Type-check the Rust crate for Linux and macOS from Windows (fake pkg-config / cc shims, nothing linked; section 10). |
+| `.github/workflows/ci.yml` | CI matrix `windows-latest` / `ubuntu-22.04` / `macos-latest`: `tsc`, `vitest`, `npm run build`, `cargo test`, `cargo clippy` (non-fatal); on `v*` tags (or a manual run with `installers: true`) also `tauri build` per OS → NSIS / dmg / AppImage + deb as workflow artifacts (no release is created). |
+| `<project>/.gridkeeper/mission.md` | Not in this repo: the shared task board Mission Control reads and writes in each project folder (`# Mission: <goal>`, `## Tasks`, `- [ ] text @owner`; `[~]` doing, `[x]` done, `[!]` blocked). Created with a self-ignoring `.gitignore`. |
 | `docs/assets/` | Hero banner, social preview, showcase media, `logo/` (brand guide + tools), `readme/` (animated crawl + saber dividers + `tools/gen-readme-art.mjs`). |
 | `docs/research-notes/` | Raw verified findings (CLI flags, terminal stack, market/agents). |
 
-## 2. Architecture in 15 bullets
+## 2. Architecture in 17 bullets
 
-1. One Tauri 2 host process (`gridkeeper.exe`) plus WebView2; `tauri-plugin-single-instance` focuses the existing window on a second launch.
-2. Every session is a real ConPTY (`portable-pty` 0.9 on the system `conpty`) whose root process is assigned to its own Job Object right after spawn.
+1. One Tauri 2 host process (`gridkeeper.exe`) plus WebView2; `tauri-plugin-single-instance` focuses the existing window on a second launch (except in sandbox mode, bullet 16).
+2. Every session is a real ConPTY (`portable-pty` 0.9 on the system `conpty`) whose root process is assigned to its own Job Object right after spawn. On macOS / Linux it is a Unix pty whose root leads its own POSIX session (portable-pty calls `setsid`); the session is the container (section 10).
 3. Per session there are OS threads, not async tasks: `pty-read`, `pty-write`, `pty-wait`, one `pty-pump` per attachment, all inside `spawn_guarded` (`catch_unwind`); release builds use `panic = "unwind"`.
 4. The reader appends to a bounded ring (`Settings.buffer_kib`, default 2 MiB) and never waits on anything.
 5. The pump coalesces output into raw binary frames (`[DATA|RESET][≤ 64 KiB]`, flush at 64 KiB or 8 ms) sent over a Tauri `Channel` as ArrayBuffers, never JSON.
 6. Flow control is ack-based: the frontend acks bytes after xterm *parsed* them; the pump pauses at 1 MiB unacked and resumes at 256 KiB. A view that falls behind gets RESET plus a replay, never backpressure on the child.
 7. Every `ESC[6n` (CPR) is answered exactly once, by xterm when delivered live or by Rust otherwise; replayed bytes have terminal queries stripped so a new view never answers stale requests.
 8. The frontend's `terminal/registry.ts` owns all xterm instances outside React; unmounted terminals are parked (`display:none`) and keep parsing.
-9. At most 12 WebGL contexts (`MAX_WEBGL`; Chromium force-loses beyond 16 per renderer), allocated stably by visibility and focus; the rest render with DOM; context loss falls back to DOM and retries.
+9. At most 12 WebGL contexts (`MAX_WEBGL`; Chromium force-loses beyond 16 per renderer; 8 on Linux / WebKitGTK, unmeasured), allocated stably by visibility and focus; the rest render with DOM; context loss falls back to DOM and retries.
 10. State: `persisted` (workspaces → groups → `SessionMeta`, settings) saved atomically to `workspaces.json`; `runtime` (`SessionInfo`) comes from Rust `session-state` events.
 11. Restore = layout always, processes never, conversations per session (Claude pins `--session-id`/`--resume`, Codex `resume --last` or picker).
 12. Agents come from adapters (`AgentAdapter` trait) plus a data-only catalog; env plan: base TERM vars → strip parent-agent vars → adapter config → user args → user env.
 13. Accounts are isolated home directories selected with each CLI's documented variable; status comes from the CLI's own status command; credentials are never read.
 14. Attention is detected in Rust from BEL/OSC signals and output activity (`pty/attention.rs`) and reduced in `store/attention.ts`; notifications, Comms, Fleet and Mission Control consume it.
 15. Built-in tools are read-only or sandboxed: Changes drawer (`git status`/`diff` only), ports (TCP table), browser panes (sandboxed iframes in one persistent layer, pop-outs as separate webviews without IPC).
+16. `GRIDKEEPER_SANDBOX=<name>` (`[a-z0-9-]{1,32}`) runs an isolated instance: data in `%APPDATA%\app.gridkeeper.desktop\sandboxes\<name>`, its own WebView2 profile, no single-instance lock, title `Gridkeeper [sandbox: <name>]`, `ipc.appInfo().sandbox`. That is how tests run next to the live app (section 6).
+17. Team coordination is a plain file: `<projectDir>/.gridkeeper/mission.md`, which every agent CLI can edit. Rust reads/writes it atomically (conflict check on modified time) and watches it with filesystem notifications (`mission-changed`); Mission Control renders it as a board and sign-off shows each builder's branch evidence (`git_branch_summary`).
 
 ## 3. The IPC contract
 
@@ -114,7 +135,7 @@ release. License MIT. Main checkout: `D:\AlteraAI`. Agents work in `D:\AlteraAI\
 - Commands are registered in `lib.rs` `generate_handler![…]` and wrapped one-to-one in `src/lib/ipc.ts`. Nothing
   else calls `invoke`.
 - Output goes over a `tauri::ipc::Channel` passed to `session_attach` (binary frames, generation-tagged); state goes
-  over events (`session-state` with `SessionInfo`, `session-attention`).
+  over events (`session-state` with `SessionInfo`, `session-attention`, `mission-changed`).
 - Sync commands run on the main thread and must be quick; slow work uses `spawn_blocking`.
 - Errors are `AppError` and redacted before they reach the UI.
 - Contract-first worked well for parallel agents: land the `types.rs`/`types.ts`/`ipc.ts` change first (or agree on
@@ -126,13 +147,14 @@ release. License MIT. Main checkout: `D:\AlteraAI`. Agents work in `D:\AlteraAI\
 - **Terminal bytes never enter React/zustand state.** Narrow selectors; never construct objects/arrays inside a
   selector (render loops, see commit `80b455c`).
 - **No polling while idle.** Every timer is tied to an open view and a visible window.
-- **WebGL budget is 12** (Chromium silently kills the oldest context beyond 16 per renderer; the spare slots are headroom for other WebGL users in the page and for transitions, ADR-006).
+- **WebGL budget is 12** (Chromium silently kills the oldest context beyond 16 per renderer; the spare slots are headroom for other WebGL users in the page and for transitions, ADR-006). Per platform in `maxWebglFor`: macOS 12, Linux 8 (WebKitGTK; both unmeasured).
 - **Capability scoped to webview `main`** (`"webviews": ["main"]`, not `"windows"`), so pop-out browser windows and
   future child webviews never get IPC.
 - **Browser iframes are sandboxed** (`FRAME_SANDBOX`: no top navigation, no popups) and `frameMode` refuses the
   app's own origins *before* framing; that's what makes `allow-same-origin` safe. `file:` URLs go to pop-outs.
 - **Job Objects** (`KILL_ON_JOB_CLOSE`, no breakaway) contain every session tree; app exit runs `shutdown_all(1500 ms)`
-  and a crash still kills the trees.
+  and a crash still kills the trees. **macOS / Linux:** the POSIX session is the container; app exit, SIGTERM / SIGINT
+  / SIGHUP and a main-thread panic stop the sessions, but a hard crash of the host can orphan agents (section 10).
 - **Accounts never read credentials**: filename existence checks and official status commands only; never write
   into agent homes (except creating an empty folder for a new account); e-mails to UI only.
 - **Restore semantics**: layout always, processes never, conversation per session. A browser pane has no process
@@ -145,24 +167,38 @@ release. License MIT. Main checkout: `D:\AlteraAI`. Agents work in `D:\AlteraAI\
 
 ## 5. Build, test, verify, benchmark, record, release
 
-All `cargo`/`tauri` commands from **PowerShell**.
+All `cargo`/`tauri` commands from **PowerShell**. On the developer's machine, start the app only through the
+sandbox script (section 6), never with a bare `npm run tauri dev`.
 
 ```powershell
 npm install
-npm run tauri dev                         # dev
+npm run sandbox                           # dev build as sandbox "dev" (CDP 9333), see section 6
 npx tsc --noEmit; npx vitest run          # frontend checks
 cd src-tauri; cargo test; cd ..           # Rust unit + ConPTY tests
 npm run tauri build                       # release + NSIS installer → src-tauri\target\release\bundle\nsis\
 ```
 
-**Live verification (always do this for UI or lifecycle changes):**
+**CI** (`.github/workflows/ci.yml`, matrix `windows-latest`, `ubuntu-22.04`, `macos-latest`, `fail-fast: false`) runs
+`npm ci`, `tsc --noEmit`, `vitest run`, `npm run build` (`generate_context!` needs `dist/`), `cargo test` (Windows:
+ConPTY tests with pwsh/cmd; macOS / Linux: `pty/tests_unix.rs` and the `pty/job.rs` containment tests with `sh`) and
+a non-fatal `cargo clippy` on every push to `main` and every PR. Ubuntu first installs `libwebkit2gtk-4.1-dev
+libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev libssl-dev patchelf build-essential`. A `v*` tag, or a manual
+run (`workflow_dispatch` with `installers: true`, e.g. `gh workflow run ci.yml --ref <branch> -f installers=true`),
+additionally runs `tauri build` on each OS and uploads the NSIS installer, the dmg, and the AppImage + deb as workflow
+artifacts; it does **not** create a GitHub release. Live CDP e2e stays local (it needs a desktop session).
+
+**Live verification (always do this for UI or lifecycle changes), in a sandbox:**
 
 ```powershell
-$env:WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS = "--remote-debugging-port=9222"
-npm run tauri dev
+npm run sandbox                                              # wait for the window "Gridkeeper [sandbox: dev]"
+$env:CDP_PORT = 9333
 node scripts/e2e/cdp.mjs file scripts/e2e/full-verify.js
-node scripts/e2e/cdp.mjs shot shot.png     # then look at the PNG
+node scripts/e2e/cdp.mjs file scripts/e2e/mission.js        # Mission Control board, FS watch, sign-off evidence
+node scripts/e2e/cdp.mjs shot shot.png                       # then look at the PNG
+npm run sandbox:stop -- -Name dev
 ```
+
+`formation.js` still needs its `__REPO__` placeholder replaced with a throwaway repo path before running.
 
 **Benchmarks:** `pwsh -File scripts/bench/run-all.ps1 -Exe src-tauri/target/release/gridkeeper.exe` → `bench-results/summary.csv`;
 compare with [PERFORMANCE.md](PERFORMANCE.md) (idle 6 sessions: host 0.06 %, WebView2 0.42 % CPU).
@@ -178,12 +214,66 @@ compare with [PERFORMANCE.md](PERFORMANCE.md) (idle 6 sessions: host 0.06 %, Web
 ```powershell
 # bump version in package.json, src-tauri/Cargo.toml and src-tauri/tauri.conf.json,
 # and the static release badge + installer name in README.md
-npm run tauri build
-gh release create v0.1.1 "src-tauri\target\release\bundle\nsis\Gridkeeper_0.1.1_x64-setup.exe" `
-  -R raazi29/gridkeeper --title "Gridkeeper v0.1.1" --notes-file notes.md
+npm run tauri build                       # or push the tag and take the installer from the CI run's artifact
+gh release create v0.1.2 "src-tauri\target\release\bundle\nsis\Gridkeeper_0.1.2_x64-setup.exe" `
+  -R raazi29/gridkeeper --title "Gridkeeper v0.1.2" --notes-file notes.md
 ```
 
-## 6. Environment quirks
+v0.1.2 is the pending one: the commit and version bump exist, the release was never published.
+
+## 6. Testing next to a live Gridkeeper
+
+The developer builds Gridkeeper **while running the installed Gridkeeper** (`D:\Gridkeeper\gridkeeper.exe`) with
+many live agents inside it, including the agents working on this repo. Nothing you do may disturb that instance.
+What goes wrong otherwise:
+
+- A dev/test build has the same identifier (`app.gridkeeper.desktop`). Started plainly, it either hits the
+  single-instance lock (it just focuses the live window and exits) or shares
+  `%APPDATA%\app.gridkeeper.desktop\workspaces.json` and the WebView2 profile with the live app.
+- Heavy cargo builds can exhaust commit on this 16 GB box; Windows then kills WebView2 processes, including the
+  live app's (black window, crash; see the `0x8007139F` quirk below).
+- e2e scripts create and close sessions and workspaces in whatever instance they connect to.
+
+**Use the sandbox script:**
+
+```powershell
+npm run sandbox                                   # = pwsh -NoProfile -File scripts/dev/sandbox.ps1 (dev mode, name "dev")
+npm run sandbox -- -DryRun                        # print checks, env and command; change nothing
+pwsh -NoProfile -File scripts/dev/sandbox.ps1 -Mode release -Name rel -CdpPort 9334   # target\release\gridkeeper.exe
+pwsh -NoProfile -File scripts/dev/sandbox.ps1 -Mode exe -Exe C:\path\gridkeeper.exe -Fresh
+npm run sandbox:stop -- -Name dev                 # stops only what sandbox.ps1 started
+```
+
+- It sets `GRIDKEEPER_SANDBOX=<name>` (own data folder `...\sandboxes\<name>`, own WebView2 profile, no
+  single-instance lock, title `Gridkeeper [sandbox: <name>]`),
+  `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=--remote-debugging-port=<port>`,
+  `WEBVIEW2_USER_DATA_FOLDER=<sandbox>\EBWebView`, `CARGO_BUILD_JOBS` (`-Jobs`,
+  default 2), `RUST_MIN_STACK=16777216` and `CDP_PORT`, for the child process only, and starts it at below-normal
+  priority. Dev mode logs to `<sandbox>\sandbox-logs\sandbox.log`.
+- **CDP port 9333** by default. 9222 is refused: the developer may use it for their own instance.
+- **Memory guard:** it reads free commit (`Win32_OperatingSystem.FreeVirtualMemory`) and free RAM and refuses to
+  start a dev build below 4 GB of free commit (`-MinFreeCommitGB`; 1.5 GB for `release`/`exe`). `-Force` overrides.
+- Dev mode fails fast when Vite's port 1420 is taken (another `tauri dev`, maybe from another worktree): only one
+  dev sandbox at a time; use `-Mode release`/`exe` for a second instance.
+- `-Fresh` deletes that sandbox's data folder first, only ever `...\sandboxes\<name>` (no junctions, not while the
+  sandbox runs).
+- The PID it started is recorded with its creation time and command line in `<sandbox>\sandbox-launch.json`.
+  `sandbox-stop.ps1` re-verifies both before it touches anything, closes the app window politely, then stops the
+  remaining tree. **Never** `Stop-Process -Name gridkeeper`, `taskkill /IM gridkeeper.exe` or kill `msedgewebview2`
+  by name: that kills the live app and every agent in it.
+- Started from an agent's pane, the sandbox lives inside that pane's Job Object: closing the pane stops it too.
+- `cdp.mjs file` (and `record.mjs`) refuse to run unless `ipc.appInfo().sandbox` is set; `E2E_ALLOW_LIVE=1`
+  overrides for a dev instance you really mean. `eval` and `shot` are not guarded. e2e scripts need a dev build
+  (`window.__gridkeeper` exists only there) and get their working folder from `E2E_CWD` (default: the current
+  directory).
+
+**Parallel agents and builds:** every worktree has its own `src-tauri\target` (several GB each, and a full rebuild).
+Agents that build share one cache with `$env:CARGO_TARGET_DIR = 'D:\AlteraAI\src-tauri\target'` (or
+`sandbox.ps1 -TargetDir ...`) and keep `CARGO_BUILD_JOBS` at 2. Cargo's lock on a shared target folder makes
+concurrent builds wait for each other, which is what you want on this machine. Don't run `cargo build`/`tauri build`
+from an agent at all when the memory guard would refuse.
+
+## 7. Environment quirks
 
 - **Run cargo only from PowerShell.** Git Bash's `/usr/bin/link.exe` shadows the MSVC linker.
 - **Low RAM / rustc stack overflow:** `$env:RUST_MIN_STACK='16777216'; $env:CARGO_BUILD_JOBS=2`.
@@ -191,8 +281,9 @@ gh release create v0.1.1 "src-tauri\target\release\bundle\nsis\Gridkeeper_0.1.1_
   machine ran out of commit (System log event 2004). Before 0.1.2 this left a black window; `webview_guard` now
   rebuilds the window. Look for `WebView2 process failed` in the log.
 - **WebView2 `0x8007139F` at startup:** another instance holds the default WebView2 user-data folder with different
-  browser arguments (for example a normal instance while you start one with `--remote-debugging-port`). Close it or
-  set `WEBVIEW2_USER_DATA_FOLDER` to a separate folder (`scripts/bench/run-all.ps1` does this per scenario).
+  browser arguments (for example a normal instance while you start one with `--remote-debugging-port`). Use the
+  sandbox script (its own profile), or set `WEBVIEW2_USER_DATA_FOLDER` to a separate folder
+  (`scripts/bench/run-all.ps1` does this per scenario). Don't "fix" it by closing the live app.
 - **Vite HMR vs e2e:** a dynamic `import()` from a CDP script gets a fresh module instance after HMR. Use the dev
   handles `window.__gridkeeper` (`store`, `sessions`, `registry`, `ipc`, `mission`, `commands`),
   `window.__gridkeeperTerminals.list()/text(id)` and `window.__gridkeeperForceContextLoss(id?)`.
@@ -202,11 +293,14 @@ gh release create v0.1.1 "src-tauri\target\release\bundle\nsis\Gridkeeper_0.1.1_
   CRLF to LF, so use `perl -pi` or the Edit tool). For whole-file merge conflicts caused by endings:
   `scripts/dev/eol-merge.sh <branch>` during the conflicted merge.
 - **Headless Edge on this machine reports `prefers-reduced-motion: reduce`.** Pass `--force-prefers-no-reduced-motion` when screenshotting animations.
-- e2e scripts hard-code `D:\AlteraAI` as the working folder.
+- e2e scripts take their working folder from the `E2E_CWD` global that `cdp.mjs file` injects (env `E2E_CWD`,
+  default: the current directory).
 - Windows notifications show the right name and icon only from the installed app; dev builds appear under PowerShell.
 
-## 7. Known issues and limitations
+## 8. Known issues and limitations
 
+- macOS / Linux: not live-verified yet, orphaned agents after a hard host crash, no GPU telemetry; full list in
+  [section 10](#10-platforms-windows-macos-linux).
 - Processes don't survive app exit (no daemon); conversations resume, processes don't.
 - Codex can't pin conversation ids; panes sharing a folder get the picker. Codex occasionally fails at startup on its
   side (auto-retried once).
@@ -220,9 +314,13 @@ gh release create v0.1.1 "src-tauri\target\release\bundle\nsis\Gridkeeper_0.1.1_
 - `conhost.exe` is not attributed in in-app diagnostics (`sample.ps1` reports it).
 - Installer unsigned (SmartScreen), no auto-update.
 - `@fontsource-variable/inter` is in `package.json` but not imported anywhere (candidate for removal).
-- Private vulnerability reporting may need enabling in the repo settings (it is a private repo).
+- Private vulnerability reporting is **disabled** in the repo settings
+  (`gh api repos/raazi29/gridkeeper/private-vulnerability-reporting` → `{"enabled":false}`), so the link in
+  SECURITY.md doesn't work yet. Enable it under Settings › Code security (or
+  `gh api -X PUT repos/raazi29/gridkeeper/private-vulnerability-reporting`), then drop the fallback note in SECURITY.md.
+- The v0.1.2 GitHub release is still unpublished (see section 5).
 
-## 8. The multi-agent workflow that worked
+## 9. The multi-agent workflow that worked
 
 - **One worktree per agent** (`.claude/worktrees/agent-*`, branch `worktree-agent-*`). Never share a checkout.
 - **Disjoint file ownership.** Each brief lists exactly which files the agent may touch. Shared hot spots
@@ -231,8 +329,68 @@ gh release create v0.1.1 "src-tauri\target\release\bundle\nsis\Gridkeeper_0.1.1_
 - **Contract first.** Agree on IPC types and command names in the brief before parallel work starts.
 - **Integrator merges.** One session merges branches into `main` in order, resolves conflicts (`eol-merge.sh` for
   CRLF noise), runs `tsc` + `vitest` + `cargo test`, then the live suite.
-- **Live CDP verification** of every feature in the running app (`full-verify.js`, screenshots that are actually
-  looked at), not only unit tests.
+- **Live CDP verification** of every feature in a sandbox instance (`npm run sandbox`, `full-verify.js`,
+  `mission.js`, screenshots that are actually looked at), not only unit tests. Never against the live app.
+- **Builds are shared and throttled.** One `CARGO_TARGET_DIR`, `CARGO_BUILD_JOBS=2`, the sandbox memory guard; a
+  machine that runs out of commit takes the developer's live agents down with it (section 6).
+- **Coordinate through the mission file.** `<projectDir>/.gridkeeper/mission.md` is the team's task board; agents
+  update their own task lines (`[~]`, `[x]`, `[!]`) and Mission Control shows it live.
 - **Evidence over assumption.** Research notes mark findings VERIFIED vs hypothesis; performance claims come from
   `scripts/bench`; agent CLI flags come from each tool's docs or `--help`.
 - **Never send prompts to real agents in tests**, and never show account e-mails in screenshots or logs.
+
+## 10. Platforms: Windows, macOS, Linux
+
+Windows is the reference platform: everything in sections 1–9 was built and verified there. macOS and Linux build and
+run the unit and PTY tests in CI (section 5), but **nobody has driven the app on a Mac or a Linux desktop yet**: treat
+every Unix behaviour below as "implemented, CI-tested, not live-verified" until someone does.
+
+| Area | Windows | macOS | Linux |
+|---|---|---|---|
+| Terminal | ConPTY (system `conpty`) | Unix pty (portable-pty) | Unix pty (portable-pty) |
+| Process containment (`pty/job.rs`) | Job Object, `KILL_ON_JOB_CLOSE` | POSIX session of the root (`setsid` by portable-pty): `killpg` + every process with that session id + their live descendants | same as macOS |
+| Graceful stop | Ctrl+C → close console (`CTRL_CLOSE_EVENT`) → `TerminateJobObject` | `^C` → SIGHUP (+ SIGCONT) to the session → SIGKILL | same as macOS |
+| Host crash | kernel kills the trees | agents can be orphaned (see below) | same as macOS |
+| Default terminal (`powershell` kind) | pwsh 7 → Windows PowerShell 5.1, `-NoLogo` | `$SHELL` → passwd → zsh → sh, started as a login shell (`-l`) | `$SHELL` → passwd → bash → zsh → sh, non-login |
+| PowerShell | built-in default | catalog preset `pwsh` when on PATH | catalog preset `pwsh` when on PATH |
+| Executable discovery | PATH + npm `.cmd` shim → `.exe`, `cmd.exe /d /c` fallback | PATH (`which`); host PATH extended with Homebrew / `~/.local/bin` / npm / bun / volta / cargo dirs at startup | PATH (`which`) |
+| CPU / RAM diagnostics | Toolhelp + `GetProcessTimes` | sysinfo walk (`procs.rs`) | sysinfo walk |
+| WebView bucket | `msedgewebview2.exe` children | `com.apple.WebKit.*` XPC services attributed via `responsibility_get_pid_responsible_for_pid` (private API, looked up at runtime), best effort | `WebKitWebProcess` / `WebKitNetworkProcess` children, best effort |
+| GPU telemetry | PDH counters | unavailable (UI says so) | unavailable |
+| Ports | `GetExtendedTcpTable` | `lsof -nP -a -p <pids> -iTCP -sTCP:LISTEN` | `/proc/net/tcp{,6}` + `/proc/<pid>/fd` |
+| Renderer crash recovery | `webview_guard` (reload / rebuild) | none | none |
+| WebGL budget (`maxWebglFor`) | 12 | 12 (unmeasured) | 8 (unmeasured) |
+| Primary shortcut modifier | Ctrl | ⌘ (stored as `ctrl`; ⌃ is `meta`) | Ctrl |
+| Sandbox (`GRIDKEEPER_SANDBOX`) | own data + own WebView2 profile | own data, shared WebKit profile | own data, shared WebKit profile |
+| Bundle (`tauri build`) | NSIS per-user | `app` + `dmg`, macOS 11+, ad-hoc signed | AppImage + deb |
+
+**Known Unix limitations (document them to users, fix them later):**
+
+- **A hard crash of Gridkeeper can orphan agents.** There is no kernel object like a kill-on-close Job. A normal quit
+  runs `shutdown_all`; SIGTERM / SIGINT / SIGHUP to the host go through the normal exit path (`platform.rs`, with a 5 s
+  fallback that SIGKILLs every registered session); a main-thread panic kills the sessions from the panic hook. A
+  SIGKILL, segfault, abort or power loss leaves the shells and agents running (re-parented to init / launchd). Linux
+  `PR_SET_PDEATHSIG` was rejected: it is not inherited across `fork` and fires when the *spawning thread* exits.
+  A real fix is a tiny supervisor process or Linux cgroups (ROADMAP item 12).
+- Processes that call `setsid()` themselves *and* outlive their parent (daemons, `nohup … &` + `disown` of a new
+  session) escape the container, like a Job breakaway would.
+- No GPU telemetry; WebView figures are best effort (macOS relies on a private libsystem function; when it is missing
+  the WebView row is just 0).
+- WebKit is not Chromium: the WebGL budget (`maxWebglFor`), the iframe sandbox / CSP behaviour of browser panes, IME and
+  clipboard paths, and xterm's WebGL renderer under WebKitGTK (some GPU drivers need
+  `WEBKIT_DISABLE_DMABUF_RENDERER=1`) must be re-measured on real machines.
+- No renderer-crash recovery (a dead web process means reloading the page by hand).
+- The sandbox scripts (`scripts/dev/sandbox*.ps1`) and benchmarks are PowerShell/Windows tools; on Unix set
+  `GRIDKEEPER_SANDBOX=<name>` yourself. A sandbox shares the WebKit profile (localStorage, so saved formations) with
+  a normal instance.
+- macOS builds are ad-hoc signed, not notarized: Gatekeeper blocks the first launch (System Settings › Privacy &
+  Security › "Open Anyway", or right-click › Open; `xattr -dr com.apple.quarantine /Applications/Gridkeeper.app`
+  for a downloaded dmg).
+- Hermes' Unix default home is assumed to be `~/.hermes` (unverified on a real install).
+
+**Type-checking Unix code on this Windows box (no WSL):** `pwsh -NoProfile -File scripts/dev/unix-check.ps1`
+(once: `rustup target add x86_64-unknown-linux-gnu aarch64-apple-darwin`). It runs `cargo check --lib --tests` for
+Linux and macOS without linking anything: the `*-sys` build scripts get a fake `pkg-config` that "finds" every library
+(`PKG_CONFIG` + `PKG_CONFIG_ALLOW_CROSS=1`), and the few crates that compile C for macOS get a fake `cc` / `ar`. The
+first run takes ~15–20 minutes per target with 2 jobs (shared target folder, memory guard like the sandbox script) and
+catches cfg / API mistakes in `#[cfg(unix)]` code. It runs nothing; the CI matrix is still the real test.

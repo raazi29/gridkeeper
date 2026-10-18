@@ -10,6 +10,7 @@
 import { confirmCloseSession, confirmForceStop, focusSession, jumpToSession } from "../../actions/commands";
 import { openPort } from "../../actions/browser";
 import { messageSessions } from "../../actions/groupActions";
+import { handoffSubmenu } from "../../actions/handoff";
 import { isBrowserMeta } from "../../lib/browserPanes";
 import { usePorts } from "../../store/ports";
 import { toggleSessionMute } from "../../actions/notifyPrefs";
@@ -21,6 +22,7 @@ import { useFind } from "../../store/findStore";
 import { requestRename } from "../../store/renameRequest";
 import { confirmDialog } from "../../store/uiStore";
 import { copyTerminalSelection, pasteIntoTerminal, selectAllInTerminal, zoomTerminal } from "../../terminal/registry";
+import { copyHint, pasteHint } from "../../terminal/terminalKeys";
 import type { MenuAction, MenuItem } from "../ui/Menu";
 import { newSessionSubmenu, shortcutHint, splitSubmenu } from "./common";
 
@@ -165,8 +167,8 @@ export function buildSessionMenu(id: SessionId, ctx: SessionMenuCtx, st: Session
   // ---- terminal clipboard / view tools
   if (surface === "terminal") {
     items.push(
-      { label: "Copy", hint: "Ctrl+Shift+C", disabled: !ctx.hasSelection, onSelect: () => copyTerminalSelection(id) },
-      { label: "Paste", hint: "Ctrl+V", onSelect: () => pasteIntoTerminal(id) },
+      { label: "Copy", hint: copyHint(), disabled: !ctx.hasSelection, onSelect: () => copyTerminalSelection(id) },
+      { label: "Paste", hint: pasteHint(), onSelect: () => pasteIntoTerminal(id) },
       { label: "Select all", onSelect: () => selectAllInTerminal(id) },
       { label: "Find…", hint: shortcutHint("terminal.find"), onSelect: () => useFind.getState().open(id) },
       { label: "Clear", onSelect: () => void clearSession(id) },
@@ -186,6 +188,7 @@ export function buildSessionMenu(id: SessionId, ctx: SessionMenuCtx, st: Session
   }
 
   items.push({ label: "Message…", hint: keyHint("M"), disabled: !st.live, onSelect: () => messageSessions([id], `“${st.name}”`) });
+  if (surface === "mission") items.push(handoffSubmenu(id));
   if (st.ports?.length) {
     items.push({
       label: "Open in browser pane",

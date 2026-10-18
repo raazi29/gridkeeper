@@ -1,0 +1,289 @@
+/* Mission replay: the Mission Control header "● rec" indicator and the Replay dialog. */
+
+/* ---- header indicator --------------------------------------------------------------------- */
+.rp-rec-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  border: 1.5px solid var(--text-2);
+  box-sizing: border-box;
+  flex-shrink: 0;
+}
+.rp-rec-dot.is-on,
+.rp-rec.is-on .rp-rec-dot {
+  border-color: var(--err);
+  background: var(--err);
+  animation: rp-rec-pulse 1.6s ease-in-out infinite;
+}
+.rp-rec.is-on {
+  color: var(--err-fg);
+  border-color: color-mix(in srgb, var(--err) 55%, transparent);
+  background: color-mix(in srgb, var(--err) 10%, transparent);
+}
+@keyframes rp-rec-pulse {
+  50% {
+    opacity: 0.35;
+  }
+}
+:root[data-reduce-motion] .rp-rec-dot,
+:root[data-app-blurred] .rp-rec-dot {
+  animation: none !important;
+}
+@media (prefers-reduced-motion: reduce) {
+  .rp-rec-dot {
+    animation: none !important;
+  }
+}
+
+/* ---- dialog ---------------------------------------------------------------------------------- */
+.rp-modal {
+  max-width: calc(100vw - 48px);
+}
+.rp-modal .modal-footer {
+  gap: 8px;
+}
+.rp {
+  display: grid;
+  grid-template-columns: 290px minmax(0, 1fr);
+  gap: 14px;
+  min-height: 0;
+}
+.rp.is-busy .rp-side,
+.rp.is-busy .rp-options {
+  opacity: 0.55;
+  pointer-events: none;
+}
+.rp-dim {
+  color: var(--text-2);
+}
+.rp-pad {
+  padding: 10px;
+}
+.rp-err {
+  color: var(--err-fg);
+}
+
+.rp-side {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-height: 0;
+}
+.rp-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 430px;
+  overflow-y: auto;
+  padding-right: 2px;
+}
+.rp-item {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  width: 100%;
+  padding: 8px 10px;
+  text-align: left;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-m);
+  background: var(--bg-1);
+  color: var(--text-1);
+  font: inherit;
+  cursor: pointer;
+}
+.rp-item:hover {
+  background: var(--bg-3);
+}
+.rp-item.is-selected {
+  border-color: var(--accent-line);
+  background: var(--accent-soft);
+  color: var(--text-0);
+}
+.rp-item:disabled {
+  cursor: default;
+}
+.rp-item-top {
+  display: flex;
+  justify-content: space-between;
+  font-family: var(--font-mono);
+  font-size: var(--fs-2xs);
+  letter-spacing: 0.06em;
+  color: var(--text-2);
+  text-transform: uppercase;
+}
+.rp-live {
+  color: var(--err-fg);
+}
+.rp-item-goal {
+  font-size: var(--fs-m);
+  font-weight: 600;
+  color: var(--text-0);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.rp-item-meta {
+  font-size: var(--fs-xs);
+  color: var(--text-2);
+}
+
+.rp-recbox {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-m);
+  background: var(--bg-1);
+  font-size: var(--fs-s);
+}
+.rp-recline {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.rp-recline > span:nth-child(2) {
+  flex: 1;
+}
+
+.rp-main {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+}
+.rp-stage {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 420px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-l);
+  background: var(--bg-0);
+  overflow: hidden;
+}
+.rp-canvas {
+  display: block;
+  max-width: 100%;
+  max-height: 100%;
+  width: auto;
+  height: auto;
+}
+.rp-stage-msg {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  color: var(--text-2);
+  font-size: var(--fs-s);
+  background: var(--bg-0);
+}
+.rp-transport {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.rp-scrub {
+  flex: 1;
+  accent-color: var(--accent);
+}
+.rp-time {
+  font-size: var(--fs-xs);
+  color: var(--text-1);
+  min-width: 84px;
+  text-align: right;
+}
+.rp-options {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 18px;
+}
+.rp-opt {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.rp-opt-label {
+  font-size: var(--fs-xs);
+  color: var(--text-2);
+  text-transform: uppercase;
+  letter-spacing: var(--label-tracking);
+}
+.rp-opt .toggle-row {
+  margin: 0;
+}
+.rp-facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  font-size: var(--fs-xs);
+  color: var(--text-1);
+}
+
+.rp-empty {
+  max-width: 720px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  font-size: var(--fs-m);
+  line-height: 1.5;
+  color: var(--text-1);
+}
+.rp-empty h3 {
+  margin: 0;
+  font-size: var(--fs-l);
+  color: var(--text-0);
+}
+.rp-empty p {
+  margin: 0;
+}
+.rp-empty code {
+  font-family: var(--font-mono);
+  font-size: 0.92em;
+}
+
+.rp-footnote {
+  flex: 1;
+  font-size: var(--fs-xs);
+  color: var(--text-2);
+}
+.rp-progress {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+}
+.rp-progress-bar {
+  position: relative;
+  flex: 1;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--bg-3);
+  overflow: hidden;
+}
+.rp-progress-bar > span {
+  position: absolute;
+  inset: 0 auto 0 0;
+  background: var(--accent);
+  transition: width 0.12s linear;
+}
+.rp-progress-label {
+  min-width: 260px;
+  font-size: var(--fs-s);
+  color: var(--text-1);
+}
+
+@media (max-width: 980px) {
+  .rp {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .rp-list {
+    max-height: 180px;
+  }
+  .rp-stage {
+    height: 300px;
+  }
+}

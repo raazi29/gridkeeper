@@ -1,15 +1,23 @@
 //! Gridkeeper — multi-agent terminal workspace (Tauri host).
 //!
 //! Module ownership:
-//! - `pty`         ConPTY sessions, output ring buffer, flow control, Job Objects
+//! - `pty`         PTY sessions (ConPTY / Unix pty), output ring buffer, flow control, process containers
+//! - `platform`    per-OS bits: os name, macOS PATH/LANG, Unix termination guards
+//! - `procs`       Unix process table (sessions, trees, CPU/RAM) for containment and diagnostics
 //! - `adapters`    agent adapters (PowerShell, Claude Code, Codex, generic)
 //! - `profiles`    account records (`profiles.json`; historically Claude-only)
 //! - `accounts`    per-agent accounts: home discovery, status commands, launch env
 //! - `persistence` versioned, atomically written workspace state
-//! - `git`         repo info, worktrees, read-only status / diff (Changes panel)
+//! - `git`         repo info, worktrees, read-only status / diff (Changes panel), branch summary
+//! - `mission`     `<project>/.gridkeeper/mission.md`: capped read, atomic checked write, debounced watch;
+//!               lead control outbox (list / archive) and the generated team.md
+//! - `replay`      mission replay recordings (`.gridkeeper/replay/*.jsonl`) and export saves
+//! - `sandbox`     GRIDKEEPER_SANDBOX isolated instances (own data folder + WebView2 profile)
 //! - `diagnostics` host/webview/session resource attribution
 //! - `ports`       LISTENING TCP ports per session process tree
 //! - `browser`     browser panes: URL validation, embeddability probe, pop-out windows
+//! - `skills`      Agent Skills: GitHub discovery (user-initiated), review, install into a project
+//! - `meter`       Claude Code cost & context meter: status line helper mode, `--settings` file, folder watch
 //! - `logging` / `redact` structured logs with secret redaction
 //! - `webview_guard` reload / rebuild the main window when a WebView2 process dies
 
@@ -21,11 +29,18 @@ pub mod diagnostics;
 pub mod git;
 pub mod gpu;
 pub mod logging;
+pub mod meter;
+pub mod mission;
 pub mod persistence;
+pub mod platform;
 pub mod ports;
+pub mod procs;
 pub mod profiles;
 pub mod pty;
 pub mod redact;
+pub mod replay;
+pub mod sandbox;
+pub mod skills;
 pub mod state;
 pub mod types;
 pub mod webview_guard;
@@ -34,9 +49,23 @@ use tauri::Manager;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // macOS: launchd's minimal PATH / missing LANG (no-op elsewhere). Single-threaded here.
+    platform::init_process_env();
+    let mut context = tauri::generate_context!();
+    // Sandbox (GRIDKEEPER_SANDBOX): resolved first, while the process is still single-threaded, because it
+    // sets WEBVIEW2_USER_DATA_FOLDER before any window exists. An invalid name refuses to start.
+    let config_base = dirs::config_dir().map(|d| d.join(&context.config().identifier));
+    let sandbox = sandbox::init_from_env(config_base).unwrap_or_else(|e| fatal_startup_error(&e));
+    if let Some(s) = sandbox {
+        // Patching the config (not the live window) also covers webview_guard's rebuild-from-config.
+        for w in context.config_mut().app.windows.iter_mut().filter(|w| w.label == webview_guard::MAIN) {
+            w.title = sandbox::window_title(&w.title, &s.name);
+        }
+    }
     let mut builder = tauri::Builder::default();
-    // Benchmark runs (GRIDKEEPER_BENCH) may run beside a normal instance, so they skip the single-instance lock.
-    if std::env::var_os("GRIDKEEPER_BENCH").is_none() {
+    // Benchmark runs (GRIDKEEPER_BENCH) and sandboxes may run beside a normal instance, so they skip the
+    // single-instance lock.
+    if std::env::var_os("GRIDKEEPER_BENCH").is_none() && sandbox.is_none() {
         builder = builder.plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
             if let Some(w) = app.get_webview_window(webview_guard::MAIN) {
                 let _ = w.unminimize();
@@ -52,6 +81,8 @@ pub fn run() {
         .setup(|app| {
             let ctx = state::AppCtx::init(app.handle())?;
             app.manage(ctx);
+            // Unix: stop sessions on SIGTERM/SIGINT/SIGHUP and on a main-thread panic (no-op on Windows).
+            platform::install_exit_guards(app.handle());
             if let Some(w) = app.get_webview_window(webview_guard::MAIN) {
                 webview_guard::install(&w);
             }
@@ -94,13 +125,37 @@ pub fn run() {
             commands::app::app_info,
             commands::tools::git_changes,
             commands::tools::git_diff,
+            commands::tools::git_branch_summary,
+            commands::tools::git_branch_files,
+            commands::tools::git_branch_file_diff,
+            commands::mission::mission_read,
+            commands::mission::mission_write,
+            commands::mission::mission_watch,
+            commands::mission::mission_unwatch,
+            commands::mission::mission_outbox_list,
+            commands::mission::mission_outbox_archive,
+            commands::mission::mission_team_write,
             commands::tools::ports_list,
             commands::tools::browser_probe,
             commands::tools::browser_open_window,
             commands::tools::browser_close_window,
             commands::tools::browser_devtools,
+            commands::skills::skills_search,
+            commands::skills::skills_inspect,
+            commands::skills::skills_file,
+            commands::skills::skills_install,
+            commands::skills::skills_installed,
+            commands::skills::skills_remove,
+            commands::skills::skills_check_update,
+            commands::replay::replay_append,
+            commands::replay::replay_list,
+            commands::replay::replay_read,
+            commands::replay::replay_delete,
+            commands::replay::replay_save_dialog,
+            commands::replay::replay_save_file,
+            commands::meter::meter_snapshot,
         ])
-        .build(tauri::generate_context!())
+        .build(context)
         .unwrap_or_else(|e| fatal_startup_error(&e.to_string()))
         .run(|app, event| match event {
             // Destroying a crashed main window leaves no windows for a moment; that is not a quit.
@@ -135,5 +190,7 @@ If another copy is already running, close it and try again.              If the 
         // SAFETY: both buffers are NUL-terminated UTF-16 and outlive the call.
         unsafe { MessageBoxW(std::ptr::null_mut(), text.as_ptr(), title.as_ptr(), MB_OK | MB_ICONERROR) };
     }
+    #[cfg(not(windows))]
+    eprintln!("Gridkeeper could not start: {message}");
     std::process::exit(1);
 }

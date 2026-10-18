@@ -1,13 +1,14 @@
-//! One ConPTY session: process launch, Job Object, reader / writer / waiter
-//! threads, and lifecycle transitions.
+//! One PTY session (ConPTY on Windows, a Unix pty on macOS / Linux): process
+//! launch, process container (Job Object / POSIX session, see `job.rs`),
+//! reader / writer / waiter threads, and lifecycle transitions.
 //!
 //! Threads per session (all named with the session's short id):
-//! * `pty-read-*`  blocking reads from the ConPTY output pipe into [`Output`].
-//! * `pty-write-*` drains an unbounded mpsc queue of input into the ConPTY
-//!   input pipe, so IPC handlers never block on a full pipe.
-//! * `pty-wait-*`  blocks in `WaitForSingleObject` on the root process, then
-//!   runs the exit sequence (record state, let ConPTY drain, close the
-//!   pseudoconsole, reap the job).
+//! * `pty-read-*`  blocking reads from the PTY output into [`Output`].
+//! * `pty-write-*` drains an unbounded mpsc queue of input into the PTY
+//!   input, so IPC handlers never block on a full pipe.
+//! * `pty-wait-*`  blocks waiting for the root process (`WaitForSingleObject`
+//!   / `waitpid`), then runs the exit sequence (record state, let the PTY
+//!   drain, close the pseudoconsole, reap the container).
 //! * `pty-pump-*`  one per attachment (see `stream.rs`).
 //! * `pty-stop-*`  short-lived, only during a graceful stop.
 //!
@@ -26,7 +27,7 @@ use parking_lot::{Condvar, Mutex};
 use portable_pty::{Child, ChildKiller, CommandBuilder, MasterPty, PtySize, native_pty_system};
 
 use super::attention::{AttentionScanner, STATUS_PROBE_REPLY, Signal, Tracker, win32_input_encode};
-use super::job::Job;
+use super::job::ProcessContainer;
 use super::stream::Output;
 use super::text::CprScanner;
 use crate::types::*;
@@ -39,9 +40,9 @@ const READ_BUF: usize = 64 * 1024;
 pub const MAX_INPUT_QUEUE: usize = 8 * 1024 * 1024;
 /// Large pastes are written to the ConPTY input pipe in chunks of this size.
 const WRITE_CHUNK: usize = 16 * 1024;
-/// Graceful stop: time allowed after Ctrl+C before closing the console.
+/// Graceful stop: time allowed after Ctrl+C before closing the console (Unix: SIGHUP).
 const STOP_CTRL_C_GRACE: Duration = Duration::from_secs(2);
-/// Graceful stop: time allowed after CTRL_CLOSE_EVENT before killing the job.
+/// Graceful stop: time allowed after CTRL_CLOSE_EVENT (Unix: SIGHUP) before killing the job.
 const STOP_CLOSE_GRACE: Duration = Duration::from_secs(3);
 /// On exit, wait for ConPTY output to go quiet this long before closing it...
 const DRAIN_IDLE: Duration = Duration::from_millis(100);
@@ -189,7 +190,7 @@ pub(crate) struct Session {
     size: Mutex<(u16, u16)>,
     /// Set only when the root process was successfully assigned to it, so
     /// terminating it can never miss the root nor touch unrelated processes.
-    pub job: OnceLock<Job>,
+    pub job: OnceLock<ProcessContainer>,
     killer: Mutex<Option<Box<dyn ChildKiller + Send + Sync>>>,
     exited: Mutex<bool>,
     exit_cv: Condvar,
@@ -380,9 +381,10 @@ impl Session {
         }
 
         // Environment: portable-pty's base environment is this process's
-        // environment refreshed with the user/system environment from the
-        // registry (like Windows Terminal, so newly installed tools are found).
-        // The plan's removals and assignments are applied on top, in that order.
+        // environment (on Windows refreshed with the user/system environment
+        // from the registry, like Windows Terminal, so newly installed tools are
+        // found). The plan's removals and assignments are applied on top, in
+        // that order.
         let mut cmd = CommandBuilder::new(&plan.program);
         for key in &plan.env_remove {
             cmd.env_remove(key);
@@ -415,7 +417,7 @@ impl Session {
         let pid = child.process_id();
 
         if let Some(pid) = pid {
-            match Job::new().and_then(|job| job.assign_pid(pid).map(|_| job)) {
+            match ProcessContainer::new().and_then(|job| job.assign_pid(pid).map(|_| job)) {
                 Ok(job) => {
                     let _ = self.job.set(job);
                 }
@@ -606,6 +608,19 @@ impl Session {
         drop(master);
     }
 
+    /// The graceful stop's middle step. Windows: close the pseudoconsole
+    /// (`CTRL_CLOSE_EVENT` to its clients), exactly [`Session::release_pty`].
+    /// Unix: SIGHUP (+ SIGCONT) to every process of the session first — the
+    /// reader and writer threads hold their own duplicates of the pty master,
+    /// so dropping ours alone would not hang the terminal up.
+    pub fn hang_up(&self) {
+        #[cfg(unix)]
+        if let Some(c) = self.job.get() {
+            let _ = c.hang_up();
+        }
+        self.release_pty();
+    }
+
     /// Terminate the whole process tree (job), falling back to the root.
     pub fn kill_tree(&self) {
         if let Some(job) = self.job.get() {
@@ -667,8 +682,11 @@ impl Session {
             if me.wait_exit(STOP_CTRL_C_GRACE) {
                 return;
             }
+            #[cfg(windows)]
             tracing::info!(session = %me.id, "closing pseudoconsole (CTRL_CLOSE_EVENT)");
-            me.release_pty();
+            #[cfg(not(windows))]
+            tracing::info!(session = %me.id, "hanging up the session (SIGHUP)");
+            me.hang_up();
             if me.wait_exit(STOP_CLOSE_GRACE) {
                 return;
             }
@@ -724,6 +742,25 @@ mod tests {
         assert_eq!(clamp_size(120, 40), (120, 40));
     }
 
+    #[cfg(unix)]
+    #[test]
+    fn resolve_program_variants_unix() {
+        let cwd = std::env::temp_dir();
+        let path = std::env::var_os("PATH");
+        let sh = resolve_program(Path::new("sh"), path.as_deref(), &cwd).unwrap();
+        assert!(sh.is_absolute() && sh.is_file(), "{sh:?}");
+        assert!(matches!(
+            resolve_program(Path::new("definitely-not-a-real-program-xyz"), path.as_deref(), &cwd),
+            Err(AppError::MissingExecutable(_))
+        ));
+        assert!(matches!(
+            resolve_program(Path::new("/nope/missing"), path.as_deref(), &cwd),
+            Err(AppError::MissingExecutable(_))
+        ));
+        assert_eq!(resolve_program(Path::new("/bin/sh"), None, &cwd).unwrap(), PathBuf::from("/bin/sh"));
+    }
+
+    #[cfg(windows)]
     #[test]
     fn resolve_program_variants() {
         let cwd = std::env::temp_dir();

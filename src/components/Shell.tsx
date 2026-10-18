@@ -20,6 +20,7 @@ import { GroupTabs } from "./GroupTabs";
 import { IconClose, IconWarn } from "./icons";
 import { Inspector } from "./Inspector";
 import { MissionLayer } from "./mission/MissionLayer";
+import { SkillsLayer } from "./skills/SkillsPanel";
 import { Sidebar } from "./Sidebar";
 import { StatusBar } from "./StatusBar";
 import { Toasts } from "./Toasts";
@@ -28,6 +29,7 @@ import { WorkspaceHeader } from "./WorkspaceHeader";
 import { BrowserLayer } from "../browser/BrowserLayer";
 import { ChangesDrawer } from "./ChangesDrawer";
 import { installPortsWatch } from "../store/ports";
+import { installMeterWatch } from "../store/meter";
 import "../browser/browser.css";
 
 export function Shell() {
@@ -41,6 +43,7 @@ export function Shell() {
     const offFocus = installFocusTracking();
     const offResume = installResumeWatch();
     const offPorts = installPortsWatch();
+    const offMeter = installMeterWatch();
     const onNewSession = (e: Event) => {
       const detail = (e as CustomEvent<{ groupId?: string } | undefined>).detail;
       const groupId = detail?.groupId ?? selectActiveGroup(useApp.getState())?.id;
@@ -52,6 +55,7 @@ export function Shell() {
       offFocus();
       offResume();
       offPorts();
+      offMeter();
       window.removeEventListener("gridkeeper:new-session", onNewSession);
     };
   }, []);
@@ -82,6 +86,7 @@ export function Shell() {
       <Toasts />
       <AttentionLayer />
       <MissionLayer />
+      <SkillsLayer />
       <ExperienceLayer />
       <ContextMenuHost />
     </div>

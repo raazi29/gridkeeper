@@ -1,14 +1,15 @@
-//! ConPTY session management.
+//! PTY session management (ConPTY on Windows, Unix ptys on macOS / Linux).
 //!
 //! Layout:
 //! - [`SessionManager`] — the Tauri-facing API used by `commands::session`.
 //!   A thin wrapper that wires [`SessionCore`] to `AppHandle::emit` and wraps
 //!   IPC channels as output sinks.
 //! - [`SessionCore`] — AppHandle-free session registry (testable).
-//! - `session` — one ConPTY session: spawn, Job Object, reader/writer/waiter.
+//! - `session` — one PTY session: spawn, process container, reader/writer/waiter.
 //! - `stream` — replay ring + attachment + coalescing pump + flow control.
 //! - `ring` — bounded byte ring with absolute offsets.
-//! - `job` — Windows Job Object wrapper (kill-on-close process trees).
+//! - `job` — [`ProcessContainer`]: Windows Job Object (kill-on-close process
+//!   trees) / Unix POSIX session (process groups, SIGHUP / SIGKILL).
 //! - `text` — escape-sequence handling (plain-text export, query filter, CPR).
 //! - `attention` — BEL / notification / OSC 7501 scanner and activity monitor
 //!   (`session-attention` events, emitted even when no view is attached).
@@ -30,6 +31,8 @@ pub mod text;
 
 #[cfg(test)]
 mod tests;
+#[cfg(all(test, unix))]
+mod tests_unix;
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -40,13 +43,15 @@ use parking_lot::{Mutex, RwLock};
 use tauri::ipc::{Channel, InvokeResponseBody};
 use tauri::{AppHandle, Emitter};
 
-pub use job::Job;
+pub use job::{Job, ProcessContainer, kill_all_sessions};
 use session::{EventSink, Session};
 pub use stream::{FLUSH_BYTES, FLUSH_DELAY, HIGH_WATER, LOW_WATER, MAX_FRAME, OutputSink, SinkClosed};
 
 use crate::types::*;
 
 pub use session::{MAX_COLS, MAX_INPUT_QUEUE, MAX_ROWS, MIN_COLS, MIN_ROWS};
+/// `catch_unwind`-wrapped named thread, also used by other modules' helper threads (e.g. `mission`).
+pub(crate) use session::spawn_guarded;
 
 /// Best-effort text of a panic payload, for logs.
 pub(crate) fn panic_message(p: &Box<dyn std::any::Any + Send>) -> String {
@@ -276,7 +281,8 @@ impl SessionCore {
             s.wait_exit_until(half);
         }
         for s in live.iter().filter(|s| !s.has_exited()) {
-            s.release_pty();
+            // Windows: close the pseudoconsole; Unix: SIGHUP the session, then release the pty.
+            s.hang_up();
         }
         for s in &live {
             s.wait_exit_until(deadline);

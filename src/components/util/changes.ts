@@ -1,6 +1,6 @@
 // Pure helpers for the read-only Changes drawer (unit-tested).
 
-import type { ChangedFile, SessionMeta, Workspace } from "../../lib/types";
+import type { BranchFile, BranchFiles, ChangedFile, SessionMeta, Workspace } from "../../lib/types";
 
 export type DiffLineKind = "add" | "del" | "hunk" | "meta" | "ctx";
 
@@ -32,10 +32,14 @@ export function repoDirsFor(ws: Workspace | undefined, metas: SessionMeta[]): st
   return out;
 }
 
+/** Lookup key of a repository root (Windows paths: case-insensitive, either slash, no trailing slash). */
+export function rootKey(p: string): string {
+  return p.replace(/\//g, "\\").replace(/\\+$/, "").toLowerCase();
+}
+
 /** Same repository root (Windows paths: case-insensitive, either slash). */
 export function sameRoot(a: string | null | undefined, b: string | null | undefined): boolean {
-  const n = (p: string) => p.replace(/\//g, "\\").replace(/\\+$/, "").toLowerCase();
-  return !!a && !!b && n(a) === n(b);
+  return !!a && !!b && rootKey(a) === rootKey(b);
 }
 
 /** Is `path` inside the repository at `root`? */
@@ -58,6 +62,63 @@ export function statusLetter(f: ChangedFile): string {
   if (f.kind === "unmerged") return "U";
   const s = f.worktree !== "." ? f.worktree : f.index;
   return s === "." ? "M" : s;
+}
+
+/** CSS modifier of a status letter (`changes-letter is-…`). */
+export function letterClass(letter: string): string {
+  return letter === "?" ? "new" : letter.toLowerCase();
+}
+
+// ---- committed work (branch vs base) ----------------------------------------------------------
+
+/** A branch list worth a "committed on …" subsection: a resolved base, HEAD not on it, commits ahead. */
+export function hasCommittedWork(b: BranchFiles | null | undefined): b is BranchFiles & { base: string } {
+  return !!b && b.isRepo && !!b.base && b.branch !== b.base && b.ahead > 0;
+}
+
+/** "committed on feat vs main (5 files)". */
+export function committedHeading(b: BranchFiles & { base: string }): string {
+  const n = b.files.length;
+  return `committed on ${b.branch ?? "HEAD"} vs ${b.base} (${n}${b.truncated ? "+" : ""} file${n === 1 && !b.truncated ? "" : "s"})`;
+}
+
+/** Summed line counts of a committed-file list (binary files count nothing). */
+export function branchTotals(files: BranchFile[]): { insertions: number; deletions: number } {
+  let insertions = 0;
+  let deletions = 0;
+  for (const f of files) {
+    insertions += f.insertions;
+    deletions += f.deletions;
+  }
+  return { insertions, deletions };
+}
+
+/** One-letter status of a committed file ("A", "M", "D", "R", "C", "T"); "M" when unknown. */
+export function branchFileLetter(f: BranchFile): string {
+  const c = f.status.charAt(0).toUpperCase();
+  return /^[A-Z]$/.test(c) ? c : "M";
+}
+
+/** The terminal command that shows the same committed diff. */
+export function branchDiffCommand(root: string, base: string, branch: string | null): string {
+  return `git -C "${root}" diff ${base}...${branch ?? "HEAD"}`;
+}
+
+export type FocusPick =
+  | { kind: "status"; file: ChangedFile }
+  | { kind: "branch"; file: BranchFile; base: string; branch: string | null }
+  | null;
+
+/**
+ * What to select when the drawer is focused on a repository (sign-off "review diff"): its first uncommitted
+ * file, else its first committed file. `undefined` = the committed list is still loading (wait);
+ * `null` = nothing to select.
+ */
+export function focusPick(uncommitted: ChangedFile[], branch: BranchFiles | null | undefined): FocusPick | undefined {
+  if (uncommitted.length) return { kind: "status", file: uncommitted[0] };
+  if (branch === undefined) return undefined;
+  if (hasCommittedWork(branch) && branch.files.length) return { kind: "branch", file: branch.files[0], base: branch.base, branch: branch.branch };
+  return null;
 }
 
 /** Visible slice of a fixed-row-height list (virtualization). */

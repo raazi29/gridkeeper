@@ -1,6 +1,8 @@
 // URL rules for browser panes (pure; mirrors src-tauri/src/browser.rs validate_url / is_app_origin).
 // Browser panes may show http / https (with a host) and file URLs, at most 2048 characters.
 
+import { OS, type Os } from "./platform";
+
 export const MAX_URL_LEN = 2048;
 
 /** Hosts Tauri serves its own protocols on (Windows form http://<protocol>.localhost). */
@@ -36,9 +38,10 @@ const LOCAL_HOST_RE = /^(localhost|127(?:\.\d{1,3}){3}|0\.0\.0\.0|\[::1?\]|[a-z0
 
 /**
  * Turn what the user typed into a URL: "localhost:5173", ":5173" and "5173" become http://localhost…,
- * "example.com/x" becomes https://…, "C:\docs\a.html" becomes file:///C:/docs/a.html. Null if not usable.
+ * "example.com/x" becomes https://…, "C:\docs\a.html" becomes file:///C:/docs/a.html (on macOS / Linux,
+ * "/home/me/a.html" becomes file:///home/me/a.html). Null if not usable.
  */
-export function normalizeUrlInput(input: string): string | null {
+export function normalizeUrlInput(input: string, os: Os = OS): string | null {
   const s = input.trim();
   if (!s) return null;
   if (/^:?\d{2,5}(\/.*)?$/.test(s)) {
@@ -50,6 +53,13 @@ export function normalizeUrlInput(input: string): string | null {
     try {
       // URL() percent-encodes spaces etc. before validation.
       return validateUrl(new URL(`file:///${s.replace(/\\/g, "/")}`).href);
+    } catch {
+      return null;
+    }
+  }
+  if (os !== "windows" && /^\/(?!\/)/.test(s)) {
+    try {
+      return validateUrl(new URL(`file://${s}`).href);
     } catch {
       return null;
     }

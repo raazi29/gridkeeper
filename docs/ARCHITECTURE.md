@@ -73,7 +73,8 @@ flowchart LR
 | Module | Responsibility |
 |---|---|
 | `src-tauri/src/types.rs` | The IPC contract (serde camelCase), mirrored in `src/lib/types.ts`. Change both together. |
-| `src-tauri/src/pty/` | ConPTY sessions (`session.rs`), replay ring (`ring.rs`), attachment/pump/flow control (`stream.rs`), Job Objects (`job.rs`), escape-sequence tools (`text.rs`). |
+| `src-tauri/src/pty/` | PTY sessions (`session.rs`; ConPTY on Windows, Unix ptys on macOS / Linux), replay ring (`ring.rs`), attachment/pump/flow control (`stream.rs`), process containers (`job.rs`: Job Objects / POSIX sessions), escape-sequence tools (`text.rs`). |
+| `src-tauri/src/platform.rs`, `procs.rs` | Per-OS bits (os name, macOS PATH/LANG, Unix termination guards) and the Unix process table. |
 | `src-tauri/src/adapters/` | How to find, launch and resume each agent. Executable discovery and helper-process utilities. |
 | `src-tauri/src/profiles.rs` | Claude account profiles (`profiles.json`) and `claude auth status` checks. |
 | `src-tauri/src/persistence.rs` | Versioned, atomically written `workspaces.json`. |
@@ -101,7 +102,7 @@ gridkeeper.exe  (Tauri host: Rust backend, main/UI thread, tokio runtime)
         ── all in one Job Object per session (JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE, no breakaway)
 ```
 
-- **One host process.** `tauri-plugin-single-instance` makes a second launch focus and unminimize the existing window instead of starting a second instance (`src-tauri/src/lib.rs`).
+- **One host process.** `tauri-plugin-single-instance` makes a second launch focus and unminimize the existing window instead of starting a second instance (`src-tauri/src/lib.rs`). The tree above is the Windows one; macOS / Linux follow at the end of this section.
 - **WebView2** runs its usual multi-process architecture. All UI and all terminals share one page, which means one renderer process and one GPU process.
 - **WebView2 crash recovery** (`src-tauri/src/webview_guard.rs`): Windows can kill WebView2 processes when virtual memory runs out. A `ProcessFailed` handler reloads the page when the renderer exits (or stays unresponsive), and destroys and rebuilds the `main` window from the config when the browser process exits. Sessions live in the host, and `boot()` re-attaches to running ones, so agents keep running through a recovery. Recoveries back off (up to 30 s) when they repeat within a minute.
 - **Per session:**
@@ -110,6 +111,19 @@ gridkeeper.exe  (Tauri host: Rust backend, main/UI thread, tokio runtime)
 - **Processes do not outlive the app.** On `RunEvent::Exit`, `AppCtx::shutdown` → `SessionManager::shutdown_all(1500 ms)`. If the host dies abruptly, the kernel closes the job handles and `KILL_ON_JOB_CLOSE` terminates the trees. Verified on the target machine: no orphaned agent processes after an app restart.
 - **Known gap:** portable-pty doesn't spawn with `CREATE_SUSPENDED`. A child that spawns another process before `AssignProcessToJobObject` runs could escape the job. This hasn't been observed with shells or agent CLIs.
 - **Short-lived helper processes** (`--version` probes, `claude auth status --json`, `git`) use `CREATE_NO_WINDOW`. They run with closed stdin and a hard timeout (`adapters/process.rs`: `run_with_timeout`).
+
+**macOS / Linux** (same code paths, different OS layer; not live-verified yet, see HANDOFF §10):
+
+```
+gridkeeper  (Tauri host; WKWebView / WebKitGTK instead of WebView2)
+├── WebKit helpers (Linux: WebKitWebProcess / WebKitNetworkProcess children; macOS: com.apple.WebKit.* XPC services under launchd)
+└── <session root>     (login shell / claude / codex / ... on a Unix pty; leads its own POSIX session: sid = pgid = pid)
+    └── descendants…   (inherit the session id; job-control shells give pipelines their own process groups inside it)
+```
+
+- **Containment = the POSIX session** (`pty/job.rs`, `ProcessContainer`): portable-pty's Unix spawn calls `setsid()` before `exec`, so the root's pid is the session id. Signals go to the root's process group (`killpg`) and to every process whose session id is the root's pid, plus the live descendants of those (one `sysinfo` walk, `procs.rs`). Force stop / leftovers = SIGKILL (up to three quick passes); the graceful stop's middle step = SIGHUP + SIGCONT.
+- **No kernel safety net.** App exit runs `shutdown_all` as on Windows; `platform.rs` turns SIGTERM / SIGINT / SIGHUP to the host into a normal exit (with a 5 s SIGKILL fallback) and kills every registered session on a main-thread panic. A hard crash can orphan session processes.
+- **macOS startup environment:** `platform::init_process_env` appends Homebrew, `~/.local/bin`, npm-global, bun, volta and cargo bin folders to `PATH` and sets `LANG=en_US.UTF-8` when no locale is set (GUI apps start with launchd's minimal environment).
 
 ---
 
@@ -248,6 +262,8 @@ Rust: Session::write → InputHandle::send_user (cap MAX_INPUT_QUEUE = 8 MiB, el
 
 **Force stop** (`force=true`): `TerminateJobObject` on the whole tree. If that fails, it falls back to `TerminateProcess` on the root.
 
+**macOS / Linux:** graceful stop = `^C` (`0x03` into the pty) → 2 s → SIGHUP + SIGCONT to the whole session (`Session::hang_up`; dropping the master alone would not hang up, the reader and writer threads hold duplicates of it) → 3 s → SIGKILL to the session. Force stop and the post-exit leftover reaping use SIGKILL. `shutdown_all` uses the same steps on its half-timeout / deadline schedule.
+
 **Exit detection** (`pty-wait-<id>`):
 1. `child.wait()` returns, and the state becomes `Exited{code}`.
 2. Wait until ConPTY output has been quiet for `DRAIN_IDLE` (100 ms), but no longer than `DRAIN_MAX` (1.5 s). Then close the pseudoconsole, never from the reader thread, because before Win11 24H2 `ClosePseudoConsole` blocks until the output is drained.
@@ -277,7 +293,7 @@ The frontend writes a dim `[process exited with code N]` notice and turns off an
 | **Lazy creation** | An entry is created the first time a `<TerminalView>` for the session mounts: `Terminal`, plus the Fit, Search, Unicode11 and WebLinks addons, input handlers, and a persistent host `<div>`. `term.open()` runs once, when the container first has a non-zero size. Attaching the output channel starts immediately. |
 | **Attach** | `ipc.sessionAttach(id, Channel)` runs on creation and on every (re)start (a new `startedAt`). Each attach bumps a generation, and messages from stale channels are ignored. Attaching retries up to 5 times (300 ms × n) while the store says the session is live. After a webview reload, `boot()` re-syncs `session_list`, and the registry adopts the backend's `startedAt`. |
 | **Parking / reparenting** | Unmount moves the host `<div>` into a hidden parking container (`display:none`). Mount moves it back. The terminal state is preserved, and xterm keeps **parsing** output while parked (IntersectionObserver pauses rendering only). Inactive groups are `display:none` too. |
-| **WebGL budget** | `MAX_WEBGL = 12` (Chromium's limit is 16 per renderer process). Only *shown* terminals (opened, mounted, visible, sized) are candidates. `allocateWebgl` is stable: terminals that already hold a context keep it, and free slots go by priority (focused terminal first, then most recently shown). A terminal that stops being shown keeps its context for `WEBGL_RELEASE_GRACE_MS` (400 ms), so layout reshuffles don't thrash. Terminals over the budget render with DOM. Setting `renderer: "dom"` disables WebGL entirely. |
+| **WebGL budget** | `MAX_WEBGL = 12` (Chromium's limit is 16 per renderer process; per platform via `maxWebglFor`: macOS 12, Linux / WebKitGTK 8, both unmeasured). Only *shown* terminals (opened, mounted, visible, sized) are candidates. `allocateWebgl` is stable: terminals that already hold a context keep it, and free slots go by priority (focused terminal first, then most recently shown). A terminal that stops being shown keeps its context for `WEBGL_RELEASE_GRACE_MS` (400 ms), so layout reshuffles don't thrash. Terminals over the budget render with DOM. Setting `renderer: "dom"` disables WebGL entirely. |
 | **Context loss** | The addon is disposed and the terminal switches to DOM. WebGL is retried after `WEBGL_RETRY_MS` (3 s) while visible. After `WEBGL_MAX_LOSSES` (3) the terminal stays on DOM. The GPU probe's own context is released immediately via `WEBGL_lose_context`. |
 | **Hidden view** | "Hide view" (pane header / inspector) calls `disposeTerminal` and `session_detach`. The xterm instance and its scrollback are freed, while Rust keeps the process running and the bounded ring filling. "Show view" re-creates the entry, attaches, and gets RESET plus a replay of the ring. Scrollback older than the ring is gone. |
 | **Dispose** | `disposeTerminal` runs when the view is hidden or the session's metadata leaves the store (pane closed, group or workspace deleted). It detaches the channel (the detach is awaited before any re-attach), disposes the addons and the terminal, and removes the element. |
@@ -367,12 +383,15 @@ pub static ADAPTERS: &[&dyn AgentAdapter] = &[&PowerShellAdapter, &ClaudeAdapter
 
 | Adapter | Discovery | Launch specifics |
 |---|---|---|
-| PowerShell | `pwsh` on PATH → `%ProgramFiles%\PowerShell\7\pwsh.exe` → `powershell` → `System32\WindowsPowerShell\v1.0\powershell.exe` | `-NoLogo`. 5.1 version probe via `$PSVersionTable`. |
+| PowerShell (Windows) | `pwsh` on PATH → `%ProgramFiles%\PowerShell\7\pwsh.exe` → `powershell` → `System32\WindowsPowerShell\v1.0\powershell.exe` | `-NoLogo`. 5.1 version probe via `$PSVersionTable`. |
+| Shell (same `powershell` kind, macOS / Linux) | `$SHELL` → passwd entry → `/bin/zsh` (macOS) or `/bin/bash` (Linux) → `/bin/sh` | macOS: `-l` (login shell, like Terminal.app); pwsh: `-NoLogo`. pwsh on PATH also appears as the catalog preset `pwsh`. |
 | Claude Code | `%USERPROFILE%\.local\bin\claude.exe` (native) → PATH | Profile env (§9), `CLAUDE_CODE_ALT_SCREEN_FULL_REPAINT=1`, resume flags (§8). |
 | Codex | Native exe on PATH → `%LOCALAPPDATA%\Programs\OpenAI\Codex\bin\codex.exe` → npm `.cmd` shim | Alt screen left on. `resume --last` / `resume` / `resume <id>`. |
 | Generic | none (`command` required) | Bare names resolved on PATH. |
 
-**npm shims** (`adapters/discovery.rs`): a ConPTY child must be a real PE file, so discovery prefers a native `.exe`, either a sibling or the target parsed from the generated `.cmd` shim text. If only a `.cmd`/`.bat` exists, it runs as `%SystemRoot%\System32\cmd.exe /d /c <shim> …`. That path uses `SystemRoot`, not the user-controlled `COMSPEC`, and `/d` skips AutoRun. Arguments containing cmd metacharacters are rejected in that mode (`validate_cmd_args`).
+Claude's native installer location is `~/.local/bin/claude` on macOS / Linux; Codex's `%LOCALAPPDATA%` fallback is Windows-only.
+
+**npm shims** (`adapters/discovery.rs`, Windows only; on macOS / Linux any existing file is launchable as is): a ConPTY child must be a real PE file, so discovery prefers a native `.exe`, either a sibling or the target parsed from the generated `.cmd` shim text. If only a `.cmd`/`.bat` exists, it runs as `%SystemRoot%\System32\cmd.exe /d /c <shim> …`. That path uses `SystemRoot`, not the user-controlled `COMSPEC`, and `/d` skips AutoRun. Arguments containing cmd metacharacters are rejected in that mode (`validate_cmd_args`).
 
 Conversation ids passed to agents must be 8–64 characters of hex digits and dashes (`validate_session_id`).
 
@@ -445,6 +464,7 @@ Conversation ids passed to agents must be 8–64 characters of hex digits and da
 - **CPU%** = CPU-time delta / wall-time delta between snapshots, as a percent of one logical core summed over processes (the UI divides by logical cores for Task Manager-style numbers). A process seen for the first time reports 0. PID reuse is guarded by creation time.
 - **Memory** = working set.
 - **Polling** happens every 2 s, shared by the status bar, inspector and diagnostics panel, and only while one of them wants it **and** the window is visible.
+- **macOS / Linux:** one `sysinfo` walk with CPU time and RSS (`procs.rs`, a single long-lived `System`) replaces Toolhelp + `GetProcessTimes`; units are converted (CPU time to 100 ns, start time as the creation stamp for the PID-reuse guard). The `webview` bucket is best effort: Linux takes the host's `WebKit*` children (WebKitGTK's web / network processes); macOS takes the `com.apple.WebKit.*` XPC services whose responsible process is the host (`responsibility_get_pid_responsible_for_pid`, a private libsystem function looked up with `dlsym`; without it the bucket is empty). GPU counters are Windows-only: `gpu` comes back `available: false` and the UI shows a one-line note instead of figures.
 - **Attribution gap:** the system ConPTY host (`conhost.exe`) is created by `CreatePseudoConsole` in the context of `gridkeeper.exe`. It is not a descendant of the session root and not in the session's Job, so the in-app snapshot leaves it out of all three buckets. `scripts/bench/sample.ps1` counts it separately as "console". This follows from reading the code and the ConPTY process model, and has not been measured.
 - **Export** (`diagnostics_export`) writes `diagnostics/gridkeeper-diagnostics-<timestamp>.json`. It contains:
   - app and OS info, CPU, memory;
@@ -492,7 +512,7 @@ Conversation ids passed to agents must be 8–64 characters of hex digits and da
 
 ### Ports
 
-- **Backend** (`ports.rs`, `ports_list`): `GetExtendedTcpTable(AF_INET | AF_INET6, TCP_TABLE_OWNER_PID_LISTENER)` with the two-call size pattern; rows are parsed from raw bytes (`parse_tcp4_table`, `parse_tcp6_table`; the port is network-order in the low word, `port_from_dword`) and attributed to sessions with `diagnostics::session_trees` (the same Toolhelp tree walk and PID-reuse guard as diagnostics). v4 and v6 sockets on one port merge into one entry.
+- **Backend** (`ports.rs`, `ports_list`): `GetExtendedTcpTable(AF_INET | AF_INET6, TCP_TABLE_OWNER_PID_LISTENER)` with the two-call size pattern; rows are parsed from raw bytes (`parse_tcp4_table`, `parse_tcp6_table`; the port is network-order in the low word, `port_from_dword`) and attributed to sessions with `diagnostics::session_trees` (the same Toolhelp tree walk and PID-reuse guard as diagnostics). v4 and v6 sockets on one port merge into one entry. **Linux:** the session trees come first; LISTEN rows of `/proc/net/tcp` and `/proc/net/tcp6` (state `0A`, address words in host order, `parse_proc_net_tcp`) are matched by socket inode against the `socket:[inode]` links in `/proc/<pid>/fd` of those processes only. **macOS:** one `lsof -nP -w -a -p <tree pids> -iTCP -sTCP:LISTEN -FpPtn` through `run_with_timeout` (5 s), parsed by `parse_lsof`. Both parsers are unit-tested with fixtures on every platform.
 - **Frontend** (`store/ports.ts`): never a constant timer. A 3 s poll runs only while a view that shows ports holds it (`usePortsPoll`: browser start page, Open URL dialog, Inspector) and the window is visible; otherwise one throttled refresh (≥ 2.5 s apart) follows an attention `idle` / `active` event or a session reaching `running`. Exited sessions drop their ports immediately.
 - **UI.** A green `:5173` chip on a terminal pane header (several ports → a menu) opens or focuses a browser pane on `http://localhost:<port>/` next to the session (`openPort`, `browserPaneForPort`; a focused empty start page is reused). `ports.refresh` refreshes on demand.
 

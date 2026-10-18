@@ -9,7 +9,7 @@
 //! |--------|-------------------|------------------------------|-----------------------------|-----------------------|
 //! | Claude | CLAUDE_CONFIG_DIR | `~/.claude`                  | `~/.claude-*`               | `claude auth status --json` |
 //! | Codex  | CODEX_HOME        | `~/.codex`                   | `~/.codex-*`                | `codex login status`  |
-//! | Hermes | HERMES_HOME       | `%LOCALAPPDATA%\hermes`      | `<default>\profiles\<name>` | none (files present)  |
+//! | Hermes | HERMES_HOME       | `%LOCALAPPDATA%\hermes` (macOS / Linux `~/.hermes`) | `<default>\profiles\<name>` | none (files present) |
 //!
 //! Verification (2026-10-17, this machine): CLAUDE_CONFIG_DIR — official docs + three isolated
 //! logins in use. CODEX_HOME — official docs; `codex login status` prints `Logged in using …` /
@@ -158,7 +158,9 @@ pub static SPECS: &[AccountSpec] = &[
         preset: Some("hermes"),
         label: "Hermes Agent",
         home_env: "HERMES_HOME",
-        default_home: DefaultHome::LocalAppData("hermes"),
+        // Windows: %LOCALAPPDATA%\hermes (hermes_constants.py). macOS / Linux: ~/.hermes (Hermes'
+        // documented default there; not yet verified on a real install by this project).
+        default_home: if cfg!(windows) { DefaultHome::LocalAppData("hermes") } else { DefaultHome::UserHome(".hermes") },
         default_env: DefaultEnv::SetResolved,
         siblings: Siblings::DefaultSubdir("profiles"),
         markers: &[&["config.yaml"], &["auth.json"], &[".env"]],
@@ -253,11 +255,21 @@ pub fn resolve_home(spec: &AccountSpec, config_dir: Option<&str>, env: &ScanEnv)
 }
 
 /// Lower-cased, separator-normalized form for equality checks.
+#[cfg(windows)]
 pub fn normalize_dir(p: &str) -> String {
     let canon = std::fs::canonicalize(p)
         .map(|c| c.to_string_lossy().trim_start_matches(r"\\?\").to_string())
         .unwrap_or_else(|_| p.to_string());
     canon.replace('/', "\\").trim_end_matches('\\').to_lowercase()
+}
+
+/// Canonical form for equality checks: symlinks resolved, no trailing `/`. Case is kept on Linux
+/// (case-sensitive file systems) and folded on macOS (APFS / HFS+ are case-insensitive by default).
+#[cfg(not(windows))]
+pub fn normalize_dir(p: &str) -> String {
+    let canon = std::fs::canonicalize(p).map(|c| c.to_string_lossy().into_owned()).unwrap_or_else(|_| p.to_string());
+    let trimmed = if canon.len() > 1 { canon.trim_end_matches('/') } else { canon.as_str() };
+    if cfg!(target_os = "macos") { trimmed.to_lowercase() } else { trimmed.to_string() }
 }
 
 /// Identity of an account's home for matching and the dismissed list:
@@ -715,6 +727,12 @@ pub fn agent_infos(settings: &Settings, env: &ScanEnv) -> Vec<AccountAgentInfo> 
     out
 }
 
+/// Hermes' default home under a (fake) user home, as `ScanEnv::with_home` resolves it.
+#[cfg(test)]
+pub(crate) fn test_hermes_root(home: &Path) -> PathBuf {
+    if cfg!(windows) { home.join("AppData").join("Local").join("hermes") } else { home.join(".hermes") }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -779,7 +797,8 @@ mod tests {
     fn discovers_hermes_profiles_and_inherited_env() {
         let home = tempfile::tempdir().unwrap();
         let h = home.path();
-        let root = h.join("AppData").join("Local").join("hermes");
+        let root = test_hermes_root(h);
+        assert_eq!(default_home(spec("hermes"), &ScanEnv::with_home(Some(h.to_path_buf()))), Some(root.clone()));
         touch(&root.join("config.yaml"));
         touch(&root.join("profiles").join("work").join("config.yaml"));
         std::fs::create_dir_all(root.join("profiles").join(".hidden")).unwrap();
@@ -804,10 +823,18 @@ mod tests {
         let env = ScanEnv::with_home(Some(home.path().to_path_buf()));
         let s = spec("codex");
         std::fs::create_dir_all(home.path().join(".codex")).unwrap();
-        let full_default = home.path().join(".codex").to_string_lossy().to_uppercase();
         assert_eq!(home_key(s, None, &env), "codex:default");
+        // The default home named by its full path is still the default.
+        let full_default = home.path().join(".codex").to_string_lossy().into_owned();
         assert_eq!(home_key(s, Some(&full_default), &env), "codex:default");
-        assert!(home_key(s, Some(r"C:\x\.codex-work"), &env).starts_with("codex:c:\\x"));
+        #[cfg(windows)]
+        {
+            // Windows paths compare case-insensitively, with either separator.
+            assert_eq!(home_key(s, Some(&full_default.to_uppercase()), &env), "codex:default");
+            assert!(home_key(s, Some(r"C:\x\.codex-work"), &env).starts_with("codex:c:\\x"));
+        }
+        #[cfg(not(windows))]
+        assert_eq!(home_key(s, Some("/nonexistent/x/.codex-work/"), &env), "codex:/nonexistent/x/.codex-work");
 
         assert_eq!(slug("  Work Account! "), "work-account");
         assert_eq!(slug("a.b_c"), "a-b_c");
@@ -818,7 +845,7 @@ mod tests {
         );
         assert_eq!(
             planned_home(spec("hermes"), "Side Project", &env).unwrap(),
-            home.path().join(r"AppData\Local\hermes\profiles\side-project")
+            test_hermes_root(home.path()).join("profiles").join("side-project")
         );
         assert!(planned_home(s, "!!", &env).is_err());
         let d = describe_home(&home.path().join(".codex"));

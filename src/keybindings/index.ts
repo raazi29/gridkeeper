@@ -1,7 +1,8 @@
 // Keybinding registry.
 // The terminal calls `isAppShortcut(e)` from xterm's custom key handler: when true, xterm ignores the key
 // and the app's capture-phase listener runs the command. Terminal-critical keys must never be app shortcuts
-// (see `forbiddenReason` in ./combo).
+// (see `forbiddenReason` in ./combo). On macOS the stored "ctrl" token matches ⌘ Command (see combo.ts),
+// so the same bindings work there with the platform's primary modifier.
 
 import { runCommand } from "../actions/commands";
 import { useApp } from "../store/appStore";
@@ -10,6 +11,7 @@ import { eventToCombo, resolveBindings } from "./combo";
 
 export {
   DEFAULT_BINDINGS,
+  defaultBindings,
   bindingsByCommand,
   displayCombo,
   eventToCombo,

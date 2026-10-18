@@ -3,15 +3,16 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use tauri::{AppHandle, Manager};
+use tauri::{AppHandle, Emitter, Manager};
 
 use crate::diagnostics::DiagSampler;
+use crate::mission::MissionWatchers;
 use crate::persistence::StateStore;
 use crate::profiles::ProfileStore;
 use crate::pty::SessionManager;
 
 pub struct AppPaths {
-    /// %APPDATA%\app.gridkeeper.desktop
+    /// %APPDATA%\app.gridkeeper.desktop (sandbox: `<that>\sandboxes\<name>`, see `sandbox`)
     pub data_dir: PathBuf,
     pub logs_dir: PathBuf,
 }
@@ -22,17 +23,30 @@ pub struct AppCtx {
     pub profiles: ProfileStore,
     pub store: StateStore,
     pub diag: Arc<DiagSampler>,
+    /// Ref-counted watches of `<projectDir>/.gridkeeper/mission.md` and `.gridkeeper/outbox/`
+    /// (`mission-changed` events).
+    pub missions: MissionWatchers,
+    /// Cost & context meter: `<data_dir>/meter` watch (`session-meter` events).
+    pub meter: Arc<crate::meter::MeterHub>,
     _log_guard: Option<crate::logging::LogGuard>,
 }
 
 impl AppCtx {
     pub fn init(app: &AppHandle) -> anyhow::Result<Self> {
-        let data_dir = app.path().app_config_dir()?;
-        let migrated = migrate_legacy_data_dir(&data_dir);
+        let sandbox = crate::sandbox::current();
+        let data_dir = match sandbox {
+            Some(s) => s.data_dir.clone(),
+            None => app.path().app_config_dir()?,
+        };
+        // Sandboxes start empty: never copy the live (or legacy) data into them.
+        let migrated = if sandbox.is_some() { None } else { migrate_legacy_data_dir(&data_dir) };
         let logs_dir = data_dir.join("logs");
         std::fs::create_dir_all(&logs_dir)?;
         let log_guard = crate::logging::init(&logs_dir).ok();
         tracing::info!(version = env!("CARGO_PKG_VERSION"), "gridkeeper starting");
+        if let Some(s) = sandbox {
+            tracing::info!(name = %s.name, data_dir = %s.data_dir.display(), webview_folder_set = s.set_webview_folder, "sandbox mode");
+        }
         if let Some(n) = migrated {
             tracing::info!(files = n, "copied settings from the previous app name (Altera)");
         }
@@ -40,12 +54,36 @@ impl AppCtx {
         let store = StateStore::load(data_dir.join("workspaces.json"));
         let profiles = ProfileStore::load(data_dir.join("profiles.json"));
         let sessions = Arc::new(SessionManager::new(app.clone()));
+        let emitter = app.clone();
+        let missions = MissionWatchers::new(Arc::new(move |dir: &str, file: crate::types::MissionChangeKind| {
+            let payload = crate::types::MissionChanged { project_dir: dir.to_string(), file };
+            if let Err(e) = emitter.emit(crate::types::EVT_MISSION_CHANGED, payload) {
+                tracing::warn!(error = %e, "could not emit mission-changed");
+            }
+        }));
+        let meter_emitter = app.clone();
+        let meter = Arc::new(crate::meter::MeterHub::new(
+            &data_dir,
+            std::env::current_exe().ok(),
+            crate::meter::launch::default_managed_paths(),
+            Arc::new(move |m: &crate::types::SessionMeter| {
+                if let Err(e) = meter_emitter.emit(crate::types::EVT_SESSION_METER, m) {
+                    tracing::warn!(error = %e, "could not emit session-meter");
+                }
+            }),
+        ));
+        if let Err(e) = meter.start_watch() {
+            tracing::warn!(error = %e, "cost meter folder watch failed; meters update on the next start");
+        }
+        crate::meter::install(Arc::clone(&meter));
         Ok(Self {
             paths: AppPaths { data_dir, logs_dir },
             sessions,
             profiles,
             store,
             diag: Arc::new(DiagSampler::new()),
+            missions,
+            meter,
             _log_guard: log_guard,
         })
     }
@@ -54,6 +92,8 @@ impl AppCtx {
     pub fn shutdown(&self) {
         tracing::info!("shutting down sessions");
         self.sessions.shutdown_all(std::time::Duration::from_millis(1500));
+        self.missions.clear();
+        self.meter.stop();
     }
 }
 

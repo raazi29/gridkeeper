@@ -1,16 +1,20 @@
 // Mission Control session mini card: name, agent glyph, role, account, worktree branch, state lamp +
-// label, uptime, last output line, real output-rate sparkline and CPU/RAM (shared diagnostics poll).
+// label, uptime, current mission task (from .gridkeeper/mission.md), last output line, real output-rate
+// sparkline and CPU/RAM (shared diagnostics poll).
 // Hover / selection shows a toolbar (jump, restart, stop/start, mute, close); right-click opens the shared
 // session menu; a session that needs you gets an "Answer →" call to action.
 
-import { memo, useEffect, useRef, useState, type MouseEvent } from "react";
+import { memo, useEffect, useRef, useState, type DragEvent, type MouseEvent } from "react";
 import { useShallow } from "zustand/react/shallow";
 import { confirmCloseSession } from "../../actions/commands";
+import { assignTaskToSession } from "../../actions/missionAssign";
+import { notify } from "../../actions/notify";
 import { toggleSessionMute, useSessionMuted } from "../../actions/notifyPrefs";
 import { renameSession, startSession } from "../../actions/sessions";
+import type { TaskState } from "../../lib/missionDoc";
 import type { SessionId } from "../../lib/types";
 import { AgentGlyph, IconClose, IconPlay, IconRestart, IconStop } from "../../layout/icons";
-import { useApp } from "../../store/appStore";
+import { findGroupOf, useApp } from "../../store/appStore";
 import { resolveAccountName } from "../../store/activity";
 import { useAttention } from "../../store/attention";
 import { formatRate, latestRate, useRates } from "../../store/rates";
@@ -20,9 +24,11 @@ import { IconExternal } from "../icons";
 import { confirmRestart, confirmStop } from "../menus/sessionMenu";
 import { IconBell } from "../AttentionBits";
 import { IconBellOff } from "../MutedGlyph";
+import { MeterCardLine } from "../MeterChip";
 import { formatUptime } from "../util/fleet";
 import { basename, formatCpu, formatMb, taskManagerCpu } from "../util/text";
-import { LAMP_TEXT, sessionStatus } from "./derive";
+import { LAMP_TEXT, sessionStatus, type DropSide } from "./derive";
+import { beginSessionDrag, currentTaskDrag, dragHas, endSessionDrag, endTaskDrag, SESSION_MIME, TASK_MIME, useMcDragKind } from "./mcDrag";
 import { RoleTag, roleStyle } from "./RoleTag";
 import { Sparkline } from "./Sparkline";
 import { useMissionTails } from "./useOutputTails";
@@ -34,6 +40,9 @@ export const SessionCard = memo(function SessionCard({
   onJump,
   onMenu,
   now,
+  task,
+  taskState,
+  dropSide,
 }: {
   id: SessionId;
   selected: boolean;
@@ -42,6 +51,11 @@ export const SessionCard = memo(function SessionCard({
   onMenu: (e: { clientX: number; clientY: number; preventDefault?: () => void; stopPropagation?: () => void }, id: SessionId) => void;
   /** Coarse clock (re-render tick for uptime). */
   now: number;
+  /** Current mission task owned by this session (first "doing", else first "todo"). */
+  task?: string | null;
+  taskState?: TaskState | null;
+  /** A dragged card would land on this side of this card (insertion bar). */
+  dropSide?: DropSide | null;
 }) {
   const meta = useApp(
     useShallow((s) => {
@@ -77,7 +91,16 @@ export const SessionCard = memo(function SessionCard({
   const muted = useSessionMuted(id);
   const renameSeq = useRenameRequest(renameSeqFor(id, "mission"));
   const [editing, setEditing] = useState(false);
+  /** A mission task from the board hovers this card: dropping assigns it here. */
+  const [assignHover, setAssignHover] = useState(false);
   const renameDone = useRef(false);
+  // Both change only when a drag begins / ends (never per dragover).
+  const taskDragging = useMcDragKind((s) => s.kind === "task");
+  const dragging = useMcDragKind((s) => s.sessionId === id);
+
+  useEffect(() => {
+    if (!taskDragging) setAssignHover(false);
+  }, [taskDragging]);
 
   useEffect(() => {
     if (!renameSeq) return;
@@ -98,6 +121,9 @@ export const SessionCard = memo(function SessionCard({
     st.needs ? "is-needs" : "",
     st.lamp === "error" ? "is-error" : "",
     selected ? "is-selected" : "",
+    dragging ? "is-dragging" : "",
+    taskDragging ? "is-assignable" : "",
+    assignHover ? "is-assign-target" : "",
   ]
     .filter(Boolean)
     .join(" ");
@@ -116,6 +142,38 @@ export const SessionCard = memo(function SessionCard({
     renameSession(id, value);
   };
 
+  // Card drag (to another lane / the lead box / a new lane); the drop targets live in MissionControl.
+  const onDragStart = (e: DragEvent<HTMLDivElement>) => {
+    const loc = findGroupOf(id);
+    if (editing || !loc) {
+      e.preventDefault();
+      return;
+    }
+    beginSessionDrag({ sessionId: id, fromGroupId: loc.group.id });
+    e.dataTransfer.effectAllowed = "move";
+    e.dataTransfer.setData(SESSION_MIME, id);
+  };
+  // Task drop target (contract with the mission board: it begins/ends the task drag in mcDrag.ts).
+  const onDragOver = (e: DragEvent<HTMLDivElement>) => {
+    if (!currentTaskDrag() || !dragHas(e, TASK_MIME)) return;
+    e.preventDefault();
+    e.stopPropagation();
+    e.dataTransfer.dropEffect = "copy";
+    if (!assignHover) setAssignHover(true);
+  };
+  const onDragLeave = (e: DragEvent<HTMLDivElement>) => {
+    if (assignHover && !e.currentTarget.contains(e.relatedTarget as Node | null)) setAssignHover(false);
+  };
+  const onDrop = (e: DragEvent<HTMLDivElement>) => {
+    const t = currentTaskDrag();
+    if (!t || !dragHas(e, TASK_MIME)) return;
+    e.preventDefault();
+    e.stopPropagation();
+    setAssignHover(false);
+    endTaskDrag();
+    assignTaskToSession(id, t.line, t.text).catch((err: unknown) => notify("error", `Could not assign the task: ${err instanceof Error ? err.message : String(err)}`));
+  };
+
   return (
     <div
       data-card={id}
@@ -126,6 +184,14 @@ export const SessionCard = memo(function SessionCard({
       title={editing ? undefined : title}
       className={cls}
       style={roleStyle(meta.role)}
+      data-drop={dropSide ?? undefined}
+      data-assign-label={assignHover ? `assign → ${meta.name}` : undefined}
+      draggable={!editing}
+      onDragStart={onDragStart}
+      onDragEnd={endSessionDrag}
+      onDragOver={onDragOver}
+      onDragLeave={onDragLeave}
+      onDrop={onDrop}
       onClick={() => !editing && onJump(id)}
       onFocus={() => onSelect(id)}
       onContextMenu={(e) => {
@@ -180,6 +246,12 @@ export const SessionCard = memo(function SessionCard({
         )}
         {meta.branch && <span title={`Worktree branch ${meta.branch}`}>· ⎇ {meta.branch}</span>}
       </div>
+      {task && (
+        <div className={`mc-card-task is-${taskState ?? "todo"}`} title={`Mission task (${taskState === "doing" ? "doing" : "next"}): ${task}`}>
+          <span className="mc-card-task-box">{taskState === "doing" ? "[~]" : "[ ]"}</span>
+          <span className="mc-card-task-text">{task}</span>
+        </div>
+      )}
       <div className={`mc-card-tail${tail ? "" : " is-empty"}`} title={tail || undefined}>
         {tail || (st.live ? "…" : "no output yet")}
       </div>
@@ -203,6 +275,7 @@ export const SessionCard = memo(function SessionCard({
           </span>
         </div>
       )}
+      <MeterCardLine sessionId={id} />
       {st.live && stats && (
         <div className="mc-card-row mc-res" title="CPU (share of all cores) · RAM of the process tree">
           cpu {formatCpu(taskManagerCpu(stats.cpuPercent, cores))} · ram {formatMb(stats.memoryBytes)}

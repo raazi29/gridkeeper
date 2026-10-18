@@ -24,6 +24,40 @@ pub async fn git_diff(repo: String, file: String, staged: bool, untracked: bool)
         .map_err(join_err)?
 }
 
+/// The branch of the worktree at `path` against `base` (default: the main worktree's branch):
+/// ahead/behind, committed shortstat, uncommitted count, last commit. Read-only.
+#[tauri::command]
+pub async fn git_branch_summary(path: String, base: Option<String>) -> Result<BranchSummary, AppError> {
+    tauri::async_runtime::spawn_blocking(move || crate::git::branch_summary(&path, base.as_deref()))
+        .await
+        .map_err(join_err)?
+}
+
+/// Files changed by the commits on the worktree's branch since it left `base` (default: the main
+/// worktree's branch), with line counts: `git diff --numstat -M base...HEAD`. Read-only.
+#[tauri::command]
+pub async fn git_branch_files(path: String, base: Option<String>) -> Result<BranchFiles, AppError> {
+    tauri::async_runtime::spawn_blocking(move || crate::git::branch_files(&path, base.as_deref()))
+        .await
+        .map_err(join_err)?
+}
+
+/// Unified diff of one file over `base...HEAD` (read-only; capped at 2 MiB). `orig_file` (a rename
+/// source) lets git pair the rename instead of showing the file as added.
+#[tauri::command]
+pub async fn git_branch_file_diff(
+    path: String,
+    base: String,
+    file: String,
+    orig_file: Option<String>,
+) -> Result<FileDiff, AppError> {
+    tauri::async_runtime::spawn_blocking(move || {
+        crate::git::branch_file_diff(&path, &base, &file, orig_file.as_deref())
+    })
+    .await
+    .map_err(join_err)?
+}
+
 /// LISTENING TCP ports per running session (process-tree attribution).
 #[tauri::command]
 pub async fn ports_list(ctx: State<'_, AppCtx>) -> Result<Vec<crate::ports::SessionPorts>, AppError> {

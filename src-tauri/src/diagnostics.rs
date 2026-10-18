@@ -1,12 +1,16 @@
 //! Resource diagnostics: attribute CPU/RAM to the host process, its WebView2
 //! processes and each session's process tree; export a redacted bundle.
 //!
-//! Sampling cost (measured, ~400 processes, release build): one Toolhelp
+//! Windows sampling cost (measured, ~400 processes, release build): one Toolhelp
 //! process snapshot (~6-7 ms; pid / parent pid / exe name) plus
 //! `OpenProcess` + `GetProcessTimes` + `GetProcessMemoryInfo` for only the
 //! processes we report on. sysinfo's per-process refresh would need a second
 //! full Toolhelp walk (doubling the cost), so sysinfo is used only for
 //! system-wide memory, CPU count and CPU brand.
+//!
+//! macOS / Linux: one sysinfo walk with CPU time + RSS (`crate::procs`, not
+//! measured yet); the "webview" bucket is the WebKit helper processes, best
+//! effort (see `plat`).
 //!
 //! CPU% = process CPU-time delta / wall-clock delta between successive
 //! snapshots (percent of ONE logical core, summed over processes). A process
@@ -33,7 +37,7 @@ const LOG_TAIL_LINES: usize = 300;
 
 /// Minimal Win32 process enumeration / query.
 #[cfg(windows)]
-mod win {
+mod plat {
     use windows_sys::Win32::Foundation::{CloseHandle, FILETIME, INVALID_HANDLE_VALUE};
     use windows_sys::Win32::System::Diagnostics::ToolHelp::{
         CreateToolhelp32Snapshot, PROCESSENTRY32W, Process32FirstW, Process32NextW, TH32CS_SNAPPROCESS,
@@ -121,24 +125,86 @@ mod win {
     }
 }
 
-#[cfg(not(windows))]
-mod win {
+/// macOS / Linux: one `sysinfo` walk (`crate::procs`) gives pid, parent, name, start time, CPU time
+/// and RSS together; `query` reads the readings of the last walk. Units are converted to the Windows
+/// ones the shared code expects (CPU time in 100 ns; creation = start time, used only for ordering
+/// and equality). WebView processes are best effort: WebKitGTK's `WebKitWebProcess` /
+/// `WebKitNetworkProcess` are children of the host on Linux; WKWebView's `com.apple.WebKit.*` XPC
+/// services are children of launchd on macOS and are attributed through the private
+/// `responsibility_get_pid_responsible_for_pid` (looked up at runtime; absent → no WebView figures).
+#[cfg(unix)]
+mod plat {
+    use std::collections::HashMap;
+
+    use once_cell::sync::Lazy;
+    use parking_lot::Mutex;
+
+    use crate::procs::{self, Detail};
+
     pub struct Entry {
         pub pid: u32,
         pub ppid: u32,
         pub is_webview: bool,
     }
+
     #[derive(Clone, Copy)]
     pub struct Times {
         pub creation: u64,
         pub cpu: u64,
         pub working_set: u64,
     }
-    pub fn processes() -> Vec<Entry> {
-        Vec::new()
+
+    /// Readings of the last walk, by pid.
+    static LAST: Lazy<Mutex<HashMap<u32, Times>>> = Lazy::new(|| Mutex::new(HashMap::new()));
+
+    /// Process names of the engine's helper processes.
+    pub fn is_webkit_name(name: &str) -> bool {
+        // Linux `comm` is cut at 15 bytes ("WebKitWebProces"), hence the prefix match.
+        name.starts_with("WebKit") || name.starts_with("com.apple.WebKit.")
     }
-    pub fn query(_pid: u32) -> Option<Times> {
-        None
+
+    #[cfg(target_os = "macos")]
+    fn responsible_pid(pid: u32) -> Option<u32> {
+        type F = unsafe extern "C" fn(libc::pid_t) -> libc::pid_t;
+        static FN: std::sync::OnceLock<Option<F>> = std::sync::OnceLock::new();
+        let f = FN.get_or_init(|| {
+            // SAFETY: dlsym with a NUL-terminated name; a non-null result is that function.
+            let p = unsafe { libc::dlsym(libc::RTLD_DEFAULT, c"responsibility_get_pid_responsible_for_pid".as_ptr()) };
+            // SAFETY: the symbol has this C signature (pid_t → pid_t).
+            (!p.is_null()).then(|| unsafe { std::mem::transmute::<*mut libc::c_void, F>(p) })
+        });
+        let pid = libc::pid_t::try_from(pid).ok()?;
+        // SAFETY: plain call into libsystem with a pid argument.
+        let r = f.map(|f| unsafe { f(pid) })?;
+        u32::try_from(r).ok().filter(|r| *r > 0)
+    }
+
+    pub fn processes() -> Vec<Entry> {
+        let rows = procs::snapshot(Detail::Usage, false);
+        let mut last = LAST.lock();
+        last.clear();
+        #[cfg(target_os = "macos")]
+        let host = std::process::id();
+        rows.iter()
+            .filter(|r| !r.zombie)
+            .map(|r| {
+                last.insert(r.pid, Times { creation: r.start_time, cpu: r.cpu_ms.saturating_mul(10_000), working_set: r.rss });
+                let is_webview = is_webkit_name(&r.name);
+                #[allow(unused_mut)]
+                let mut ppid = r.ppid;
+                // WKWebView helpers are launchd children; hang the ones working for this app under
+                // the host so the shared tree walk attributes them.
+                #[cfg(target_os = "macos")]
+                if is_webview && responsible_pid(r.pid) == Some(host) {
+                    ppid = host;
+                }
+                Entry { pid: r.pid, ppid, is_webview }
+            })
+            .collect()
+    }
+
+    pub fn query(pid: u32) -> Option<Times> {
+        LAST.lock().get(&pid).copied()
     }
 }
 
@@ -160,12 +226,12 @@ impl Default for DiagSampler {
 /// Per-snapshot lazy cache of process queries.
 #[derive(Default)]
 struct Probe {
-    cache: HashMap<u32, Option<win::Times>>,
+    cache: HashMap<u32, Option<plat::Times>>,
 }
 
 impl Probe {
-    fn get(&mut self, pid: u32) -> Option<win::Times> {
-        *self.cache.entry(pid).or_insert_with(|| win::query(pid))
+    fn get(&mut self, pid: u32) -> Option<plat::Times> {
+        *self.cache.entry(pid).or_insert_with(|| plat::query(pid))
     }
 }
 
@@ -203,7 +269,7 @@ pub fn session_trees(roots: &[(SessionId, u32)]) -> Vec<(SessionId, Vec<u32>)> {
     if roots.is_empty() {
         return Vec::new();
     }
-    let entries = win::processes();
+    let entries = plat::processes();
     let mut children: HashMap<u32, Vec<u32>> = HashMap::new();
     let mut alive: HashSet<u32> = HashSet::with_capacity(entries.len());
     for e in &entries {
@@ -264,7 +330,7 @@ impl DiagSampler {
         // One sampler at a time: CPU deltas need a consistent history.
         let mut history = self.history.lock();
         let now = Instant::now();
-        let entries = win::processes();
+        let entries = plat::processes();
         let mut children: HashMap<u32, Vec<u32>> = HashMap::new();
         let mut alive: HashSet<u32> = HashSet::with_capacity(entries.len());
         let mut webview_named: HashSet<u32> = HashSet::new();
@@ -528,11 +594,14 @@ mod tests {
     #[test]
     fn snapshot_attributes_host_and_session_tree() {
         let sampler = DiagSampler::new();
-        // A child process tree: cmd.exe -> ping.exe
+        // A child process tree: cmd.exe -> ping.exe (Unix: sh -> sleep; `; true` keeps sh alive).
+        #[cfg(windows)]
         let mut child = crate::adapters::process::hidden_command("cmd.exe")
             .args(["/d", "/c", "ping -n 6 127.0.0.1 >NUL"])
             .spawn()
             .unwrap();
+        #[cfg(unix)]
+        let mut child = std::process::Command::new("sh").args(["-c", "sleep 6; true"]).spawn().unwrap();
         std::thread::sleep(Duration::from_millis(300));
         let roots = vec![("s1".to_string(), child.id())];
         let first = sampler.snapshot(&roots);
@@ -559,7 +628,9 @@ mod tests {
         assert!(d.sessions[0].stats.process_count >= 2, "{:?}", d.sessions[0]);
         assert_eq!(d.sessions_total.process_count, d.sessions[0].stats.process_count);
         assert!(d.logical_cores >= 1 && d.system_memory_total > d.system_memory_used);
-        assert!(took < Duration::from_millis(500), "snapshot too slow: {took:?}");
+        // Unix walks the whole table with CPU + memory through sysinfo (slower in debug builds).
+        let budget = if cfg!(windows) { Duration::from_millis(500) } else { Duration::from_millis(2000) };
+        assert!(took < budget, "snapshot too slow: {took:?}");
 
         // Unknown root → empty stats, not a panic.
         let d = sampler.snapshot(&[("gone".into(), 0xFFFF_FFF0)]);

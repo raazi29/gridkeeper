@@ -1,5 +1,8 @@
 //! Executable discovery shared by all adapters (and by `profiles::check_status`).
 //!
+//! macOS / Linux: PATH lookup through `which` and plain files; none of the shim handling below
+//! applies (`classify` accepts any existing file, `via_cmd` is never set).
+//!
 //! Windows specifics handled here:
 //! - npm installs put three shims in `%APPDATA%\npm`: `<name>` (sh script),
 //!   `<name>.cmd` and `<name>.ps1`. A ConPTY child must be a real PE file, so
@@ -15,7 +18,9 @@
 
 use std::path::{Path, PathBuf};
 
+#[cfg(windows)]
 use once_cell::sync::Lazy;
+#[cfg(windows)]
 use regex::Regex;
 
 use crate::types::{AppError, AppResult};
@@ -65,14 +70,17 @@ pub fn local_app_data() -> Option<PathBuf> {
     std::env::var_os("LOCALAPPDATA").map(PathBuf::from).or_else(dirs::data_local_dir)
 }
 
+#[cfg(windows)]
 fn ext_lower(path: &Path) -> String {
     path.extension().map(|e| e.to_string_lossy().to_ascii_lowercase()).unwrap_or_default()
 }
 
+#[cfg(windows)]
 static SHIM_TARGET_RE: Lazy<Regex> =
     Lazy::new(|| Regex::new(r#"(?i)"%~?dp0%?\\?([^"%]+?\.exe)""#).expect("shim regex"));
 
 /// The native `.exe` an npm-generated `.cmd` shim forwards to, if it exists.
+#[cfg(windows)]
 fn shim_target(cmd_path: &Path) -> Option<PathBuf> {
     let meta = std::fs::metadata(cmd_path).ok()?;
     if meta.len() > 64 * 1024 {
@@ -86,6 +94,7 @@ fn shim_target(cmd_path: &Path) -> Option<PathBuf> {
 
 /// Turn an existing path into something launchable, preferring native executables
 /// over shims. Returns `None` if nothing usable exists at/next to `path`.
+#[cfg(windows)]
 pub fn classify(path: &Path) -> Option<Executable> {
     let ext = ext_lower(path);
     match ext.as_str() {
@@ -115,6 +124,14 @@ pub fn classify(path: &Path) -> Option<Executable> {
         }
         _ => path.is_file().then(|| Executable::native(path.to_path_buf())),
     }
+}
+
+/// macOS / Linux: any existing file is launchable as is (npm's `bin` entries are symlinks to
+/// scripts with a shebang; there are no `.cmd` shims to unwrap). `which` already checked the
+/// executable bit for PATH hits; an explicit path without it fails at spawn with a clear error.
+#[cfg(not(windows))]
+pub fn classify(path: &Path) -> Option<Executable> {
+    path.is_file().then(|| Executable::native(path.to_path_buf()))
 }
 
 /// Look `name` up on PATH (PATHEXT-aware) and classify the hit.
@@ -167,6 +184,7 @@ pub fn validate_cmd_args(args: &[String]) -> AppResult<()> {
 mod tests {
     use super::*;
 
+    #[cfg(windows)]
     #[test]
     fn classify_prefers_shim_target_and_siblings() {
         let dir = tempfile::tempdir().unwrap();
@@ -206,8 +224,29 @@ mod tests {
             resolve_user_program(r"C:\nope\nothing-here.exe"),
             Err(AppError::MissingExecutable(_))
         ));
-        let cmd = resolve_user_program("cmd").expect("cmd.exe on PATH");
-        assert!(!cmd.via_cmd);
+        #[cfg(windows)]
+        {
+            let cmd = resolve_user_program("cmd").expect("cmd.exe on PATH");
+            assert!(!cmd.via_cmd);
+        }
+        #[cfg(not(windows))]
+        {
+            let sh = resolve_user_program("sh").expect("sh on PATH");
+            assert!(!sh.via_cmd && sh.path.is_absolute());
+            assert!(matches!(resolve_user_program("/nope/nothing-here"), Err(AppError::MissingExecutable(_))));
+        }
+    }
+
+    #[cfg(not(windows))]
+    #[test]
+    fn classify_takes_plain_files() {
+        let dir = tempfile::tempdir().unwrap();
+        let tool = dir.path().join("claude");
+        std::fs::write(&tool, "#!/bin/sh\n").unwrap();
+        assert_eq!(classify(&tool), Some(Executable::native(tool.clone())));
+        assert_eq!(classify(&dir.path().join("missing")), None);
+        assert_eq!(classify(dir.path()), None, "a directory is not a program");
+        assert!(!classify(&tool).unwrap().program_and_prefix().1.iter().any(|a| a == "/c"));
     }
 
     #[test]

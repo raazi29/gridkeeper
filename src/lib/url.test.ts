@@ -30,6 +30,12 @@ describe("normalizeUrlInput", () => {
   it("turns Windows paths into file URLs", () => {
     expect(normalizeUrlInput("C:\\docs\\a b.html")).toBe("file:///C:/docs/a%20b.html");
   });
+  it("turns absolute POSIX paths into file URLs on macOS / Linux only", () => {
+    expect(normalizeUrlInput("/home/me/a b.html", "linux")).toBe("file:///home/me/a%20b.html");
+    expect(normalizeUrlInput("/Users/me/x.html", "macos")).toBe("file:///Users/me/x.html");
+    expect(normalizeUrlInput("/home/me/a.html", "windows")).toBeNull();
+    expect(normalizeUrlInput("//server/x", "linux")).toBeNull();
+  });
   it("refuses unusable input", () => {
     for (const bad of ["", "   ", "hello", "javascript:alert(1)", "data:text/html,x", "99999", "mailto:a@b.c"]) expect(normalizeUrlInput(bad), bad).toBeNull();
   });

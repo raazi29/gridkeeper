@@ -3,8 +3,9 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/raazi29/gridkeeper/releases/latest"><img alt="Release v0.1.2" src="https://img.shields.io/badge/release-v0.1.2-4cc2ff?style=flat-square&labelColor=0b1220" /></a>
-  <img alt="Platform: Windows 10 | 11" src="https://img.shields.io/badge/platform-Windows%2010%20%7C%2011-4cc2ff?style=flat-square&labelColor=0b1220" />
+  <a href="https://github.com/raazi29/gridkeeper/releases/latest"><img alt="Release v0.2.0" src="https://img.shields.io/badge/release-v0.2.0-4cc2ff?style=flat-square&labelColor=0b1220" /></a>
+  <img alt="Platform: Windows | macOS | Linux" src="https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-4cc2ff?style=flat-square&labelColor=0b1220" />
+  <a href="https://github.com/raazi29/gridkeeper/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/raazi29/gridkeeper/actions/workflows/ci.yml/badge.svg?branch=main" /></a>
   <a href="LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-3ddc84?style=flat-square&labelColor=0b1220" /></a>
   <img alt="Built with Tauri 2" src="https://img.shields.io/badge/Tauri-2.12-24c8db?style=flat-square&labelColor=0b1220&logo=tauri&logoColor=white" />
   <img alt="Rust" src="https://img.shields.io/badge/Rust-stable-f46623?style=flat-square&labelColor=0b1220&logo=rust&logoColor=white" />
@@ -13,12 +14,14 @@
 </p>
 
 <p align="center">
-  <b>Every agent in one grid.</b> A GPU-accelerated, Windows-native workspace for running many AI coding agents
-  (Claude Code with several accounts at once, Codex, Hermes, OpenCode, Aider and plain shells) side by side,
-  with a keeper that tells you which one needs you.
+  <b>Every agent in one grid.</b> A GPU-accelerated workspace for running a whole team of AI coding agents
+  (Claude Code with several accounts at once, Codex, Hermes, OpenCode, Aider and plain shells) side by side:
+  a shared task board they update themselves, a lead that coordinates them under your rules, a keeper that tells
+  you which one needs you, and a replay video of the mission when it's done. Windows-native, macOS and Linux in preview.
 </p>
 
 <p align="center">
+  <a href="#mission-one-markdown-file-a-whole-agent-team">Mission</a> ·
   <a href="#install">Install</a> ·
   <a href="#quick-start">Quick start</a> ·
   <a href="#features">Features</a> ·
@@ -39,10 +42,87 @@
 | Live agent grid | Mission Control |
 |---|---|
 | ![Grid of live sessions with roles](docs/assets/showcase/01-grid.png) | ![Mission Control: lead, lanes, sign-off, session log](docs/assets/showcase/04-mission-control.png) |
+| **Mission board: the team's shared task list, live** | **Lead control on autopilot** |
+| ![Mission board with goal, progress, tasks by state, owners and sign-off evidence](docs/assets/showcase/06-mission-board.png) | ![Lead control in autopilot mode with auto-sent instructions in the session log](docs/assets/showcase/07-lead-control.png) |
+| **Drag agents between lanes, collapse, add lanes** | **Mission replay: a shareable timelapse** |
+| ![Lanes with drag handles, collapse toggles and a new-lane tile](docs/assets/showcase/08-lanes.png) | ![Mission replay frames: title card, live scene, end card with stats](docs/assets/showcase/09-replay.png) |
 | **Fleet: every session at a glance** | **Command palette (Ice Planet light theme)** |
 | ![Fleet overview](docs/assets/showcase/05-fleet.png) | ![Command palette](docs/assets/showcase/03-ice-planet.png) |
 
 <p align="center"><img src="docs/assets/readme/saber-blue.svg" width="100%" alt="" /></p>
+
+## Mission: one Markdown file, a whole agent team
+
+Give the team a goal. The lead writes tasks into `.gridkeeper/mission.md`, builders claim them (`[~]`) and tick them
+off (`[x]`), reviewers sign off. Gridkeeper's Mission Control renders the board live, shows who is on what, and puts
+each finished branch's evidence (commits, files, lines) next to a *Review diff* button.
+
+```markdown
+# Mission: Add OAuth login with GitHub
+
+## Tasks
+- [x] Plan the auth flow and split the work @lead
+- [~] Implement /auth/callback and token storage @builder-1
+- [~] Wire the button to /auth/start @builder-2
+- [!] Blocked: needs the GitHub client secret in .env @builder-1
+- [ ] Review both branches @verifier
+```
+
+**Use the protocol with any agent, on any OS, even without Gridkeeper.** It ships as an Agent Skill:
+
+```bash
+# Claude Code
+/plugin marketplace add raazi29/gridkeeper
+/plugin install agent-mission@gridkeeper
+
+# any Agent Skills host (Claude Code, Codex, Gemini CLI, Cursor, ...)
+npx skills add raazi29/gridkeeper
+```
+
+Then tell one agent "start a mission: …" and the others "join the mission". See [`skills/agent-mission/SKILL.md`](skills/agent-mission/SKILL.md).
+
+### The lead runs the team, as much as you allow
+
+Give a session the **lead** role (drag its card onto the lead box) and choose, per project, how much it may do:
+
+| Mode | What happens |
+|---|---|
+| **Off** | The lead is just a label. |
+| **Advisor** | The lead reads `.gridkeeper/team.md` (every member's state, task, branch and diff stats, kept current by Gridkeeper) and writes instructions as files in `.gridkeeper/outbox/`. Each one shows up in Mission Control as a proposal you **Send**, edit or dismiss. |
+| **Autopilot** | Instructions are typed into the target automatically, but only while it is idle and not asking anything (never into a permission prompt), at most one per agent every 20 s. `stop` / `restart` always wait for you. One click pauses it, also from the status bar. |
+
+With **auto-review** on, an agent that finishes work on its branch triggers a review request to the lead
+("builder-1 finished … review with `git diff main...gk/builder-1`"), so the lead checks the work like an advisor
+before you merge.
+
+### Mission Control does the busywork
+
+- **Drag and drop:** move agents between lanes, drop one on the lead box to make it the lead, drag lanes to reorder phases, drop on *new lane*. Drag tasks between *doing / todo / blocked / done*, reorder them, or drop a task on an agent to assign it. Keyboard alternatives for all of it (`Alt+arrows`).
+- **Edit the plan in place:** quick-add tasks (`n`, Tab completes `@owners`), double-click to edit, assign from a menu, delete with Undo, filter by agent / unassigned / blocked. Edits are conflict-checked against what agents write.
+- **Brief the team** in one dialog (a role-specific line per agent; agents that are asking you something are skipped) and **hand off** finished work to the reviewer with the exact branch and diff command.
+- **Sign-off with evidence:** commits ahead, files and lines changed, uncommitted leftovers and the last commit; *Review diff* opens the branch's committed changes file by file.
+
+### Mission replay: share what your agents did
+
+Every mission is recorded as events only (task changes, agent states, commits, lead messages; never terminal
+output, paths or e-mails). *Replay…* turns it into a 15–60 s timelapse at 1920×1080, 1080×1080 or 1080×1920 and
+exports **MP4 / WebM** or a **GIF**, rendered inside the app with no ffmpeg. The end card shows tasks done, commits,
+lines changed, agents and wall time.
+
+### Skills: add trending agent skills to your project
+
+*Skills: discover & add…* (command palette) lists trending and top Agent Skills on GitHub, or any repo you paste.
+Read the SKILL.md and every file first (scripts are flagged), then add it to the project's `.claude/skills` and/or
+`.agents/skills` so every agent in the workspace gets it. Each skill is pinned to a commit and can be checked for
+updates or removed. Network requests happen only when you use the panel, and Gridkeeper never runs anything a skill
+contains.
+
+### Cost & context meter (Claude Code)
+
+Turn it on in Settings › Agents and each Claude pane shows `$0.42 · 37%`: Claude Code's own cost estimate and how
+full the context window is (amber from 80 %). Mission Control totals the workspace. Gridkeeper reads only the
+documented status-line fields (no transcripts, no credentials) and your own status line keeps working. Codex and
+Gemini CLI don't report usage to other programs, so they show "n/a".
 
 ## Features
 
@@ -50,7 +130,7 @@
 <tr>
 <td width="33%" valign="top">🧩 <b>Agent grid</b><br/>Workspaces → groups → panes in a grid, columns or rows. Resizable splits, drag to reorder, maximize any pane.</td>
 <td width="33%" valign="top">👥 <b>Many accounts, truly separate</b><br/>Several Claude Code, Codex and Hermes logins side by side, one isolated home folder per account. Credentials are never read.</td>
-<td width="33%" valign="top">🛰️ <b>Mission Control &amp; Formations</b><br/>A team view of the workspace (lead, lanes, sign-off, live activity) and one-click agent teams with their own git worktrees.</td>
+<td width="33%" valign="top">🛰️ <b>Mission Control &amp; Formations</b><br/>A shared task board your agents read and update, a live team view (lead, lanes, sign-off with git evidence) and one-click agent teams with their own worktrees.</td>
 </tr>
 <tr>
 <td valign="top">🔔 <b>Knows when an agent needs you</b><br/>Attention lamps, unread badges, Windows notifications, a Comms feed. <code>Ctrl+Shift+J</code> jumps to the next alert.</td>
@@ -60,12 +140,22 @@
 <tr>
 <td valign="top">🔀 <b>Changes drawer</b><br/>Branch, ahead/behind and coloured diffs for the workspace and every worktree. Read-only by design.</td>
 <td valign="top">⚡ <b>Built not to burn CPU</b><br/>Idle at ≈0.1–0.4 % of the machine. WebGL rendering, raw binary IPC, no polling while idle.</td>
-<td valign="top">🛡️ <b>No orphans, ever</b><br/>Each agent's whole process tree lives in a Windows Job Object. Quit, close or crash: nothing is left running.</td>
+<td valign="top">🛡️ <b>No orphans</b><br/>Each agent's whole process tree lives in a Windows Job Object: quit, close or crash, nothing is left running. (macOS/Linux: every agent stops on quit; a hard crash can leave them running.)</td>
 </tr>
 <tr>
 <td valign="top">🎨 <b>12 themes</b><br/>Deep Space, Twin Suns, Carbonite, Ice Planet, Hyperspace, Holo Comms, Saber Duel, Outer Rim and more. All are WCAG contrast-tested.</td>
 <td valign="top">♻️ <b>Restore that resumes</b><br/>Layouts always come back; each Claude pane resumes its own pinned conversation; Codex and catalog agents continue where they can.</td>
 <td valign="top">🔒 <b>Local-first</b><br/>No telemetry, no cloud backend, no local HTTP server. Secrets are redacted from logs and exports.</td>
+</tr>
+<tr>
+<td valign="top">🧠 <b>A lead that runs the team</b><br/>Off, Advisor (you approve every instruction) or Autopilot (delivered to idle agents only), plus auto-review of finished branches.</td>
+<td valign="top">🎬 <b>Mission replay</b><br/>Turn a mission into a 15–60 s timelapse video or GIF to share. Rendered in the app, events only.</td>
+<td valign="top">🧰 <b>Skills panel</b><br/>Find trending Agent Skills, review every file, add them to the project pinned to a commit.</td>
+</tr>
+<tr>
+<td valign="top">💰 <b>Cost &amp; context meter</b><br/>Claude Code's cost estimate and context fill per pane and per workspace, from documented status-line data only.</td>
+<td valign="top">🖐️ <b>Drag and drop everywhere</b><br/>Agents between lanes, lanes into phases, tasks between states and onto agents. All with keyboard alternatives.</td>
+<td valign="top">🍎 <b>macOS &amp; Linux (preview)</b><br/>Same app on your login shell, ⌘ shortcuts on macOS, built and tested in CI on all three systems.</td>
 </tr>
 </table>
 
@@ -100,6 +190,10 @@ features change quickly, so check the projects themselves. "?" = not verified in
 | | Gridkeeper | Terax | Warp | Wave Terminal | Windows Terminal | Claude Squad | Superset / Conductor |
 |---|---|---|---|---|---|---|---|
 | Native Windows | yes | yes | yes | yes | yes | WSL only (tmux) | macOS-first |
+| macOS / Linux | preview | ? | yes | yes | — | yes | macOS |
+| Shared task board agents update themselves | yes (`mission.md`) | ? | ? | ? | — | ? | ? |
+| Lead agent with approval / autopilot control | yes | ? | ? | ? | — | ? | ? |
+| Mission replay video export | yes | ? | ? | ? | — | ? | ? |
 | Grid of many agent panes | yes | single agent | tabs/panes | blocks | panes | yes (TUI) | yes |
 | Several Claude accounts at once | yes, per pane | no | no | no | manual | no | no |
 | Process-tree containment (no orphans) | Job Objects | ? | ? | ? | ? | tmux | ? |
@@ -116,10 +210,32 @@ dependency (WSL-only on Windows).
 
 ## Install
 
-Download **`Gridkeeper_0.1.2_x64-setup.exe`** (≈6 MB, per-user install, no admin needed) from the
-[latest release](https://github.com/raazi29/gridkeeper/releases/latest), or build it yourself (see *Build from
-source* below). Windows 10 1809+ / Windows 11. The WebView2 runtime is preinstalled on Windows 11; the installer
-bootstraps it elsewhere.
+Download from the [latest release](https://github.com/raazi29/gridkeeper/releases/latest), or build it yourself
+(see *Build from source* below):
+
+- **Windows 10 1809+ / 11:** `Gridkeeper_0.2.0_x64-setup.exe` (per-user install, no admin needed). The WebView2
+  runtime is preinstalled on Windows 11; the installer bootstraps it elsewhere.
+- **macOS 11+ (preview):** the `.dmg`.
+- **Linux x86_64 (preview):** the `.AppImage` or `.deb`.
+
+### Platforms
+
+| | Windows 10/11 | macOS 11+ | Linux (x86_64) |
+|---|---|---|---|
+| Status | reference platform | builds and tests in CI, not yet verified by hand | builds and tests in CI, not yet verified by hand |
+| Download | `…_x64-setup.exe` (NSIS, per-user) | `.dmg` (ad-hoc signed, not notarized) | `.AppImage`, `.deb` |
+| Default terminal | PowerShell 7 (5.1 fallback) | your login shell (`$SHELL`, zsh by default) | your login shell (`$SHELL`, bash by default) |
+| Shortcuts | Ctrl+Shift+… | ⇧⌘… (⌃ keys always go to the terminal) | Ctrl+Shift+… |
+| GPU telemetry | yes | no | no |
+
+**macOS:** the app isn't notarized. On first launch open System Settings › Privacy & Security and click **Open
+Anyway** (or right-click the app › Open).
+**Linux:** needs WebKitGTK 4.1 (`libwebkit2gtk-4.1-0`: Ubuntu 22.04+, Debian 12+, Fedora 39+). If the window stays
+blank on some GPU drivers, start it with `WEBKIT_DISABLE_DMABUF_RENDERER=1`.
+**macOS/Linux caveat:** quitting stops every agent, but if Gridkeeper itself is killed hard (SIGKILL, crash, power
+loss) its agents can keep running. On Windows the kernel cleans them up.
+**Build from source on Linux:** additionally install `libwebkit2gtk-4.1-dev libgtk-3-dev
+libayatana-appindicator3-dev librsvg2-dev libssl-dev patchelf build-essential`.
 
 > [!NOTE]
 > The installer is not code-signed yet, so Windows SmartScreen may show "Windows protected your PC" on first run.
@@ -140,6 +256,7 @@ bootstraps it elsewhere.
 ## Keybindings
 
 Defaults (`src/keybindings/combo.ts`). Change them in Settings → Keybindings; an empty value unbinds a command.
+On macOS every `Ctrl` below is `⌘` (and `Ctrl` combinations always go to the terminal).
 
 | Shortcut | Command | | Shortcut | Command |
 |---|---|---|---|---|
@@ -231,7 +348,16 @@ xterm.js 6 in the system WebView2.
 - **Broadcast (Ctrl+Shift+K):** type once, send to several selected sessions (confirmation for more than 3 targets or
   other workspaces; never sends on its own).
 - **Next alert (Ctrl+Shift+J):** jump to the next session that needs you.
-- **Mission Control (Ctrl+Shift+U):** lead node(s), one lane per group, a sign-off node, an activity river and the session log. Every figure is real; nothing is estimated. Sessions can carry roles (lead, scout, builder, reviewer, verifier).
+- **Mission Control (Ctrl+Shift+U):** the mission board, lead node(s), one lane per group, a sign-off node, an activity river and the session log. Every figure is real; nothing is estimated. Sessions can carry roles (lead, scout, builder, reviewer, verifier).
+  - **Mission board:** `<project>/.gridkeeper/mission.md`, a plain Markdown checklist (`- [ ] task @owner`, `[~]` doing, `[x]` done, `[!]` blocked) that agents read and edit themselves. Gridkeeper watches it (filesystem events, no polling) and shows goal, progress, owners and each agent's current task on its card. Click a box to change its state; conflicting edits are detected, never overwritten.
+  - **Brief team:** one dialog with a per-role line for every running agent (the lead plans into the board, builders claim tasks, reviewers verify). Agents that are asking you something are skipped. Nothing is sent until you press Send.
+  - **Sign-off with evidence:** finished agents show their branch, commits ahead, files and lines changed, uncommitted leftovers and last commit. *Review diff* opens the Changes drawer on that worktree with the branch's committed files; *Hand off* sends a review request to the reviewer, verifier or lead after you confirm the text.
+  - **Lead control:** Off / Advisor / Autopilot per project, `team.md` status for the lead, `outbox/` instruction files, auto-review of finished branches, rate limits and a Pause button (also in the status bar).
+  - **Drag and drop:** cards between lanes, onto the lead box or a new lane; lanes reorder; tasks between states, reordered, or onto an agent to assign. Lanes and the lead box collapse.
+  - **Board editing:** quick add, inline edit, assign menu, delete with Undo, filters, keyboard control.
+- **Mission replay:** event-only recordings in `.gridkeeper/replay/`, rendered to MP4 / WebM / GIF in the app.
+- **Skills panel:** discover Agent Skills on GitHub (user-initiated), review every file, install into `.claude/skills` / `.agents/skills` at a pinned commit, update check, remove.
+- **Cost & context meter (opt-in):** Claude Code panes show cost and context use from the documented status-line JSON; totals in Mission Control and Fleet.
 - **Formations:** launch a planned agent team (groups, sessions, `git worktree add -b` per member) after one confirmation. Optional starter prompts are held while an agent shows a trust / permission / login question, so nothing is auto-approved.
 - **Quick launch:** *+ New* in the header and one-click agent cards in empty groups start a session in the
   workspace folder; the full dialog handles worktrees, arguments and launching several at once.
@@ -444,21 +570,24 @@ pwsh -File scripts/bench/run-all.ps1 -Exe src-tauri/target/release/gridkeeper.ex
 
 #### E2E scripts
 
-The e2e scripts drive the running dev app over the Chrome DevTools Protocol:
+The e2e scripts drive a sandboxed dev instance over the Chrome DevTools Protocol, so they never touch a Gridkeeper you are using:
 
 ```powershell
-$env:WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS = "--remote-debugging-port=9222"
-npm run tauri dev
+npm run sandbox                                            # isolated dev instance, CDP on 9333 (scripts/dev/sandbox.ps1)
 # in another shell:
+$env:CDP_PORT = 9333
 node scripts/e2e/cdp.mjs file scripts/e2e/full-verify.js  # full verification suite (PowerShell panes only)
 node scripts/e2e/cdp.mjs file scripts/e2e/ps-basic.js     # pwsh prompt, echo, Unicode, 20,000 lines
+node scripts/e2e/cdp.mjs file scripts/e2e/mission.js      # Mission Control task board (temp git repo, PowerShell panes only)
 node scripts/e2e/cdp.mjs file scripts/e2e/multi-agent.js  # 3 Claude profiles + 2 Codex + 1 pwsh (sends no prompts)
 node scripts/e2e/cdp.mjs file scripts/e2e/codex-race.js   # 3 Codex started in the same tick
 node scripts/e2e/cdp.mjs eval "window.__gridkeeperTerminals.list()"
 node scripts/e2e/cdp.mjs shot out.png
+npm run sandbox:stop -- -Name dev
 ```
 
-The scripts use hard-coded `D:\AlteraAI` as the working folder; edit them for other locations. Debug hooks (dev builds)
+`cdp.mjs file` only runs against a sandbox instance (`E2E_ALLOW_LIVE=1` overrides). Scripts use `E2E_CWD` (default:
+the current directory) as their working folder. Debug hooks (dev builds)
 are `window.__gridkeeper`, `window.__gridkeeperTerminals.list()/text(id)` and `window.__gridkeeperForceContextLoss(id?)`
 (simulates a GPU context loss). The README demo is recorded with `node scripts/showcase/record.mjs`.
 

@@ -5,6 +5,7 @@
 import { playSound } from "../audio/sounds";
 import { getNotif, updateNotif, useNotif } from "../actions/notifyPrefs";
 import { APP_NAME } from "../lib/brand";
+import { osNotificationName } from "../lib/platform";
 import type { UiDensity } from "../lib/types";
 import { useApp } from "../store/appStore";
 import { withSaber } from "../theme/saber";
@@ -115,7 +116,7 @@ export function WelcomeSheet({ onClose }: { onClose: () => void }) {
           />
         </div>
         <div className="welcome-pref welcome-pref-toggles">
-          <Toggle checked={n.enabled} onChange={(enabled) => updateNotif({ enabled })} label="Notify me when an agent needs me" hint="Windows notification in the background, a toast with Jump in front." />
+          <Toggle checked={n.enabled} onChange={(enabled) => updateNotif({ enabled })} label="Notify me when an agent needs me" hint={`${osNotificationName()} notification in the background, a toast with Jump in front.`} />
           <Toggle
             checked={n.sound}
             disabled={!n.enabled}

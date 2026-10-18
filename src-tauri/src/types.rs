@@ -24,6 +24,9 @@ pub enum AppError {
     MissingExecutable(String),
     #[error("io error: {0}")]
     Io(#[from] std::io::Error),
+    /// Optimistic-concurrency failure (e.g. the mission file changed since it was read).
+    #[error("conflict: {0}")]
+    Conflict(String),
     #[error("{0}")]
     Other(String),
 }
@@ -41,6 +44,7 @@ impl AppError {
             AppError::Invalid(_) => "invalid",
             AppError::MissingExecutable(_) => "missing_executable",
             AppError::Io(_) => "io",
+            AppError::Conflict(_) => "conflict",
             AppError::Other(_) => "other",
         }
     }
@@ -378,6 +382,112 @@ pub struct FileDiff {
     pub binary: bool,
 }
 
+/// A worktree's branch measured against a base branch (read-only; `git::branch_summary`).
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BranchSummary {
+    pub is_repo: bool,
+    pub branch: Option<String>,
+    /// The base actually used: the requested one, else the main worktree's branch; `None` when unresolvable.
+    pub base: Option<String>,
+    /// Commits on HEAD not on base / on base not on HEAD.
+    pub ahead: u32,
+    pub behind: u32,
+    /// `git diff --shortstat base...HEAD` (committed work only).
+    pub files_changed: u32,
+    pub insertions: u32,
+    pub deletions: u32,
+    /// Entries in `git status --porcelain` (uncommitted, incl. untracked).
+    pub uncommitted: u32,
+    pub last_commit_subject: Option<String>,
+    /// Last commit time in ms since the epoch.
+    pub last_commit_ms: Option<u64>,
+}
+
+/// One file changed by the commits on HEAD since it left a base (`git diff -M base...HEAD`).
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BranchFile {
+    /// Repository-relative path on HEAD (forward slashes, as git prints it).
+    pub path: String,
+    /// Rename / copy source.
+    pub orig_path: Option<String>,
+    /// Status letter from `--name-status`: A, M, D, R, C, T (similarity score dropped).
+    pub status: String,
+    pub insertions: u32,
+    pub deletions: u32,
+    /// numstat printed `-\t-` (no line counts).
+    pub binary: bool,
+}
+
+/// The committed work of a worktree's branch against a base (read-only; `git::branch_files`).
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BranchFiles {
+    pub is_repo: bool,
+    pub branch: Option<String>,
+    /// The base actually used: the requested one, else the main worktree's branch; `None` when unresolvable.
+    pub base: Option<String>,
+    /// Commits on HEAD not on base.
+    pub ahead: u32,
+    /// Empty when HEAD is the base, there is no base, or nothing differs.
+    pub files: Vec<BranchFile>,
+    /// More than `git::MAX_BRANCH_FILES` files: the list was cut.
+    pub truncated: bool,
+}
+
+// ---------------------------------------------------------------------------
+// Mission file (`mission`)
+// ---------------------------------------------------------------------------
+
+/// `<projectDir>/.gridkeeper/mission.md`, read by `mission_read` / written by `mission_write`.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MissionFile {
+    /// Absolute path of the mission file (whether or not it exists).
+    pub path: String,
+    pub exists: bool,
+    /// File contents (UTF-8 lossy, BOM stripped, at most 256 KiB; "" when missing).
+    pub text: String,
+    /// Last-write time in ms since the epoch; `None` when missing. Passed back to `mission_write`.
+    pub modified_ms: Option<u64>,
+}
+
+/// Emitted with payload `MissionChanged` when the mission file of a watched project folder changes.
+pub const EVT_MISSION_CHANGED: &str = "mission-changed";
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MissionChanged {
+    /// The folder exactly as the frontend passed it to `mission_watch`.
+    pub project_dir: String,
+    /// What changed: the mission file, or the lead control outbox (`.gridkeeper/outbox/`).
+    pub file: MissionChangeKind,
+}
+
+/// `MissionChanged.file`: `"mission"` (`.gridkeeper/mission.md`) or `"outbox"` (a file created in or
+/// renamed into `.gridkeeper/outbox/`). `team.md` (written by Gridkeeper) never produces an event.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum MissionChangeKind {
+    Mission,
+    Outbox,
+}
+
+/// One instruction file directly in `<projectDir>/.gridkeeper/outbox/` (`mission_outbox_list`).
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OutboxItem {
+    /// File name only (no folder), e.g. `0007-builder-1.md`.
+    pub name: String,
+    /// Contents (UTF-8 lossy, BOM stripped), at most `mission::MAX_OUTBOX_FILE_BYTES`.
+    pub text: String,
+    /// Last-write time in ms since the epoch (0 when unknown).
+    pub modified_ms: u64,
+    /// The file is larger than the cap: `text` is only its beginning.
+    pub truncated: bool,
+}
+
 // ---------------------------------------------------------------------------
 // Diagnostics
 // ---------------------------------------------------------------------------
@@ -499,6 +609,12 @@ pub struct Settings {
     /// Synthesized ignite / retract sound with the saber effects (off by default).
     #[serde(default)]
     pub saber_sound: bool,
+    /// Cost & context meter for Claude panes (opt-in; see `meter`). Applies to newly started panes.
+    #[serde(default)]
+    pub cost_meter: bool,
+    /// The one-time "turn on the cost meter" hint was dismissed.
+    #[serde(default)]
+    pub cost_meter_hint_dismissed: bool,
 }
 
 fn default_right_click_action() -> String {
@@ -623,6 +739,8 @@ impl Default for Settings {
             saber_effects: default_saber_effects(),
             saber_blade_from_theme: default_saber_blade_from_theme(),
             saber_sound: false,
+            cost_meter: false,
+            cost_meter_hint_dismissed: false,
         }
     }
 }
@@ -756,4 +874,272 @@ impl Default for PersistedState {
             active_workspace_id: None,
         }
     }
+}
+
+// ---------------------------------------------------------------------------
+// Skills: Agent Skills from GitHub (user-initiated discovery) installed into a project (crate::skills)
+// ---------------------------------------------------------------------------
+
+/// A GitHub repository from a skills search.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SkillRepo {
+    /// `owner/name`.
+    pub full_name: String,
+    pub description: Option<String>,
+    pub stars: u64,
+    /// ISO 8601.
+    pub pushed_at: Option<String>,
+    /// SPDX id (or license name).
+    pub license: Option<String>,
+    pub topics: Vec<String>,
+    pub html_url: String,
+    pub default_branch: String,
+    pub archived: bool,
+}
+
+/// One page of `skills_search`. A rate limit is a result, not an error.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SkillRepoPage {
+    pub items: Vec<SkillRepo>,
+    /// Total matches GitHub reports (it serves at most 1000).
+    pub total: u64,
+    pub page: u32,
+    pub rate_limited: bool,
+    /// Epoch seconds when the rate limit resets (`rate_limited` only, when GitHub said).
+    pub reset_at: Option<u64>,
+    pub message: Option<String>,
+    /// The search query sent to api.github.com (shown in the UI).
+    pub query: String,
+    /// When GitHub answered (epoch ms).
+    pub fetched_at_ms: u64,
+    /// Served from the 10-minute in-memory cache.
+    pub cached: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SkillFile {
+    /// Relative to the skill folder, forward slashes.
+    pub path: String,
+    pub size: u64,
+    /// Script / binary by extension (.ps1 .sh .bat .cmd .exe .js .py ...) or git's executable bit.
+    pub executable: bool,
+}
+
+/// One skill (a folder with a SKILL.md) in a repository at a pinned commit.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SkillInfo {
+    /// Folder in the repository ("" = the repository root), forward slashes.
+    pub path: String,
+    /// Frontmatter `name`, else the folder name.
+    pub name: String,
+    /// Folder name used on install (`.claude/skills/<installName>`).
+    pub install_name: String,
+    pub description: Option<String>,
+    /// SKILL.md first.
+    pub files: Vec<SkillFile>,
+    pub total_bytes: u64,
+    /// Has `scripts/` or executable-looking files.
+    pub has_scripts: bool,
+    /// Full SKILL.md text; None when not fetched (many skills) or unreadable: use `skills_file`.
+    pub skill_md: Option<String>,
+    /// Git tree SHA of the skill folder (recorded on install, compared by update checks).
+    pub tree_sha: String,
+    /// Why it cannot be installed (over 200 files / 5 MB / 1 MB per file, unsafe names), if so.
+    pub blocked: Option<String>,
+}
+
+/// `skills_inspect`: a repository's skills, pinned to one commit.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RepoSkills {
+    pub repo: String,
+    /// The ref that was resolved (the default branch when none was given).
+    pub git_ref: String,
+    pub commit_sha: String,
+    pub default_branch: Option<String>,
+    pub description: Option<String>,
+    pub stars: Option<u64>,
+    pub license: Option<String>,
+    pub pushed_at: Option<String>,
+    pub html_url: String,
+    pub archived: bool,
+    pub skills: Vec<SkillInfo>,
+    pub warnings: Vec<String>,
+    pub fetched_at_ms: u64,
+}
+
+/// `skills_file`: one file of a repository at a pinned commit, for reading before install.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SkillFileText {
+    pub path: String,
+    /// UTF-8 text (empty for binary files), at most 256 KiB.
+    pub text: String,
+    pub size: u64,
+    pub binary: bool,
+    pub truncated: bool,
+}
+
+/// `<skill folder>/.gridkeeper-skill.json`: where an installed skill came from.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SkillProvenance {
+    pub repo: String,
+    pub commit_sha: String,
+    /// Skill folder in the repository ("" = root).
+    pub path: String,
+    #[serde(default)]
+    pub tree_sha: Option<String>,
+    #[serde(default)]
+    pub name: Option<String>,
+    /// RFC 3339 (UTC).
+    pub installed_at: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct InstallResult {
+    pub name: String,
+    /// Installed folders relative to the project, e.g. `.claude/skills/pdf`.
+    pub installed: Vec<String>,
+    /// The subset of `installed` that replaced an existing folder.
+    pub replaced: Vec<String>,
+    pub files: usize,
+    pub total_bytes: u64,
+    pub commit_sha: String,
+    pub warnings: Vec<String>,
+}
+
+/// A skill found in the project's `.claude/skills/*/SKILL.md` or `.agents/skills/*/SKILL.md`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct InstalledSkill {
+    /// Frontmatter `name`, else the folder name.
+    pub name: String,
+    /// Folder name.
+    pub folder: String,
+    pub description: Option<String>,
+    /// `.claude/skills` or `.agents/skills`.
+    pub target: String,
+    /// `<target>/<folder>` (forward slashes): pass to `skills_remove`.
+    pub dir_rel: String,
+    pub dir_abs: String,
+    /// None: a local skill (not installed by Gridkeeper, or provenance missing).
+    pub provenance: Option<SkillProvenance>,
+    pub has_scripts: bool,
+    pub file_count: usize,
+    /// The folder is a junction / symbolic link: listed, never removed.
+    pub is_link: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum SkillUpdateStatus {
+    /// Same commit, or the skill folder is unchanged since the pinned commit.
+    Current,
+    /// The skill folder changed on the default branch (or could not be compared).
+    Update,
+    /// The skill folder no longer exists on the default branch.
+    Missing,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SkillUpdateCheck {
+    pub repo: String,
+    pub path: String,
+    pub status: SkillUpdateStatus,
+    pub pinned_sha: String,
+    /// The default branch's commit now.
+    pub current_sha: String,
+}
+
+// ---- Mission replay (crate::replay) ----
+
+/// One recording in `<projectDir>/.gridkeeper/replay/`.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ReplayInfo {
+    pub name: String,
+    pub size_bytes: u64,
+    pub modified_ms: u64,
+}
+
+/// Result of `replay_append`: the file size afterwards; `full` = the 5 MB cap was reached and the
+/// batch was NOT written (the recorder stops).
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ReplayAppend {
+    pub size_bytes: u64,
+    pub full: bool,
+}
+
+/// A save destination chosen in the native dialog, authorized for one `replay_save_file` by `token`.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ReplaySaveTarget {
+    pub token: String,
+    pub path: String,
+}
+
+// ---------------------------------------------------------------------------
+// Cost & context meter (Claude Code status line; see `meter`)
+// ---------------------------------------------------------------------------
+
+/// Emitted with payload `SessionMeter` when a pane's meter changes (new status line data or a launch).
+pub const EVT_SESSION_METER: &str = "session-meter";
+
+/// How the pane's last launch went for the meter.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum MeterStatus {
+    /// No launch seen in this app run (data, if any, is from an earlier run).
+    #[default]
+    Unknown,
+    /// Launched with Gridkeeper's status line; data arrives with Claude's first status line update.
+    Metered,
+    /// The session passes its own `--settings`, so the meter stays off.
+    CustomSettings,
+    /// Managed settings own the status line (or turn status line commands off).
+    Managed,
+    /// Not possible for this launch; `note` says why.
+    Unavailable,
+}
+
+/// One pane's meter. Numbers come from Claude Code's status line JSON; cost is Claude Code's own
+/// estimate at list price (on a subscription: API-equivalent value, not a bill).
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SessionMeter {
+    /// Gridkeeper's session id.
+    pub session_id: SessionId,
+    pub status: MeterStatus,
+    /// Why the meter is off or limited (shown in the tooltip).
+    pub note: Option<String>,
+    /// The user's own status line is chained (still shown inside the pane).
+    pub chained: bool,
+    /// Claude's conversation id of the latest data (changes on `/clear`).
+    pub claude_session_id: Option<String>,
+    /// `cost.total_cost_usd` of the current conversation.
+    pub cost_usd: Option<f64>,
+    /// Running pane total: the sum of the last cost seen per Claude conversation (survives `/clear`).
+    pub pane_cost_usd: Option<f64>,
+    /// `context_window.used_percentage`.
+    pub context_pct: Option<f64>,
+    pub context_size: Option<u64>,
+    /// Tokens currently in the context window (not cumulative).
+    pub input_tokens: Option<u64>,
+    pub output_tokens: Option<u64>,
+    pub api_duration_ms: Option<u64>,
+    pub duration_ms: Option<u64>,
+    pub model: Option<String>,
+    /// Subscription rate-limit windows (claude.ai Pro / Max), percent used.
+    pub five_hour_pct: Option<f64>,
+    pub seven_day_pct: Option<f64>,
+    /// When the helper last wrote data (ms since the epoch); `None` = no data yet.
+    pub updated_ms: Option<u64>,
 }

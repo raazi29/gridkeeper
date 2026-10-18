@@ -169,7 +169,7 @@ describe("account helpers", () => {
       avail("generic", { preset: "kimi", label: "Kimi CLI" }),
       avail("generic", { preset: "gemini", label: "Gemini CLI", error: "not working" }),
     ];
-    const opts = launchOptions([c1, c2, work, off, hermes], agents);
+    const opts = launchOptions([c1, c2, work, off, hermes], agents, "windows");
     expect(opts.map((o) => (o.hint ? `${o.label} · ${o.hint}` : o.label))).toEqual([
       "PowerShell",
       "Claude Code · account1",
@@ -183,11 +183,14 @@ describe("account helpers", () => {
     expect(new Set(opts.map((o) => o.key)).size).toBe(opts.length);
 
     // Nothing signed in (or not scanned yet) → plain per-agent cards; missing executables disable them.
-    const plain = launchOptions([off], [avail("powershell"), avail("claude", { path: null }), avail("codex")]);
+    const plain = launchOptions([off], [avail("powershell"), avail("claude", { path: null }), avail("codex")], "windows");
     expect(plain.map((o) => [o.label, o.profileId ?? null, !!o.disabled])).toEqual([
       ["PowerShell", null, false],
       ["Claude Code", null, true],
       ["Codex", null, false],
     ]);
+    // macOS / Linux: the same card launches the login shell.
+    expect(launchOptions([], [avail("powershell")], "macos")[0]).toMatchObject({ label: "Shell", agent: "powershell" });
+    expect(launchOptions([], [avail("powershell")], "linux")[0].label).toBe("Shell");
   });
 });
