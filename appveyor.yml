@@ -1,0 +1,60 @@
+# AppVeyor CI (free plan for open-source projects): a second CI next to .github/workflows/ci.yml, used while
+# GitHub Actions is unavailable for this repository. One job runs at a time, so the three images build one after
+# another. The work itself lives in scripts/ci/appveyor.{ps1,sh} (same steps as the GitHub workflow):
+#   - pushes to main and pull requests: typecheck, frontend tests, frontend build, cargo test --lib
+#   - tags v*: installers only (the commit was tested when it landed on main), uploaded as build artifacts
+# Releases stay manual: download the artifacts and attach them with `gh release create` (docs/HANDOFF.md §5).
+
+version: "{build}"
+
+image:
+  - Visual Studio 2022
+  - Ubuntu2204
+  - macos-sonoma
+
+branches:
+  only:
+    - main
+    - /^v\d+\.\d+\.\d+.*$/
+
+skip_branch_with_pr: true
+max_jobs: 1
+
+environment:
+  CARGO_TERM_COLOR: always
+  RUST_MIN_STACK: "16777216"
+
+build: off
+test: off
+
+for:
+  - matrix:
+      only:
+        - image: Visual Studio 2022
+    install:
+      - ps: Install-Product node 22 x64
+    build_script:
+      - ps: .\scripts\ci\appveyor.ps1
+    artifacts:
+      - path: src-tauri\target\release\bundle\nsis\*.exe
+        name: windows-installer
+
+  - matrix:
+      only:
+        - image: Ubuntu2204
+    build_script:
+      - bash scripts/ci/appveyor.sh
+    artifacts:
+      - path: src-tauri/target/release/bundle/appimage/*.AppImage
+        name: linux-appimage
+      - path: src-tauri/target/release/bundle/deb/*.deb
+        name: linux-deb
+
+  - matrix:
+      only:
+        - image: macos-sonoma
+    build_script:
+      - bash scripts/ci/appveyor.sh
+    artifacts:
+      - path: src-tauri/target/release/bundle/dmg/*.dmg
+        name: macos-dmg
