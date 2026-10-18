@@ -8,6 +8,7 @@
 //! - `persistence` versioned, atomically written workspace state
 //! - `git`         repo info, worktrees, read-only status / diff (Changes panel), branch summary
 //! - `mission`     `<project>/.gridkeeper/mission.md`: capped read, atomic checked write, debounced watch
+//! - `replay`      mission replay recordings (`.gridkeeper/replay/*.jsonl`) and export saves
 //! - `sandbox`     GRIDKEEPER_SANDBOX isolated instances (own data folder + WebView2 profile)
 //! - `diagnostics` host/webview/session resource attribution
 //! - `ports`       LISTENING TCP ports per session process tree
@@ -29,6 +30,7 @@ pub mod ports;
 pub mod profiles;
 pub mod pty;
 pub mod redact;
+pub mod replay;
 pub mod sandbox;
 pub mod state;
 pub mod types;
@@ -122,6 +124,12 @@ pub fn run() {
             commands::tools::browser_open_window,
             commands::tools::browser_close_window,
             commands::tools::browser_devtools,
+            commands::replay::replay_append,
+            commands::replay::replay_list,
+            commands::replay::replay_read,
+            commands::replay::replay_delete,
+            commands::replay::replay_save_dialog,
+            commands::replay::replay_save_file,
         ])
         .build(context)
         .unwrap_or_else(|e| fatal_startup_error(&e.to_string()))

@@ -23,6 +23,10 @@ import type {
   PathInfo,
   PersistedState,
   ProfileStatus,
+  ReplayAppend,
+  ReplayExportKind,
+  ReplayInfo,
+  ReplaySaveTarget,
   SessionId,
   SessionAttention,
   SessionInfo,
@@ -123,6 +127,20 @@ export const ipc = {
   /** One file's diff over `base...HEAD`; pass a rename's `origFile` so git pairs the rename. */
   gitBranchFileDiff: (path: string, base: string, file: string, origFile: string | null = null) =>
     invoke<FileDiff>("git_branch_file_diff", { path, base, file, origFile }),
+
+  // Replay: mission recordings in <projectDir>/.gridkeeper/replay/*.jsonl and export saves.
+  /** Append JSON-object lines (name `^[A-Za-z0-9._-]+\.jsonl$`). `full` = the 5 MB cap was hit; nothing written. */
+  replayAppend: (projectDir: string, fileName: string, lines: string[]) =>
+    invoke<ReplayAppend>("replay_append", { projectDir, fileName, lines }),
+  replayList: (projectDir: string) => invoke<ReplayInfo[]>("replay_list", { projectDir }),
+  replayRead: (projectDir: string, name: string) => invoke<string>("replay_read", { projectDir, name }),
+  replayDelete: (projectDir: string, name: string) => invoke<void>("replay_delete", { projectDir, name }),
+  /** Native save dialog (run by Rust); null when cancelled. The token authorizes one replaySaveFile to that path. */
+  replaySaveDialog: (defaultName: string, kind: ReplayExportKind) =>
+    invoke<ReplaySaveTarget | null>("replay_save_dialog", { defaultName, kind }),
+  /** Raw binary body (no JSON number[]: a 20 MB video stays 20 MB on the wire). Returns the written path. */
+  replaySaveFile: (token: string, bytes: Uint8Array) =>
+    invoke<string>("replay_save_file", bytes, { headers: { "x-replay-token": token } }),
 };
 
 export function onSessionState(cb: (info: SessionInfo) => void): Promise<UnlistenFn> {
