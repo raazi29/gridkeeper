@@ -8,6 +8,9 @@ import type {
   AccountsSnapshot,
   AgentAvailability,
   AgentKind,
+  BranchSummary,
+  MissionChanged,
+  MissionFile,
   PlannedHome,
   ClaudeProfile,
   Diagnostics,
@@ -25,13 +28,15 @@ import type {
   SessionSpec,
   WorktreeInfo,
 } from "./types";
-import { EVT_SESSION_ATTENTION, EVT_SESSION_STATE } from "./types";
+import { EVT_MISSION_CHANGED, EVT_SESSION_ATTENTION, EVT_SESSION_STATE } from "./types";
 
 export interface AppInfo {
   version: string;
   windowsBuild: number | null;
   bench: string | null;
   benchScriptsDir: string | null;
+  /** GRIDKEEPER_SANDBOX name when this is an isolated test instance (own data folder, no single-instance lock). */
+  sandbox: string | null;
 }
 
 export const ipc = {
@@ -86,6 +91,18 @@ export const ipc = {
   gitChanges: (path: string) => invoke<RepoChanges>("git_changes", { path }),
   gitDiff: (repo: string, file: string, staged: boolean, untracked: boolean) =>
     invoke<FileDiff>("git_diff", { repo, file, staged, untracked }),
+  /** Branch vs base (ahead/behind, shortstat, uncommitted count, last commit). base null = main worktree branch. */
+  gitBranchSummary: (path: string, base: string | null) => invoke<BranchSummary>("git_branch_summary", { path, base }),
+
+  // Mission file: <projectDir>/.gridkeeper/mission.md (shared task board every agent can edit).
+  missionRead: (projectDir: string) => invoke<MissionFile>("mission_read", { projectDir }),
+  /** Atomic write; creates .gridkeeper/ (with a self-ignoring .gitignore). Rejects with code "conflict" when the
+   *  file changed since `expectedModifiedMs` (null = must not exist yet, undefined = no check). */
+  missionWrite: (projectDir: string, text: string, expectedModifiedMs?: number | null) =>
+    invoke<MissionFile>("mission_write", { projectDir, text, expectedModifiedMs, checkExpected: expectedModifiedMs !== undefined }),
+  /** Ref-counted filesystem watch (no polling) emitting EVT_MISSION_CHANGED. Pair every watch with an unwatch. */
+  missionWatch: (projectDir: string) => invoke<void>("mission_watch", { projectDir }),
+  missionUnwatch: (projectDir: string) => invoke<void>("mission_unwatch", { projectDir }),
   /** Listening TCP ports per running session. Call only while a view shows ports (or once per activity change). */
   portsList: () => invoke<SessionPorts[]>("ports_list"),
   browserProbe: (url: string) => invoke<FrameProbe>("browser_probe", { url }),
@@ -113,4 +130,8 @@ export function onSessionAttention(cb: (ev: SessionAttention) => void): Promise<
 export function errorMessage(e: unknown): string {
   if (e && typeof e === "object" && "message" in e) return String((e as { message: unknown }).message);
   return String(e);
+}
+
+export function onMissionChanged(cb: (ev: MissionChanged) => void): Promise<UnlistenFn> {
+  return listen<MissionChanged>(EVT_MISSION_CHANGED, (e) => cb(e.payload));
 }

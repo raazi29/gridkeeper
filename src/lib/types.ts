@@ -59,6 +59,8 @@ export const EVT_SESSION_STATE = "session-state";
 
 /** Attention signal from Rust (see src-tauri/src/pty/attention.rs). */
 export const EVT_SESSION_ATTENTION = "session-attention";
+/** Payload { projectDir } — the mission file of a watched project folder changed (see mission_watch). */
+export const EVT_MISSION_CHANGED = "mission-changed";
 export type AttentionKind = "bell" | "notify" | "status" | "idle" | "active";
 
 export interface SessionAttention {
@@ -492,3 +494,40 @@ export const DEFAULT_SETTINGS: Settings = {
   pasteWarning: true,
   rightClickAction: "menu",
 };
+
+// ---- Mission (shared task board file) ------------------------------------------------------------
+
+/** `<projectDir>/.gridkeeper/mission.md`, read by mission_read / written by mission_write. */
+export interface MissionFile {
+  /** Absolute path of the mission file (whether or not it exists). */
+  path: string;
+  exists: boolean;
+  /** File contents (UTF-8, at most 256 KiB; "" when missing). */
+  text: string;
+  /** Last-write time in ms since the epoch; null when missing. Pass back to mission_write for conflict checks. */
+  modifiedMs: number | null;
+}
+
+export interface MissionChanged {
+  projectDir: string;
+}
+
+/** A worktree's branch measured against a base branch (read-only, for Mission Control sign-off). */
+export interface BranchSummary {
+  isRepo: boolean;
+  branch: string | null;
+  /** The base actually used: the requested one, else the main worktree's branch; null when unresolvable. */
+  base: string | null;
+  /** Commits on HEAD not on base / on base not on HEAD. */
+  ahead: number;
+  behind: number;
+  /** `git diff --shortstat base...HEAD` (committed work only). */
+  filesChanged: number;
+  insertions: number;
+  deletions: number;
+  /** Entries in `git status --porcelain` (uncommitted, incl. untracked). */
+  uncommitted: number;
+  lastCommitSubject: string | null;
+  /** Last commit time in ms since the epoch. */
+  lastCommitMs: number | null;
+}
