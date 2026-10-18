@@ -4,11 +4,12 @@ Working notes for the next session's agents (and humans). Read this first, then
 [ARCHITECTURE.md](ARCHITECTURE.md) for depth and [TECHNICAL_DECISIONS.md](TECHNICAL_DECISIONS.md) for the why.
 Ideas for what to build next are in [ROADMAP.md](ROADMAP.md).
 
-**State as of 2026-10-18:** the repo is **public** (github.com/raazi29/gridkeeper, MIT). The latest published
-release is v0.1.1 (`gh release view v0.1.1 -R raazi29/gridkeeper`, installer `Gridkeeper_0.1.1_x64-setup.exe`,
-≈6 MB). The v0.1.2 commit (`e603751`, WebView2 crash recovery) is on `main`, but its GitHub release was **never
-published**. 164 Rust tests at v0.1.1, 420 frontend tests at `6c8cf73`, 22/22 live e2e checks at the v0.1.1 release.
-CI runs on every push to `main` and every PR (`.github/workflows/ci.yml`), on Windows, Ubuntu 22.04 and macOS
+**State as of 2026-10-18:** the repo is **public** (github.com/raazi29/gridkeeper, MIT). v0.2.0 adds the mission
+board, lead control (off / advisor / autopilot, `team.md` + `outbox/`), Mission Control drag and drop, sign-off
+evidence with committed branch diffs, Mission Replay (MP4/WebM/GIF), the Skills panel, the Claude cost & context
+meter, macOS/Linux support (preview) and sandbox instances for testing next to a live app. At v0.2.0: 252 Rust
+lib tests and 714 frontend tests on Windows; installers are built by CI from the `v0.2.0` tag (never locally on a
+machine that is running agents). CI runs on every push to `main` and every PR (`.github/workflows/ci.yml`), on Windows, Ubuntu 22.04 and macOS
 (macOS / Linux support: [section 10](#10-platforms-windows-macos-linux); Windows stays the reference platform and the
 only one verified by hand so far). Main checkout: `D:\AlteraAI`. Agents work
 in `D:\AlteraAI\.claude\worktrees\agent-*`, usually **while the developer runs the installed Gridkeeper with those
