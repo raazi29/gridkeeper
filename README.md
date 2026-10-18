@@ -5,6 +5,7 @@
 <p align="center">
   <a href="https://github.com/raazi29/gridkeeper/releases/latest"><img alt="Release v0.1.2" src="https://img.shields.io/badge/release-v0.1.2-4cc2ff?style=flat-square&labelColor=0b1220" /></a>
   <img alt="Platform: Windows 10 | 11" src="https://img.shields.io/badge/platform-Windows%2010%20%7C%2011-4cc2ff?style=flat-square&labelColor=0b1220" />
+  <a href="https://github.com/raazi29/gridkeeper/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/raazi29/gridkeeper/actions/workflows/ci.yml/badge.svg?branch=main" /></a>
   <a href="LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-3ddc84?style=flat-square&labelColor=0b1220" /></a>
   <img alt="Built with Tauri 2" src="https://img.shields.io/badge/Tauri-2.12-24c8db?style=flat-square&labelColor=0b1220&logo=tauri&logoColor=white" />
   <img alt="Rust" src="https://img.shields.io/badge/Rust-stable-f46623?style=flat-square&labelColor=0b1220&logo=rust&logoColor=white" />
@@ -44,13 +45,43 @@
 
 <p align="center"><img src="docs/assets/readme/saber-blue.svg" width="100%" alt="" /></p>
 
+## Mission: one Markdown file, a whole agent team
+
+Give the team a goal. The lead writes tasks into `.gridkeeper/mission.md`, builders claim them (`[~]`) and tick them
+off (`[x]`), reviewers sign off. Gridkeeper's Mission Control renders the board live, shows who is on what, and puts
+each finished branch's evidence (commits, files, lines) next to a *Review diff* button.
+
+```markdown
+# Mission: Add OAuth login with GitHub
+
+## Tasks
+- [x] Plan the auth flow and split the work @lead
+- [~] Implement /auth/callback and token storage @builder-1
+- [~] Wire the button to /auth/start @builder-2
+- [!] Blocked: needs the GitHub client secret in .env @builder-1
+- [ ] Review both branches @verifier
+```
+
+**Use the protocol with any agent, on any OS, even without Gridkeeper.** It ships as an Agent Skill:
+
+```bash
+# Claude Code
+/plugin marketplace add raazi29/gridkeeper
+/plugin install agent-mission@gridkeeper
+
+# any Agent Skills host (Claude Code, Codex, Gemini CLI, Cursor, ...)
+npx skills add raazi29/gridkeeper
+```
+
+Then tell one agent "start a mission: …" and the others "join the mission". See [`skills/agent-mission/SKILL.md`](skills/agent-mission/SKILL.md).
+
 ## Features
 
 <table>
 <tr>
 <td width="33%" valign="top">🧩 <b>Agent grid</b><br/>Workspaces → groups → panes in a grid, columns or rows. Resizable splits, drag to reorder, maximize any pane.</td>
 <td width="33%" valign="top">👥 <b>Many accounts, truly separate</b><br/>Several Claude Code, Codex and Hermes logins side by side, one isolated home folder per account. Credentials are never read.</td>
-<td width="33%" valign="top">🛰️ <b>Mission Control &amp; Formations</b><br/>A team view of the workspace (lead, lanes, sign-off, live activity) and one-click agent teams with their own git worktrees.</td>
+<td width="33%" valign="top">🛰️ <b>Mission Control &amp; Formations</b><br/>A shared task board your agents read and update, a live team view (lead, lanes, sign-off with git evidence) and one-click agent teams with their own worktrees.</td>
 </tr>
 <tr>
 <td valign="top">🔔 <b>Knows when an agent needs you</b><br/>Attention lamps, unread badges, Windows notifications, a Comms feed. <code>Ctrl+Shift+J</code> jumps to the next alert.</td>
@@ -231,7 +262,10 @@ xterm.js 6 in the system WebView2.
 - **Broadcast (Ctrl+Shift+K):** type once, send to several selected sessions (confirmation for more than 3 targets or
   other workspaces; never sends on its own).
 - **Next alert (Ctrl+Shift+J):** jump to the next session that needs you.
-- **Mission Control (Ctrl+Shift+U):** lead node(s), one lane per group, a sign-off node, an activity river and the session log. Every figure is real; nothing is estimated. Sessions can carry roles (lead, scout, builder, reviewer, verifier).
+- **Mission Control (Ctrl+Shift+U):** the mission board, lead node(s), one lane per group, a sign-off node, an activity river and the session log. Every figure is real; nothing is estimated. Sessions can carry roles (lead, scout, builder, reviewer, verifier).
+  - **Mission board:** `<project>/.gridkeeper/mission.md`, a plain Markdown checklist (`- [ ] task @owner`, `[~]` doing, `[x]` done, `[!]` blocked) that agents read and edit themselves. Gridkeeper watches it (filesystem events, no polling) and shows goal, progress, owners and each agent's current task on its card. Click a box to change its state; conflicting edits are detected, never overwritten.
+  - **Brief team:** one dialog with a per-role line for every running agent (the lead plans into the board, builders claim tasks, reviewers verify). Agents that are asking you something are skipped. Nothing is sent until you press Send.
+  - **Sign-off with evidence:** finished agents show their branch, commits ahead, files and lines changed, uncommitted leftovers and last commit. *Review diff* opens the Changes drawer on that worktree; *Hand off* sends a review request to the reviewer, verifier or lead after you confirm the text.
 - **Formations:** launch a planned agent team (groups, sessions, `git worktree add -b` per member) after one confirmation. Optional starter prompts are held while an agent shows a trust / permission / login question, so nothing is auto-approved.
 - **Quick launch:** *+ New* in the header and one-click agent cards in empty groups start a session in the
   workspace folder; the full dialog handles worktrees, arguments and launching several at once.
@@ -444,21 +478,24 @@ pwsh -File scripts/bench/run-all.ps1 -Exe src-tauri/target/release/gridkeeper.ex
 
 #### E2E scripts
 
-The e2e scripts drive the running dev app over the Chrome DevTools Protocol:
+The e2e scripts drive a sandboxed dev instance over the Chrome DevTools Protocol, so they never touch a Gridkeeper you are using:
 
 ```powershell
-$env:WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS = "--remote-debugging-port=9222"
-npm run tauri dev
+npm run sandbox                                            # isolated dev instance, CDP on 9333 (scripts/dev/sandbox.ps1)
 # in another shell:
+$env:CDP_PORT = 9333
 node scripts/e2e/cdp.mjs file scripts/e2e/full-verify.js  # full verification suite (PowerShell panes only)
 node scripts/e2e/cdp.mjs file scripts/e2e/ps-basic.js     # pwsh prompt, echo, Unicode, 20,000 lines
+node scripts/e2e/cdp.mjs file scripts/e2e/mission.js      # Mission Control task board (temp git repo, PowerShell panes only)
 node scripts/e2e/cdp.mjs file scripts/e2e/multi-agent.js  # 3 Claude profiles + 2 Codex + 1 pwsh (sends no prompts)
 node scripts/e2e/cdp.mjs file scripts/e2e/codex-race.js   # 3 Codex started in the same tick
 node scripts/e2e/cdp.mjs eval "window.__gridkeeperTerminals.list()"
 node scripts/e2e/cdp.mjs shot out.png
+npm run sandbox:stop -- -Name dev
 ```
 
-The scripts use hard-coded `D:\AlteraAI` as the working folder; edit them for other locations. Debug hooks (dev builds)
+`cdp.mjs file` only runs against a sandbox instance (`E2E_ALLOW_LIVE=1` overrides). Scripts use `E2E_CWD` (default:
+the current directory) as their working folder. Debug hooks (dev builds)
 are `window.__gridkeeper`, `window.__gridkeeperTerminals.list()/text(id)` and `window.__gridkeeperForceContextLoss(id?)`
 (simulates a GPU context loss). The README demo is recorded with `node scripts/showcase/record.mjs`.
 
