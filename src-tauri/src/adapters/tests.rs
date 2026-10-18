@@ -212,6 +212,29 @@ fn codex_resume_modes() {
     assert_eq!(resolve_launch(&s, &f.profiles, &f.settings).unwrap().args, vec!["resume", UUID]);
 }
 
+#[cfg(unix)]
+#[test]
+fn default_terminal_is_the_login_shell() {
+    let f = fixture();
+    let mut s = spec(AgentKind::Powershell, &f.cwd);
+    s.args = vec!["-c".into(), "true".into()];
+    let plan = resolve_launch(&s, &f.profiles, &f.settings).unwrap();
+    assert!(plan.program.is_absolute() && plan.program.is_file(), "{:?}", plan.program);
+    let login: &[&str] = if cfg!(target_os = "macos") { &["-l"] } else { &[] };
+    let pwsh = plan.program.file_stem().is_some_and(|n| n == "pwsh");
+    let expected: Vec<&str> = if pwsh { vec!["-NoLogo"] } else { login.to_vec() }.into_iter().chain(["-c", "true"]).collect();
+    assert_eq!(plan.args, expected);
+    assert_eq!(adapter_for(AgentKind::Powershell).display_name(), "Shell");
+
+    // A settings override wins and gets the same treatment.
+    let mut settings = f.settings.clone();
+    settings.agent_paths.powershell = Some("/bin/sh".into());
+    let plan = resolve_launch(&spec(AgentKind::Powershell, &f.cwd), &f.profiles, &settings).unwrap();
+    assert_eq!(plan.program, PathBuf::from("/bin/sh"));
+    assert_eq!(plan.args, login.iter().map(|s| s.to_string()).collect::<Vec<_>>());
+}
+
+#[cfg(windows)]
 #[test]
 fn powershell_args() {
     let f = fixture();
@@ -236,24 +259,42 @@ fn generic_requires_command_and_handles_batch() {
     assert_eq!(plan.args, vec!["a b"]);
     assert!(plan.display.ends_with("\"a b\""), "{}", plan.display);
 
-    // A sibling .exe wins over the .cmd.
-    s.command = Some(f.fake_bin.join("tool.cmd").to_string_lossy().into());
-    assert_eq!(resolve_launch(&s, &f.profiles, &f.settings).unwrap().program, f.fake_bin.join("tool.exe"));
+    #[cfg(windows)]
+    {
+        // A sibling .exe wins over the .cmd.
+        s.command = Some(f.fake_bin.join("tool.cmd").to_string_lossy().into());
+        assert_eq!(resolve_launch(&s, &f.profiles, &f.settings).unwrap().program, f.fake_bin.join("tool.exe"));
 
-    // A lone .cmd goes through cmd.exe /d /c, and cmd metacharacters are refused.
-    std::fs::remove_file(f.fake_bin.join("tool.exe")).unwrap();
-    let plan = resolve_launch(&s, &f.profiles, &f.settings).unwrap();
-    assert!(plan.program.to_string_lossy().to_ascii_lowercase().ends_with("cmd.exe"));
-    assert_eq!(&plan.args[..2], &["/d", "/c"]);
-    assert!(plan.args[2].ends_with("tool.cmd"));
-    s.args = vec!["x & calc".into()];
-    assert!(matches!(resolve_launch(&s, &f.profiles, &f.settings), Err(AppError::Invalid(_))));
+        // A lone .cmd goes through cmd.exe /d /c, and cmd metacharacters are refused.
+        std::fs::remove_file(f.fake_bin.join("tool.exe")).unwrap();
+        let plan = resolve_launch(&s, &f.profiles, &f.settings).unwrap();
+        assert!(plan.program.to_string_lossy().to_ascii_lowercase().ends_with("cmd.exe"));
+        assert_eq!(&plan.args[..2], &["/d", "/c"]);
+        assert!(plan.args[2].ends_with("tool.cmd"));
+        s.args = vec!["x & calc".into()];
+        assert!(matches!(resolve_launch(&s, &f.profiles, &f.settings), Err(AppError::Invalid(_))));
 
-    // Bare names resolve via PATH.
-    s.command = Some("cmd".into());
-    s.args = vec![];
-    let plan = resolve_launch(&s, &f.profiles, &f.settings).unwrap();
-    assert!(plan.program.to_string_lossy().to_ascii_lowercase().ends_with("cmd.exe"));
+        // Bare names resolve via PATH.
+        s.command = Some("cmd".into());
+        s.args = vec![];
+        let plan = resolve_launch(&s, &f.profiles, &f.settings).unwrap();
+        assert!(plan.program.to_string_lossy().to_ascii_lowercase().ends_with("cmd.exe"));
+    }
+    #[cfg(not(windows))]
+    {
+        // No shims on Unix: a .cmd file is just a file, run as is, and its arguments are not cmd-checked.
+        s.command = Some(f.fake_bin.join("tool.cmd").to_string_lossy().into());
+        s.args = vec!["x & calc".into()];
+        let plan = resolve_launch(&s, &f.profiles, &f.settings).unwrap();
+        assert_eq!(plan.program, f.fake_bin.join("tool.cmd"));
+        assert_eq!(plan.args, vec!["x & calc"]);
+
+        // Bare names resolve via PATH.
+        s.command = Some("sh".into());
+        s.args = vec![];
+        let plan = resolve_launch(&s, &f.profiles, &f.settings).unwrap();
+        assert!(plan.program.is_absolute() && plan.program.ends_with("sh"), "{:?}", plan.program);
+    }
 
     s.command = Some("definitely-missing-altera-tool".into());
     assert!(matches!(resolve_launch(&s, &f.profiles, &f.settings), Err(AppError::MissingExecutable(_))));
@@ -317,17 +358,15 @@ fn preset_account_sets_hermes_home() {
     s.profile_id = Some(acct.id.clone());
     s.args = vec!["setup".into()];
     let plan = resolve_launch(&s, &f.profiles, &f.settings).unwrap();
-    assert_eq!(
-        env(&plan, "HERMES_HOME").map(PathBuf::from),
-        Some(f.home.join(r"AppData\Local\hermes\profiles\side"))
-    );
+    let hermes_root = crate::accounts::test_hermes_root(&f.home);
+    assert_eq!(env(&plan, "HERMES_HOME").map(PathBuf::from), Some(hermes_root.join("profiles").join("side")));
     assert_eq!(plan.args, vec!["setup"]);
 
     // Default Hermes account: HERMES_HOME set explicitly to the platform default (Hermes asks for it).
     let default = f.profiles.create_in(hermes, "Default".into(), None, None).unwrap();
     s.profile_id = Some(default.id.clone());
     let plan = resolve_launch(&s, &f.profiles, &f.settings).unwrap();
-    assert_eq!(env(&plan, "HERMES_HOME").map(PathBuf::from), Some(f.home.join(r"AppData\Local\hermes")));
+    assert_eq!(env(&plan, "HERMES_HOME").map(PathBuf::from), Some(hermes_root));
     assert!(!removed(&plan, "HERMES_HOME"));
 
     // Tools without account isolation refuse an account id.
@@ -366,7 +405,11 @@ fn detect_reports_every_kind() {
     assert!(claude.path.is_none() && claude.error.is_some());
     let ps = found.iter().find(|a| a.kind == AgentKind::Powershell).unwrap();
     assert!(ps.path.is_some(), "{ps:?}");
-    assert!(ps.version.is_some(), "{ps:?}");
+    // Unix: the login shell; POSIX sh has no --version, so only bash / zsh / ... report one.
+    let probed = cfg!(windows) || !ps.path.as_deref().is_some_and(|p| p.ends_with("/sh") || p.ends_with("/dash"));
+    if probed {
+        assert!(ps.version.is_some(), "{ps:?}");
+    }
     let generic = found.iter().find(|a| a.kind == AgentKind::Generic && a.preset.is_none()).unwrap();
     assert!(generic.error.is_none());
 }

@@ -192,11 +192,28 @@ pub fn interpret_probe(stdout: &[u8], exit_code: Option<i32>, truncated: bool) -
     }
 }
 
+#[cfg(windows)]
 fn curl_exe() -> Option<std::path::PathBuf> {
     // Prefer the copy shipped with Windows (System32) over whatever is first on PATH.
     let sys = std::env::var_os("SystemRoot").map(|r| std::path::PathBuf::from(r).join("System32").join("curl.exe"));
     sys.filter(|p| p.is_file()).or_else(|| which::which("curl.exe").ok())
 }
+
+/// macOS ships `/usr/bin/curl`; Linux distributions almost always do too.
+#[cfg(not(windows))]
+fn curl_exe() -> Option<std::path::PathBuf> {
+    let sys = std::path::PathBuf::from("/usr/bin/curl");
+    if sys.is_file() { Some(sys) } else { which::which("curl").ok() }
+}
+
+/// User agent of the probe (the platform part only matters to sites that sniff it).
+const PROBE_UA: &str = if cfg!(windows) {
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Gridkeeper"
+} else if cfg!(target_os = "macos") {
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) Gridkeeper"
+} else {
+    "Mozilla/5.0 (X11; Linux x86_64) Gridkeeper"
+};
 
 /// Probe an http(s) URL (see module docs). `file:` and invalid URLs are rejected.
 pub fn probe(url: &str) -> AppResult<FrameProbe> {
@@ -205,7 +222,8 @@ pub fn probe(url: &str) -> AppResult<FrameProbe> {
         return Err(AppError::Invalid("Only http and https URLs can be probed".into()));
     }
     let Some(curl) = curl_exe() else {
-        return Ok(FrameProbe { error: Some("curl.exe not available".into()), ..Default::default() });
+        let missing = if cfg!(windows) { "curl.exe not available" } else { "curl not available" };
+        return Ok(FrameProbe { error: Some(missing.into()), ..Default::default() });
     };
     let mut cmd = process::hidden_command(curl);
     // `-q` must come first: it disables ~/.curlrc. The URL is validated to start with http(s)://,
@@ -215,7 +233,7 @@ pub fn probe(url: &str) -> AppResult<FrameProbe> {
         "--proto", "=http,https", "--proto-redir", "=http,https",
         // A corporate HTTP(S)_PROXY must not swallow local dev servers.
         "--noproxy", "localhost,127.0.0.1,::1,.localhost",
-        "-A", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Gridkeeper",
+        "-A", PROBE_UA,
         "-H", "Accept: text/html,application/xhtml+xml;q=0.9,*/*;q=0.8",
     ])
     .arg(&url);

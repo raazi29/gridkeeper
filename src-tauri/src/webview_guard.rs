@@ -9,6 +9,9 @@
 //!   the config (`lib.rs` keeps the app alive while no window exists);
 //! - GPU / utility processes exited: WebView2 restarts those itself; lost WebGL contexts are
 //!   handled by the terminal registry. Logged only.
+//!
+//! Windows only. On macOS / Linux `install` does nothing: WKWebView / WebKitGTK web-process crashes
+//! are not handled yet (the page would have to be reloaded by hand).
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
@@ -21,6 +24,7 @@ pub const MAIN: &str = "main";
 /// Set while the main window is being rebuilt, so destroying the dead one doesn't exit the app.
 static REBUILDING: AtomicBool = AtomicBool::new(false);
 /// Recent recoveries, to back off instead of thrashing while memory is still exhausted.
+#[cfg_attr(not(windows), allow(dead_code))]
 static RECOVERIES: Mutex<Vec<Instant>> = Mutex::new(Vec::new());
 
 pub fn rebuilding() -> bool {
@@ -28,6 +32,7 @@ pub fn rebuilding() -> bool {
 }
 
 /// Delay before the next recovery: none for the first two in a minute, then growing to 30 s.
+#[cfg_attr(not(windows), allow(dead_code))]
 fn backoff() -> Duration {
     let mut r = RECOVERIES.lock();
     let now = Instant::now();
@@ -130,6 +135,7 @@ fn hook(
 
 /// Destroy the dead main window and build a new one from the config. Runs off the UI thread:
 /// window creation from inside a WebView2 callback would re-enter the event loop.
+#[cfg_attr(not(windows), allow(dead_code))]
 fn rebuild(app: AppHandle) {
     if REBUILDING.swap(true, Ordering::AcqRel) {
         return;
@@ -181,6 +187,7 @@ fn rebuild(app: AppHandle) {
     });
 }
 
+#[cfg_attr(not(windows), allow(dead_code))]
 async fn pause(d: Duration) {
     if !d.is_zero() {
         tauri::async_runtime::spawn_blocking(move || std::thread::sleep(d)).await.ok();

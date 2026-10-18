@@ -1,6 +1,7 @@
 // Bottom status bar (24px): breadcrumb, running count, app vs agents resources, renderer status.
 
 import { APP_NAME } from "../lib/brand";
+import { cpuShareLabel, webviewLabel } from "../lib/platform";
 import { useApp, isLive, selectActiveGroup, selectActiveWorkspace } from "../store/appStore";
 import { useUi } from "../store/uiStore";
 import { CommsButton, FleetButton } from "./Comms";
@@ -104,7 +105,7 @@ function ResourceItems({ onClick }: { onClick: () => void }) {
         type="button"
         className="sb-item sb-btn"
         onClick={onClick}
-        title={`${APP_NAME} app = host process + WebView2 (${diag.host.processCount + diag.webview.processCount} processes)\nCPU as in Task Manager: share of all ${cores} logical cores`}
+        title={`${APP_NAME} app = host process + ${webviewLabel()} (${diag.host.processCount + diag.webview.processCount} processes)\n${cpuShareLabel()}: share of all ${cores} logical cores`}
       >
         App CPU {formatCpu(appCpu)} · RAM {formatMb(appMem)}
       </button>
@@ -131,7 +132,8 @@ function RendererItem({ onClick, live }: { onClick: () => void; live: boolean })
   let title: string;
   if (r.webglActive > 0) {
     text = `GPU: WebGL ×${r.webglActive}${load ? ` · ${load}` : ""}`;
-    title = `${r.gpuRenderer ?? "GPU renderer string unavailable"}${r.domActive ? `\n${r.domActive} terminal(s) on DOM renderer` : ""}${r.contextLosses ? `\n${r.contextLosses} WebGL context loss(es)` : ""}${diag?.gpu ? `\n\n${gpuTooltip(diag)}` : ""}`;
+    const gpuTip = diag?.gpu ? gpuTooltip(diag) : ""; // "" on macOS / Linux (no GPU telemetry there)
+    title = `${r.gpuRenderer ?? "GPU renderer string unavailable"}${r.domActive ? `\n${r.domActive} terminal(s) on DOM renderer` : ""}${r.contextLosses ? `\n${r.contextLosses} WebGL context loss(es)` : ""}${gpuTip ? `\n\n${gpuTip}` : ""}`;
   } else if (r.domActive > 0) {
     text = "Renderer: DOM (software)";
     title = r.webglSupported ? `WebGL available: ${r.gpuRenderer ?? "unknown GPU"}` : "WebGL unavailable in this WebView";

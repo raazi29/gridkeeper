@@ -22,6 +22,7 @@ import { useFind } from "../../store/findStore";
 import { requestRename } from "../../store/renameRequest";
 import { confirmDialog } from "../../store/uiStore";
 import { copyTerminalSelection, pasteIntoTerminal, selectAllInTerminal, zoomTerminal } from "../../terminal/registry";
+import { copyHint, pasteHint } from "../../terminal/terminalKeys";
 import type { MenuAction, MenuItem } from "../ui/Menu";
 import { newSessionSubmenu, shortcutHint, splitSubmenu } from "./common";
 
@@ -166,8 +167,8 @@ export function buildSessionMenu(id: SessionId, ctx: SessionMenuCtx, st: Session
   // ---- terminal clipboard / view tools
   if (surface === "terminal") {
     items.push(
-      { label: "Copy", hint: "Ctrl+Shift+C", disabled: !ctx.hasSelection, onSelect: () => copyTerminalSelection(id) },
-      { label: "Paste", hint: "Ctrl+V", onSelect: () => pasteIntoTerminal(id) },
+      { label: "Copy", hint: copyHint(), disabled: !ctx.hasSelection, onSelect: () => copyTerminalSelection(id) },
+      { label: "Paste", hint: pasteHint(), onSelect: () => pasteIntoTerminal(id) },
       { label: "Select all", onSelect: () => selectAllInTerminal(id) },
       { label: "Find…", hint: shortcutHint("terminal.find"), onSelect: () => useFind.getState().open(id) },
       { label: "Clear", onSelect: () => void clearSession(id) },

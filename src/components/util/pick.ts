@@ -5,6 +5,7 @@ import { open } from "@tauri-apps/plugin-dialog";
 import { revealItemInDir } from "@tauri-apps/plugin-opener";
 import { notify } from "../../actions/notify";
 import { errorMessage } from "../../lib/ipc";
+import { isWindows } from "../../lib/platform";
 
 export async function pickFolder(title: string, defaultPath?: string | null): Promise<string | null> {
   try {
@@ -23,10 +24,13 @@ export async function pickExecutable(title: string, defaultPath?: string | null)
       multiple: false,
       title,
       defaultPath: defaultPath || undefined,
-      filters: [
-        { name: "Executables", extensions: ["exe", "cmd", "bat", "ps1"] },
-        { name: "All files", extensions: ["*"] },
-      ],
+      // macOS / Linux executables usually have no extension: no filter there.
+      filters: isWindows
+        ? [
+            { name: "Executables", extensions: ["exe", "cmd", "bat", "ps1"] },
+            { name: "All files", extensions: ["*"] },
+          ]
+        : undefined,
     });
     return typeof r === "string" ? r : null;
   } catch (e) {

@@ -4,6 +4,7 @@
 import type { Diagnostics, EnginePercent, GpuAdapter } from "../lib/types";
 import type { RendererStatus } from "../terminal/registry";
 import { formatCpu, formatMb } from "./util/text";
+import { OS, type Os } from "../lib/platform";
 import "../styles/tools.css";
 
 const ENGINES: { key: keyof EnginePercent; label: string }[] = [
@@ -22,9 +23,11 @@ export function gpuLoadText(diag: Diagnostics | null | undefined): string | null
   return `GPU ${formatCpu(g.webview3dPercent)}`;
 }
 
-export function gpuTooltip(diag: Diagnostics | null | undefined): string {
+export function gpuTooltip(diag: Diagnostics | null | undefined, os: Os = OS): string {
   const g = diag?.gpu;
   if (!g) return "";
+  // macOS / Linux have no GPU telemetry by design: say nothing rather than report a failure.
+  if (!g.available && os !== "windows") return "";
   if (!g.available) return `GPU counters unavailable${g.error ? `: ${g.error}` : ""}`;
   if (g.warmingUp) return "GPU counters: first sample, utilization appears on the next refresh";
   const ui = g.adapters.find((a) => a.carriesUi);
@@ -96,6 +99,8 @@ export function GpuSection({ diag, renderer }: { diag: Diagnostics | null; rende
         <div className="muted">—</div>
       ) : !g ? (
         <div className="muted">GPU counters are not reported by this backend.</div>
+      ) : !g.available && OS !== "windows" ? (
+        <div className="muted">GPU telemetry is only available on Windows. WebGL rendering works as usual.</div>
       ) : !g.available ? (
         <div className="callout">GPU counters unavailable{g.error ? `: ${g.error}` : ""}. No GPU figure is shown rather than a guess.</div>
       ) : (

@@ -156,6 +156,19 @@ pub static CATALOG: &[CatalogEntry] = &[
         session_flag: None,
         home_env: None,
     },
+    // macOS / Linux: PowerShell 7 when installed (Windows has it as the built-in default terminal,
+    // `AgentKind::Powershell`, so it is not listed twice there). Listed only when pwsh is on PATH.
+    #[cfg(not(windows))]
+    CatalogEntry {
+        id: "pwsh",
+        name: "PowerShell",
+        exe: &["pwsh"],
+        launch: &["-NoLogo"],
+        continue_args: None,
+        pick_args: None,
+        session_flag: None,
+        home_env: None,
+    },
 ];
 
 pub fn entry(id: &str) -> Option<&'static CatalogEntry> {

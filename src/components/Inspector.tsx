@@ -3,6 +3,7 @@
 import { confirmCloseSession, confirmForceStop, focusSession } from "../actions/commands";
 import { clearSession, copyOutput, hideView, restartSession, showView, startSession, stopSession } from "../actions/sessions";
 import { isLive, useApp } from "../store/appStore";
+import { isWindows } from "../lib/platform";
 import { useUi } from "../store/uiStore";
 import { useDiagnosticsPoll } from "./hooks";
 import { RolePicker } from "./mission/RoleTag";
@@ -216,7 +217,7 @@ function SessionDetails({ id }: { id: string }) {
         <Row k="Output" mono>
           {info ? formatBytes(info.bytesOut) : "—"}
         </Row>
-        <Row k="CPU / RAM" mono title="Process tree of this session (Task Manager style CPU)">
+        <Row k="CPU / RAM" mono title={isWindows ? "Process tree of this session (Task Manager style CPU)" : "Process tree of this session (share of all logical cores)"}>
           {stats ? `${formatCpu(taskManagerCpu(stats.cpuPercent, cores))} · ${formatMb(stats.memoryBytes)} · ${stats.processCount} proc` : "—"}
         </Row>
         {info?.commandDisplay && (

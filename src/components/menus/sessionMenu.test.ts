@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { SessionInfo, SessionMeta } from "../../lib/types";
+import { shellLabel } from "../../lib/platform";
 import { useApp } from "../../store/appStore";
 import { useAttentionUi } from "../../store/attention";
 import { useUi } from "../../store/uiStore";
@@ -73,7 +74,7 @@ describe("buildSessionMenu — terminal", () => {
 
   it("New session submenu lists agents and adds the formation / dialog entries", () => {
     const sub = find(buildSessionMenu("s1", { surface: "terminal" }, state()), "New session")!.children!;
-    expect(labels(sub)).toContain("PowerShell");
+    expect(labels(sub)).toContain(shellLabel()); // "PowerShell" on Windows, "Shell" on macOS / Linux
     expect(labels(sub)).toContain("More options…");
     expect(labels(sub)).toContain("Browser");
     expect(labels(sub)).toContain("Launch formation…"); // group not empty / unknown: no "here"

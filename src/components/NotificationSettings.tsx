@@ -6,6 +6,7 @@ import { SOUND_SETS, playSound } from "../audio/sounds";
 import { toggleSessionMute, toggleWorkspaceMute, updateNotif, useNotif } from "../actions/notifyPrefs";
 import { inQuietHours } from "../actions/notifyRules";
 import { APP_NAME } from "../lib/brand";
+import { osNotificationName, shellLabel } from "../lib/platform";
 import type { NotificationSettings as Notif, NotifyDelivery, SoundSet } from "../lib/types";
 import { useApp } from "../store/appStore";
 import { IconBellOff } from "./MutedGlyph";
@@ -48,7 +49,7 @@ const EVENTS: { key: keyof Pick<Notif, "onInput" | "onIdle" | "onError" | "onBel
 const AGENTS: { key: keyof Notif["agents"]; label: string }[] = [
   { key: "claude", label: "Claude Code" },
   { key: "codex", label: "Codex" },
-  { key: "powershell", label: "PowerShell" },
+  { key: "powershell", label: shellLabel() },
   { key: "other", label: "Other tools" },
 ];
 
@@ -106,8 +107,8 @@ export function NotificationSettings() {
           value={n.delivery}
           onChange={(delivery) => updateNotif({ delivery })}
           options={[
-            { value: "toast", label: "Windows + in-app", title: "Windows notification while in the background; in-app toast with Jump while in front", disabled: off },
-            { value: "inApp", label: "In-app only", title: "Only in-app toasts, never Windows notifications", disabled: off },
+            { value: "toast", label: `${osNotificationName()} + in-app`, title: `${osNotificationName()} notification while in the background; in-app toast with Jump while in front`, disabled: off },
+            { value: "inApp", label: "In-app only", title: `Only in-app toasts, never ${osNotificationName()} notifications`, disabled: off },
             { value: "off", label: "Comms feed only", title: "No toasts; alerts only collect in Comms", disabled: off },
           ]}
         />

@@ -3,7 +3,8 @@
 import { memo, useEffect, useState } from "react";
 import { COMMANDS, THEME_COMMAND_PREFIX } from "../actions/commands";
 import { notify } from "../actions/notify";
-import { DEFAULT_BINDINGS, displayCombo, eventToCombo, forbiddenReason } from "../keybindings/combo";
+import { defaultBindings, displayCombo, eventToCombo, forbiddenReason } from "../keybindings/combo";
+import { OS, isWindows, shellLabel } from "../lib/platform";
 import { errorMessage, ipc } from "../lib/ipc";
 import type { AgentPaths, LayoutPreset, RendererPref, RightClickAction, Settings, UiDensity } from "../lib/types";
 import { DEFAULT_SETTINGS } from "../lib/types";
@@ -117,7 +118,7 @@ function AppearanceSection() {
             options={TERMINAL_FONTS.map((f) => ({ value: f.value, label: f.label }))}
           />
         </Field>
-        <Toggle checked={reduceMotion} onChange={setReduceMotion} label="Reduce motion" hint="Turns off transitions, lamp pulses, the holo band, the hyperspace jump, saber effects and the CRT overlay. Also follows the Windows animation setting." />
+        <Toggle checked={reduceMotion} onChange={setReduceMotion} label="Reduce motion" hint={`Turns off transitions, lamp pulses, the holo band, the hyperspace jump, saber effects and the CRT overlay. Also follows the ${isWindows ? "Windows animation" : "system reduce-motion"} setting.`} />
         <HyperspaceToggle />
       </section>
 
@@ -252,11 +253,18 @@ function TerminalSection() {
   );
 }
 
-const AGENT_ROWS: { key: keyof AgentPaths; label: string; hint: string }[] = [
-  { key: "claude", label: "Claude Code", hint: "claude.exe (native install preferred over the npm claude.cmd shim)" },
-  { key: "codex", label: "Codex", hint: "codex.exe or codex.cmd" },
-  { key: "powershell", label: "PowerShell", hint: "pwsh.exe (PowerShell 7) or powershell.exe" },
-];
+const AGENT_ROWS: { key: keyof AgentPaths; label: string; hint: string }[] =
+  OS === "windows"
+    ? [
+        { key: "claude", label: "Claude Code", hint: "claude.exe (native install preferred over the npm claude.cmd shim)" },
+        { key: "codex", label: "Codex", hint: "codex.exe or codex.cmd" },
+        { key: "powershell", label: "PowerShell", hint: "pwsh.exe (PowerShell 7) or powershell.exe" },
+      ]
+    : [
+        { key: "claude", label: "Claude Code", hint: "claude (native install in ~/.local/bin preferred, else PATH)" },
+        { key: "codex", label: "Codex", hint: "codex on PATH" },
+        { key: "powershell", label: shellLabel(), hint: "Login shell ($SHELL), e.g. /bin/zsh; any shell path works, including pwsh" },
+      ];
 
 function AgentsSection() {
   const paths = useApp((s) => s.persisted.settings.agentPaths);
@@ -385,7 +393,8 @@ function KeysSection() {
     const owner = combo ? Object.entries(effective).find(([cid, c]) => c === combo && cid !== id)?.[0] : undefined;
     if (owner) next[owner] = "";
     // Drop overrides equal to the default to keep the file tidy.
-    for (const [cid, c] of Object.entries(next)) if (DEFAULT_BINDINGS[cid] === c || (!(cid in DEFAULT_BINDINGS) && c === "")) delete next[cid];
+    const defaults = defaultBindings();
+    for (const [cid, c] of Object.entries(next)) if (defaults[cid] === c || (!(cid in defaults) && c === "")) delete next[cid];
     useApp.getState().updateSettings({ keybindings: next });
     setMessage(owner ? { id, text: `Removed from “${titles[owner] ?? owner}”`, tone: "info" } : null);
   };
@@ -400,7 +409,9 @@ function KeysSection() {
   return (
     <div className="keys">
       <p className="explain explain-top">
-        Click a shortcut to record a new one. Terminal keys are protected: plain Ctrl+letter, Alt+letter, arrows, Tab, Enter, Esc and function keys always go to the terminal.
+        {OS === "macos"
+          ? "Click a shortcut to record a new one. Terminal keys are protected: ⌃ Control combinations, ⌥+letter, arrows, Tab, Return, Esc and function keys always go to the terminal, and macOS / Edit-menu shortcuts (⌘C, ⌘V, ⌘Q, ⌘Tab …) stay with the system."
+          : "Click a shortcut to record a new one. Terminal keys are protected: plain Ctrl+letter, Alt+letter, arrows, Tab, Enter, Esc and function keys always go to the terminal."}
       </p>
       <div className="keys-list" role="table">
         {ids.map((id) => (

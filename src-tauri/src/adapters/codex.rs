@@ -39,6 +39,7 @@ impl AgentAdapter for CodexAdapter {
         if let Some(exe) = on_path.as_ref().filter(|e| !e.via_cmd) {
             return Some(exe.clone());
         }
+        #[cfg(windows)]
         if let Some(lad) = discovery::local_app_data() {
             let native = lad.join(r"Programs\OpenAI\Codex\bin\codex.exe");
             if native.is_file() {

@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { runCommand } from "../actions/commands";
 import { ipc } from "../lib/ipc";
+import { fileManagerName } from "../lib/platform";
 import type { GitInfo, LayoutPreset } from "../lib/types";
 import { selectActiveGroup, selectActiveWorkspace, useApp } from "../store/appStore";
 import { useUi } from "../store/uiStore";
@@ -78,7 +79,7 @@ export function WorkspaceHeader() {
         {name}
       </span>
       {projectDir ? (
-        <button type="button" className="ws-header-path mono" title={`${projectDir}\nClick to reveal in Explorer`} onClick={() => void revealPath(projectDir)}>
+        <button type="button" className="ws-header-path mono" title={`${projectDir}\nClick to reveal in ${fileManagerName()}`} onClick={() => void revealPath(projectDir)}>
           {projectDir}
         </button>
       ) : (

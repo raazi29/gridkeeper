@@ -1,6 +1,7 @@
 // Diagnostics modal: per-process resource table, renderer status, export. Polls only while open.
 
 import { APP_NAME } from "../lib/brand";
+import { isWindows, webviewHint, webviewLabel } from "../lib/platform";
 import { useState } from "react";
 import { useShallow } from "zustand/react/shallow";
 import { errorMessage, ipc } from "../lib/ipc";
@@ -100,9 +101,9 @@ export function DiagnosticsPanel({ onClose }: { onClose: () => void }) {
                 <td className="num">{cpu(diag.host)}</td>
                 <td className="num">{formatMb(diag.host.memoryBytes)}</td>
               </tr>
-              <tr className="row-strong">
-                <td>WebView2</td>
-                <td className="muted">UI renderer</td>
+              <tr className="row-strong" title={isWindows ? undefined : webviewHint()}>
+                <td>{webviewLabel()}</td>
+                <td className="muted">{isWindows ? "UI renderer" : "UI renderer (best effort)"}</td>
                 <td className="num muted">—</td>
                 <td className="num">{diag.webview.processCount}</td>
                 <td className="num">{cpu(diag.webview)}</td>
@@ -190,7 +191,7 @@ export function DiagnosticsPanel({ onClose }: { onClose: () => void }) {
         </div>
       )}
       <p className="explain">
-        CPU is shown like Task Manager: a share of all logical cores. The GPU draws terminal text and the UI. Agent CPU — Node/Rust CLIs, git, builds, tests — runs on the CPU and is
+        {isWindows ? "CPU is shown like Task Manager: a share of all logical cores." : "CPU is shown as a share of all logical cores."} The GPU draws terminal text and the UI. Agent CPU — Node/Rust CLIs, git, builds, tests — runs on the CPU and is
         unaffected by the renderer choice.
       </p>
     </Modal>
