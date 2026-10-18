@@ -213,6 +213,7 @@ fn atomic_replace(path: &Path, bytes: &[u8]) -> io::Result<()> {
 pub type EmitFn = Arc<dyn Fn(&str) + Send + Sync>;
 
 /// Registry key: one watch per folder, case-insensitive, `/` and trailing separators ignored.
+#[cfg(windows)]
 pub fn normalize_key(project_dir: &str) -> String {
     let s = project_dir.replace('/', "\\");
     let mut s = s.as_str();
@@ -221,6 +222,14 @@ pub fn normalize_key(project_dir: &str) -> String {
         s = &s[..s.len() - 1];
     }
     s.to_lowercase()
+}
+
+/// Registry key on macOS / Linux: trailing `/` ignored (the root stays `/`); case kept, since the
+/// frontend sends the folder as the user picked it and Linux file systems are case-sensitive.
+#[cfg(not(windows))]
+pub fn normalize_key(project_dir: &str) -> String {
+    let trimmed = project_dir.trim_end_matches('/');
+    if trimmed.is_empty() && project_dir.starts_with('/') { "/".to_string() } else { trimmed.to_string() }
 }
 
 struct WatchEntry {
@@ -617,6 +626,17 @@ mod tests {
         assert_eq!(read(&project).unwrap().text, "rev 19\n");
     }
 
+    #[cfg(not(windows))]
+    #[test]
+    fn normalizes_keys_unix() {
+        assert_eq!(normalize_key("/home/u/repo/"), normalize_key("/home/u/repo"));
+        assert_eq!(normalize_key("/home/u/repo//"), "/home/u/repo");
+        assert_eq!(normalize_key("/"), "/");
+        assert_ne!(normalize_key("/home/u/repo"), normalize_key("/home/u/repo2"));
+        assert_ne!(normalize_key("/home/u/Repo"), normalize_key("/home/u/repo"), "case-sensitive");
+    }
+
+    #[cfg(windows)]
     #[test]
     fn normalizes_keys() {
         assert_eq!(normalize_key(r"D:\Repo\"), normalize_key("d:/repo"));
@@ -695,7 +715,8 @@ mod tests {
         assert_eq!(drain(&rx, 500), 0);
 
         // Ref counting: a second spelling of the same folder shares the watch and is notified too.
-        let other_spelling = format!("{}\\", project.to_uppercase());
+        // Windows: another case plus a trailing separator; Unix: a trailing separator.
+        let other_spelling = if cfg!(windows) { format!("{}\\", project.to_uppercase()) } else { format!("{project}/") };
         watchers.watch(&other_spelling).unwrap();
         assert_eq!(watchers.len(), 1);
         write(&project, "three", None, false).unwrap();

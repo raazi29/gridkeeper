@@ -56,7 +56,11 @@ impl AgentAdapter for ClaudeAdapter {
     /// over the npm `.cmd` shim).
     fn discover(&self) -> Option<Executable> {
         if let Some(home) = discovery::home_dir() {
+            #[cfg(windows)]
             let native = home.join(r".local\bin\claude.exe");
+            // macOS / Linux native installer: ~/.local/bin/claude (often not on a GUI app's PATH).
+            #[cfg(not(windows))]
+            let native = home.join(".local").join("bin").join("claude");
             if native.is_file() {
                 return Some(Executable::native(native));
             }

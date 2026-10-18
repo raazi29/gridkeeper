@@ -36,9 +36,9 @@ fn git_stdout(dir: &Path, args: &[&str]) -> Option<String> {
     out.status.success().then(|| String::from_utf8_lossy(&out.stdout).trim().to_string())
 }
 
-/// Convert git's forward-slash paths to Windows form.
+/// Convert git's forward-slash paths to Windows form (unchanged on macOS / Linux).
 fn win_path(p: &str) -> String {
-    p.replace('/', "\\")
+    if cfg!(windows) { p.replace('/', "\\") } else { p.to_string() }
 }
 
 /// Parse `git worktree list --porcelain`.
@@ -714,7 +714,7 @@ mod tests {
         let w = parse_worktrees(s);
         assert_eq!(w.len(), 3);
         assert!(w[0].is_main && !w[1].is_main);
-        assert_eq!(w[0].path, r"D:\repo");
+        assert_eq!(w[0].path, if cfg!(windows) { r"D:\repo" } else { "D:/repo" });
         assert_eq!(w[1].branch.as_deref(), Some("feat/x"));
         assert_eq!(w[2].branch, None);
         assert_eq!(w[2].head.as_deref(), Some("3333"));
@@ -1084,7 +1084,8 @@ mod tests {
         let plain = tmp.path().join("plain");
         std::fs::create_dir_all(&plain).unwrap();
         assert_eq!(branch_summary(&plain.to_string_lossy(), None).unwrap(), BranchSummary::default());
-        assert!(!branch_summary(r"C:\definitely\missing\dir", None).unwrap().is_repo);
+        let missing = tmp.path().join("definitely").join("missing");
+        assert!(!branch_summary(&missing.to_string_lossy(), None).unwrap().is_repo);
 
         // A fresh repository without commits.
         let empty = tmp.path().join("empty");
@@ -1107,7 +1108,8 @@ mod tests {
 
     fn git(dir: &Path, args: &[&str]) {
         let mut cmd = process::hidden_command(git_exe().unwrap());
-        cmd.arg("-C").arg(dir).args(args).env("GIT_CONFIG_NOSYSTEM", "1").env("GIT_CONFIG_GLOBAL", "NUL");
+        let null_device = if cfg!(windows) { "NUL" } else { "/dev/null" };
+        cmd.arg("-C").arg(dir).args(args).env("GIT_CONFIG_NOSYSTEM", "1").env("GIT_CONFIG_GLOBAL", null_device);
         let out = process::run_with_timeout(cmd, Duration::from_secs(30)).unwrap();
         assert!(out.status.success(), "git {args:?}: {}", String::from_utf8_lossy(&out.stderr));
     }

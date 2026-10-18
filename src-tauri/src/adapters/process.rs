@@ -13,6 +13,7 @@ pub const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 
 /// A `Command` that will not open a console window on Windows.
 pub fn hidden_command(program: impl AsRef<OsStr>) -> Command {
+    #[cfg_attr(not(windows), allow(unused_mut))]
     let mut cmd = Command::new(program);
     #[cfg(windows)]
     {
@@ -164,6 +165,36 @@ pub fn first_line(bytes: &[u8]) -> Option<String> {
 mod tests {
     use super::*;
 
+    #[cfg(unix)]
+    #[test]
+    fn runs_captures_times_out_and_caps_unix() {
+        let mut cmd = hidden_command("sh");
+        cmd.args(["-c", "echo hello"]);
+        let out = run_with_timeout(cmd, Duration::from_secs(10)).expect("sh runs");
+        assert!(out.status.success());
+        assert_eq!(first_line(&out.stdout).as_deref(), Some("hello"));
+
+        let mut cmd = hidden_command("sleep");
+        cmd.arg("30");
+        let start = Instant::now();
+        let err = run_with_timeout(cmd, Duration::from_millis(500)).unwrap_err();
+        assert_eq!(err.kind(), io::ErrorKind::TimedOut);
+        assert!(start.elapsed() < Duration::from_secs(10));
+
+        let mut cmd = hidden_command("sh");
+        cmd.args(["-c", "i=0; while [ $i -lt 2000 ]; do echo 0123456789abcdef; i=$((i+1)); done"]);
+        let out = run_capped(cmd, Duration::from_secs(20), 1000).expect("sh runs");
+        assert!(out.truncated);
+        assert_eq!(out.stdout.len(), 1000);
+
+        let mut cmd = hidden_command("sh");
+        cmd.args(["-c", "echo small"]);
+        let out = run_capped(cmd, Duration::from_secs(10), 1000).expect("sh runs");
+        assert!(!out.truncated && out.status.is_some_and(|s| s.success()));
+        assert_eq!(first_line(&out.stdout).as_deref(), Some("small"));
+    }
+
+    #[cfg(windows)]
     #[test]
     fn runs_and_captures() {
         let mut cmd = hidden_command("cmd.exe");
@@ -173,6 +204,7 @@ mod tests {
         assert_eq!(first_line(&out.stdout).as_deref(), Some("hello"));
     }
 
+    #[cfg(windows)]
     #[test]
     fn times_out() {
         let mut cmd = hidden_command("cmd.exe");
@@ -190,6 +222,7 @@ mod tests {
         assert!(run_with_timeout(cmd, Duration::from_secs(1)).is_err());
     }
 
+    #[cfg(windows)]
     #[test]
     fn capped_output_is_cut_and_marked() {
         let mut cmd = hidden_command("cmd.exe");
