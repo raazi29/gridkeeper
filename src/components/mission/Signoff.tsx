@@ -4,6 +4,7 @@
 // Actions: jump (click), review diff (Changes drawer focused on the worktree), hand off… (dialog with an
 // editable line; nothing is typed into any agent until the user presses Send), context menu.
 
+import { isMac } from "../../lib/platform";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import {
   closeHandoff,
@@ -251,13 +252,13 @@ function HandoffDialog({ req }: { req: HandoffRequest }) {
           aria-label="Hand-off message"
           onChange={(e) => setText(e.target.value)}
           onKeyDown={(e) => {
-            if (e.key === "Enter" && e.ctrlKey && !e.nativeEvent.isComposing) {
+            if (e.key === "Enter" && (isMac ? e.metaKey : e.ctrlKey) && !e.nativeEvent.isComposing) {
               e.preventDefault();
               void send();
             }
           }}
         />
-        <div className="so-handoff-hint">One line: line breaks are sent as spaces. Nothing is sent until you press Send (or Ctrl+Enter).</div>
+        <div className="so-handoff-hint">One line: line breaks are sent as spaces. Nothing is sent until you press Send (or {isMac ? "⌘↩" : "Ctrl+Enter"}).</div>
         {blocked && <div className="callout so-callout-warn">{blocked}</div>}
         {error && <div className="callout is-error">{error}</div>}
       </div>

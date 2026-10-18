@@ -15,6 +15,7 @@
 // (store/missionDoc.ts editMission). Plus "edit file…" (raw editor), "open folder" and "brief team…".
 // Without a project folder it explains why; without a mission file it offers a small "set a mission" form.
 
+import { fileManagerName } from "../../lib/platform";
 import { useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState, type CSSProperties, type DragEvent, type KeyboardEvent, type ReactNode, type RefObject } from "react";
 import { gatherBrief, sendBrief, type BriefRecipient, type BriefSkip } from "../../actions/missionBrief";
 import { notify } from "../../actions/notify";
@@ -758,7 +759,7 @@ function Board({
         <button type="button" className="mc-btn" title="Edit the raw Markdown file (saved with a conflict check)" onClick={onEdit}>
           edit file…
         </button>
-        <button type="button" className="mc-btn" title="Show mission.md in Explorer" onClick={() => void revealPath(file.path)}>
+        <button type="button" className="mc-btn" title={`Show mission.md in ${fileManagerName()}`} onClick={() => void revealPath(file.path)}>
           open folder
         </button>
         <button

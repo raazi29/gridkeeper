@@ -3,6 +3,7 @@
 // live plan preview shows exactly what will happen; ONE confirmation lists every group, session and
 // `git worktree add` command before anything is created. Also: save the current workspace as a formation.
 
+import { shellLabel } from "../../lib/platform";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   BUILTIN_FORMATIONS,
@@ -350,7 +351,7 @@ export function FormationDialog() {
                     {a.label ?? a.preset}
                   </option>
                 ))}
-                <option value="powershell">PowerShell</option>
+                <option value="powershell">{shellLabel()}</option>
               </Select>
             </Field>
           </div>

@@ -113,10 +113,18 @@ pub trait Fetcher: Send + Sync {
 /// The real fetcher: the system `curl.exe`.
 pub struct CurlFetcher;
 
+#[cfg(windows)]
 fn curl_exe() -> Option<PathBuf> {
     // Prefer the copy shipped with Windows (System32) over whatever is first on PATH.
     let sys = std::env::var_os("SystemRoot").map(|r| PathBuf::from(r).join("System32").join("curl.exe"));
     sys.filter(|p| p.is_file()).or_else(|| which::which("curl.exe").ok())
+}
+
+/// macOS ships `/usr/bin/curl`; Linux distributions almost always do too.
+#[cfg(not(windows))]
+fn curl_exe() -> Option<PathBuf> {
+    let sys = PathBuf::from("/usr/bin/curl");
+    if sys.is_file() { Some(sys) } else { which::which("curl").ok() }
 }
 
 fn find(hay: &[u8], needle: &[u8]) -> Option<usize> {
