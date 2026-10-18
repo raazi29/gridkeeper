@@ -16,6 +16,7 @@
 //! LUID; the UI pairs the adapter that carries the WebView2 load with the verbatim WebGL renderer string.
 
 use std::collections::{HashMap, HashSet};
+#[cfg(windows)]
 use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
@@ -454,6 +455,7 @@ mod pdh {
 }
 
 /// Retry interval after the counters could not be opened (e.g. a VM without WDDM GPU counters).
+#[cfg(windows)]
 const RETRY_AFTER: Duration = Duration::from_secs(60);
 
 #[cfg(windows)]
@@ -560,7 +562,7 @@ impl GpuSampler {
 
     #[cfg(not(windows))]
     pub fn sample(&mut self, _who: &Attribution<'_>) -> GpuStats {
-        GpuStats::unavailable("GPU counters are only available on Windows")
+        GpuStats::unavailable("GPU telemetry is only implemented on Windows")
     }
 }
 

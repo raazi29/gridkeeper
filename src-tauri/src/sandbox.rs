@@ -2,7 +2,8 @@
 //!
 //! A sandbox skips the single-instance lock, keeps its data in `<app config dir>\sandboxes\<name>`
 //! (workspaces, profiles, logs; the legacy Altera migration never runs), uses its own WebView2
-//! profile (`WEBVIEW2_USER_DATA_FOLDER=<data dir>\webview`, unless already set) and says so in the
+//! profile on Windows (`WEBVIEW2_USER_DATA_FOLDER=<data dir>\webview`, unless already set; macOS /
+//! Linux share the WebKit profile with a normal instance) and says so in the
 //! window title. An invalid name refuses to start, so a typo never falls back to the live data.
 
 use std::ffi::OsString;
@@ -75,7 +76,9 @@ pub fn init_from_env(config_base: Option<PathBuf>) -> Result<Option<&'static San
     };
     let base = config_base.ok_or_else(|| format!("{ENV} is set but the app data folder is unknown."))?;
     let data_dir = data_dir(&base, &name);
-    let set_webview_folder = std::env::var_os(WEBVIEW2_ENV).is_none_or(|v| v.is_empty());
+    // WebView2 only. On macOS / Linux the sandbox isolates the app data but shares the WebKit
+    // profile (localStorage, cache) with a normal instance.
+    let set_webview_folder = cfg!(windows) && std::env::var_os(WEBVIEW2_ENV).is_none_or(|v| v.is_empty());
     if set_webview_folder {
         let webview = webview_dir(&data_dir);
         std::fs::create_dir_all(&webview).map_err(|e| format!("Could not create {}: {e}", webview.display()))?;
@@ -125,6 +128,18 @@ mod tests {
         assert!(parse_env(Some("UI".into())).is_err());
     }
 
+    #[cfg(unix)]
+    #[test]
+    fn derives_dirs_and_title_unix() {
+        let base = Path::new("/home/u/.config/app.gridkeeper.desktop");
+        let d = data_dir(base, "ui");
+        assert_eq!(d, PathBuf::from("/home/u/.config/app.gridkeeper.desktop/sandboxes/ui"));
+        assert_eq!(webview_dir(&d), PathBuf::from("/home/u/.config/app.gridkeeper.desktop/sandboxes/ui/webview"));
+        assert!(d.starts_with(base) && d != base);
+        assert_eq!(window_title("Gridkeeper", "ui"), "Gridkeeper [sandbox: ui]");
+    }
+
+    #[cfg(windows)]
     #[test]
     fn derives_dirs_and_title() {
         let base = Path::new(r"C:\Users\u\AppData\Roaming\app.gridkeeper.desktop");

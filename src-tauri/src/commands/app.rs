@@ -14,6 +14,8 @@ pub struct AppInfo {
     pub bench_scripts_dir: Option<String>,
     /// GRIDKEEPER_SANDBOX name when this is an isolated test instance (own data folder, no single-instance lock).
     pub sandbox: Option<String>,
+    /// "windows" | "macos" | "linux".
+    pub os: &'static str,
 }
 
 #[tauri::command]
@@ -33,9 +35,18 @@ pub fn app_info() -> AppInfo {
         bench,
         bench_scripts_dir,
         sandbox: crate::sandbox::name().map(str::to_string),
+        os: crate::platform::os(),
     }
 }
 
+#[cfg(windows)]
 fn windows_build() -> Option<u32> {
     sysinfo::System::kernel_version().and_then(|v| v.split('.').next_back().and_then(|b| b.parse().ok()))
+}
+
+/// Not Windows: no ConPTY, so xterm must not get a `windowsPty` build number (a macOS kernel
+/// version like "23.4.0" would otherwise parse as build 0).
+#[cfg(not(windows))]
+fn windows_build() -> Option<u32> {
+    None
 }
