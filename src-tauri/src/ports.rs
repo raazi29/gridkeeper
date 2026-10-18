@@ -318,7 +318,7 @@ fn listening_for(pids: &std::collections::HashSet<u32>) -> Vec<ListenEntry> {
     list.sort_unstable();
     let list = list.iter().map(u32::to_string).collect::<Vec<_>>().join(",");
     let mut cmd = process::hidden_command(lsof);
-    cmd.args(["-nP", "-w", "-a", "-p", &list, "-iTCP", "-sTCP:LISTEN", "-FpPtn"]);
+    cmd.args(["-nP", "-w", "-a", "-p", list.as_str(), "-iTCP", "-sTCP:LISTEN", "-FpPtn"]);
     // Exit code 1 just means "nothing found"; parse whatever came out.
     match process::run_with_timeout(cmd, std::time::Duration::from_secs(5)) {
         Ok(out) => parse_lsof(&String::from_utf8_lossy(&out.stdout)),

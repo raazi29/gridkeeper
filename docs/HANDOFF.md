@@ -101,6 +101,7 @@ anything.
 | `scripts/showcase/record.mjs` | Scripted CDP tour → MP4/GIF/screenshots in `docs/assets/showcase/`. |
 | `scripts/dev/sandbox.ps1`, `sandbox-stop.ps1` | Run / stop an isolated test instance next to the live app (section 6). `npm run sandbox`, `npm run sandbox:stop`. |
 | `scripts/dev/eol-merge.sh` | Re-run a conflicted merge with CRLF/LF normalized. |
+| `scripts/dev/unix-check.ps1` | Type-check the Rust crate for Linux and macOS from Windows (fake pkg-config / cc shims, nothing linked; section 10). |
 | `.github/workflows/ci.yml` | CI matrix `windows-latest` / `ubuntu-22.04` / `macos-latest`: `tsc`, `vitest`, `npm run build`, `cargo test`, `cargo clippy` (non-fatal); on `v*` tags (or a manual run with `installers: true`) also `tauri build` per OS → NSIS / dmg / AppImage + deb as workflow artifacts (no release is created). |
 | `<project>/.gridkeeper/mission.md` | Not in this repo: the shared task board Mission Control reads and writes in each project folder (`# Mission: <goal>`, `## Tasks`, `- [ ] text @owner`; `[~]` doing, `[x]` done, `[!]` blocked). Created with a self-ignoring `.gitignore`. |
 | `docs/assets/` | Hero banner, social preview, showcase media, `logo/` (brand guide + tools), `readme/` (animated crawl + saber dividers + `tools/gen-readme-art.mjs`). |
@@ -386,8 +387,9 @@ every Unix behaviour below as "implemented, CI-tested, not live-verified" until 
   for a downloaded dmg).
 - Hermes' Unix default home is assumed to be `~/.hermes` (unverified on a real install).
 
-**Type-checking Unix code on this Windows box (no WSL):** `cargo check --target x86_64-unknown-linux-gnu` works without
-linking anything if the `*-sys` build scripts are fed a fake `pkg-config` that "finds" every library: a `.bat` that
-prints `99.0.0` for `--modversion` and exits 0, passed as `PKG_CONFIG=<path>` with `PKG_CONFIG_ALLOW_CROSS=1` (after
-`rustup target add x86_64-unknown-linux-gnu`). It takes ~15 minutes with `CARGO_BUILD_JOBS=2` and catches cfg / API
-mistakes in `#[cfg(unix)]` code. It does not run anything; the CI matrix is still the real test.
+**Type-checking Unix code on this Windows box (no WSL):** `pwsh -NoProfile -File scripts/dev/unix-check.ps1`
+(once: `rustup target add x86_64-unknown-linux-gnu aarch64-apple-darwin`). It runs `cargo check --lib --tests` for
+Linux and macOS without linking anything: the `*-sys` build scripts get a fake `pkg-config` that "finds" every library
+(`PKG_CONFIG` + `PKG_CONFIG_ALLOW_CROSS=1`), and the few crates that compile C for macOS get a fake `cc` / `ar`. The
+first run takes ~15–20 minutes per target with 2 jobs (shared target folder, memory guard like the sandbox script) and
+catches cfg / API mistakes in `#[cfg(unix)]` code. It runs nothing; the CI matrix is still the real test.
