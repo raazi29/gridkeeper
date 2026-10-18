@@ -1048,6 +1048,8 @@ pub struct SkillUpdateCheck {
     pub pinned_sha: String,
     /// The default branch's commit now.
     pub current_sha: String,
+}
+
 // ---- Mission replay (crate::replay) ----
 
 /// One recording in `<projectDir>/.gridkeeper/replay/`.
