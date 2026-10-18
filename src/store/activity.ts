@@ -1,6 +1,6 @@
 // Activity log: an in-memory ring buffer (last ACTIVITY_LIMIT) of REAL events across all sessions —
 // lifecycle (started / exited / failed / stopped), attention transitions (working / waiting / done /
-// error), broadcasts, formation launches and worktrees created. Separate zustand store so log churn
+// error), broadcasts, formation launches, worktrees created and mission briefs. Separate zustand store so log churn
 // never re-renders app-store subscribers. Pure mapping helpers are unit-tested; `installActivity()`
 // wires the subscriptions and is called once at app level (MissionLayer), never at import time.
 
@@ -11,7 +11,7 @@ import { useAttention, type AttnState, type SessionAttn } from "./attention";
 
 export const ACTIVITY_LIMIT = 500;
 
-export type ActivityKind = "lifecycle" | "attention" | "broadcast" | "formation" | "worktree";
+export type ActivityKind = "lifecycle" | "attention" | "broadcast" | "formation" | "worktree" | "mission";
 export type ActivityLevel = "info" | "ok" | "needs" | "error";
 
 export interface ActivityEvent {

@@ -1,5 +1,6 @@
 // Mission Control session mini card: name, agent glyph, role, account, worktree branch, state lamp +
-// label, uptime, last output line, real output-rate sparkline and CPU/RAM (shared diagnostics poll).
+// label, uptime, current mission task (from .gridkeeper/mission.md), last output line, real output-rate
+// sparkline and CPU/RAM (shared diagnostics poll).
 // Hover / selection shows a toolbar (jump, restart, stop/start, mute, close); right-click opens the shared
 // session menu; a session that needs you gets an "Answer →" call to action.
 
@@ -8,6 +9,7 @@ import { useShallow } from "zustand/react/shallow";
 import { confirmCloseSession } from "../../actions/commands";
 import { toggleSessionMute, useSessionMuted } from "../../actions/notifyPrefs";
 import { renameSession, startSession } from "../../actions/sessions";
+import type { TaskState } from "../../lib/missionDoc";
 import type { SessionId } from "../../lib/types";
 import { AgentGlyph, IconClose, IconPlay, IconRestart, IconStop } from "../../layout/icons";
 import { useApp } from "../../store/appStore";
@@ -34,6 +36,8 @@ export const SessionCard = memo(function SessionCard({
   onJump,
   onMenu,
   now,
+  task,
+  taskState,
 }: {
   id: SessionId;
   selected: boolean;
@@ -42,6 +46,9 @@ export const SessionCard = memo(function SessionCard({
   onMenu: (e: { clientX: number; clientY: number; preventDefault?: () => void; stopPropagation?: () => void }, id: SessionId) => void;
   /** Coarse clock (re-render tick for uptime). */
   now: number;
+  /** Current mission task owned by this session (first "doing", else first "todo"). */
+  task?: string | null;
+  taskState?: TaskState | null;
 }) {
   const meta = useApp(
     useShallow((s) => {
@@ -180,6 +187,12 @@ export const SessionCard = memo(function SessionCard({
         )}
         {meta.branch && <span title={`Worktree branch ${meta.branch}`}>· ⎇ {meta.branch}</span>}
       </div>
+      {task && (
+        <div className={`mc-card-task is-${taskState ?? "todo"}`} title={`Mission task (${taskState === "doing" ? "doing" : "next"}): ${task}`}>
+          <span className="mc-card-task-box">{taskState === "doing" ? "[~]" : "[ ]"}</span>
+          <span className="mc-card-task-text">{task}</span>
+        </div>
+      )}
       <div className={`mc-card-tail${tail ? "" : " is-empty"}`} title={tail || undefined}>
         {tail || (st.live ? "…" : "no output yet")}
       </div>
