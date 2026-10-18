@@ -30,6 +30,7 @@ import { useDiagnosticsPoll } from "../hooks";
 import { buildGroupMenu } from "../menus/containerMenus";
 import { buildSessionMenu, confirmRestart, confirmStop } from "../menus/sessionMenu";
 import { QuickLaunchButton } from "../QuickLaunch";
+import { ReplayHeaderControls } from "../replay/ReplayControls";
 import { useContextMenu, type MenuItem } from "../ui/Menu";
 import { ActivityRiver } from "./ActivityRiver";
 import type { FleetLamp } from "../util/fleet";
@@ -593,6 +594,7 @@ export function MissionControl() {
             agents [ <b>{model.counts.live}</b>/<b>{total}</b> ]
           </span>
           <span className="mc-head-actions">
+            <ReplayHeaderControls projectDir={projectDir} />
             <button
               type="button"
               className="mc-btn"

@@ -171,7 +171,7 @@ pub fn write(
 }
 
 /// Create `.gridkeeper/` (with its self-ignoring `.gitignore`) when missing.
-fn ensure_dir(dir: &Path) -> AppResult<()> {
+pub(crate) fn ensure_dir(dir: &Path) -> AppResult<()> {
     match fs::create_dir(dir) {
         Ok(()) => {
             if let Err(e) = fs::write(dir.join(".gitignore"), GITIGNORE) {

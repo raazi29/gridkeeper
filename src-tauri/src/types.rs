@@ -1048,4 +1048,30 @@ pub struct SkillUpdateCheck {
     pub pinned_sha: String,
     /// The default branch's commit now.
     pub current_sha: String,
+// ---- Mission replay (crate::replay) ----
+
+/// One recording in `<projectDir>/.gridkeeper/replay/`.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ReplayInfo {
+    pub name: String,
+    pub size_bytes: u64,
+    pub modified_ms: u64,
+}
+
+/// Result of `replay_append`: the file size afterwards; `full` = the 5 MB cap was reached and the
+/// batch was NOT written (the recorder stops).
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ReplayAppend {
+    pub size_bytes: u64,
+    pub full: bool,
+}
+
+/// A save destination chosen in the native dialog, authorized for one `replay_save_file` by `token`.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ReplaySaveTarget {
+    pub token: String,
+    pub path: String,
 }

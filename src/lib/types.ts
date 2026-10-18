@@ -732,3 +732,25 @@ export interface SkillUpdateCheck {
   /** The default branch's commit now. */
   currentSha: string;
 }
+// ---- Mission replay (src-tauri/src/replay.rs) ----
+
+/** One recording in `<projectDir>/.gridkeeper/replay/`. */
+export interface ReplayInfo {
+  name: string;
+  sizeBytes: number;
+  modifiedMs: number;
+}
+
+/** `replay_append` result: file size afterwards; `full` = the 5 MB cap was reached and the batch was NOT written. */
+export interface ReplayAppend {
+  sizeBytes: number;
+  full: boolean;
+}
+
+/** A save destination chosen in the native dialog, authorized for one `replay_save_file` by `token`. */
+export interface ReplaySaveTarget {
+  token: string;
+  path: string;
+}
+
+export type ReplayExportKind = "mp4" | "webm" | "gif";
