@@ -4,7 +4,7 @@ import type { SessionAttn } from "../../store/attention";
 import { normalizeRole, roleInfo, roleTag } from "../../lib/roles";
 import { looksLikeQuestion } from "../../actions/starterPrompt";
 import { trailWidth } from "./ActivityRiver";
-import { deriveMission, laneOf, laneProgress, phaseMark, sessionStatus, type SessionStatus } from "./derive";
+import { deriveMission, insertIndex, laneOf, laneProgress, nextLaneName, phaseMark, reorderTarget, sessionStatus, sideOf, type SessionStatus } from "./derive";
 import { linkPath } from "./Links";
 import { sparkPath } from "./Sparkline";
 
@@ -125,5 +125,35 @@ describe("starter prompt safety", () => {
     expect(looksLikeQuestion("╭────╮\n│ >  │\n╰────╯\n  ? for shortcuts")).toBe(false);
     expect(looksLikeQuestion("")).toBe(false);
     expect(looksLikeQuestion("  ⏵⏵ accept edits on (shift+tab to cycle)\n  bypass permissions off")).toBe(false);
+  });
+});
+
+describe("mission drag & drop helpers", () => {
+  it("insertIndex counts without the moved session", () => {
+    const g = ["a", "b", "c", "d"];
+    expect(insertIndex(g, "a", { id: "c", side: "before" })).toBe(1);
+    expect(insertIndex(g, "a", { id: "c", side: "after" })).toBe(2);
+    expect(insertIndex(g, "d", { id: "a", side: "before" })).toBe(0);
+    expect(insertIndex(g, "x", { id: "d", side: "after" })).toBe(4);
+    expect(insertIndex(g, "x", null)).toBe(4);
+    expect(insertIndex(g, "b", null)).toBe(3);
+    expect(insertIndex(g, "b", { id: "b", side: "before" })).toBe(3);
+    expect(insertIndex(g, "b", { id: "zz", side: "before" })).toBe(3);
+  });
+  it("reorderTarget accounts for the removed item", () => {
+    expect(reorderTarget(0, 2, "before")).toBe(1);
+    expect(reorderTarget(0, 2, "after")).toBe(2);
+    expect(reorderTarget(3, 0, "before")).toBe(0);
+    expect(reorderTarget(3, 1, "after")).toBe(2);
+    expect(reorderTarget(1, 1, "after")).toBe(1);
+  });
+  it("nextLaneName skips names in use", () => {
+    expect(nextLaneName(["Main"])).toBe("Lane 2");
+    expect(nextLaneName(["Main", "lane 3"])).toBe("Lane 4");
+    expect(nextLaneName([])).toBe("Lane 1");
+  });
+  it("sideOf splits a box into halves", () => {
+    expect(sideOf(10, { left: 0, width: 100 })).toBe("before");
+    expect(sideOf(60, { left: 0, width: 100 })).toBe("after");
   });
 });

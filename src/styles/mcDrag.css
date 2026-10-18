@@ -1,0 +1,248 @@
+/* Mission Control: drag & drop (cards, lanes, tasks), lane labels, collapsed boxes, new-lane tile.
+   No transitions or animations here, so .mc.is-still / reduced motion need no overrides. */
+
+/* ---- box labels: grip, fold toggle, inline rename ------------------------------------------- */
+
+.mc-box-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.mc-grip {
+  cursor: grab;
+  color: var(--text-2);
+  letter-spacing: 0;
+  padding: 0 1px;
+}
+.mc-grip:hover {
+  color: var(--text-0);
+}
+.mc-grip:active {
+  cursor: grabbing;
+}
+.mc-fold {
+  display: inline-flex;
+  align-items: center;
+  height: 14px;
+  padding: 0 2px;
+  border: 0;
+  background: transparent;
+  color: var(--text-2);
+  font: inherit;
+  letter-spacing: 0;
+  line-height: 14px;
+  cursor: pointer;
+}
+.mc-fold:hover,
+.mc-fold:focus-visible {
+  color: var(--text-0);
+  outline: none;
+}
+.mc-lane-name {
+  cursor: default;
+}
+.mc-lane-rename {
+  height: 16px;
+  width: 22ch;
+  padding: 0 4px;
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-s);
+  background: var(--bg-2);
+  color: var(--text-0);
+  font-family: var(--font-mono);
+  font-size: var(--mc-fs-micro);
+  letter-spacing: 0.04em;
+  outline: none;
+}
+
+/* a lane box is focusable (F2 rename, Alt+←/→ move) */
+.mc-node:focus {
+  outline: none;
+}
+.mc-node:focus-visible {
+  box-shadow: 0 0 0 1px var(--accent-ring);
+}
+
+/* ---- collapsed boxes: one line ---------------------------------------------------------------- */
+
+.mc-node.is-collapsed {
+  padding: 12px 10px 6px;
+}
+.mc-collapsed-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  color: var(--text-2);
+  white-space: nowrap;
+  overflow: hidden;
+}
+.mc-collapsed-line > span:not(.mc-lamps) {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.mc-lamps {
+  display: inline-flex;
+  flex-wrap: nowrap;
+  gap: 3px;
+  flex-shrink: 0;
+}
+
+/* ---- card drag: source, insertion bar, lane target -------------------------------------------- */
+
+.mc-card[draggable="true"] {
+  -webkit-user-drag: element;
+}
+.mc-card.is-dragging {
+  opacity: 0.4;
+  border-style: dashed;
+}
+/* insertion bar in the 6px gap between cards (.mc-cards gap) */
+.mc-card[data-drop]::after {
+  content: "";
+  position: absolute;
+  top: -2px;
+  bottom: -2px;
+  width: 2px;
+  background: var(--accent);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 30%, transparent);
+  pointer-events: none;
+}
+.mc-card[data-drop="before"]::after {
+  left: -5px;
+}
+.mc-card[data-drop="after"]::after {
+  right: -5px;
+}
+.mc-node.is-drop-target {
+  border: 1px solid var(--accent);
+  background: color-mix(in srgb, var(--accent) 6%, var(--bg-1));
+}
+
+/* lead box: dropping makes the session a lead */
+.mc-lead.is-drop-target::after {
+  content: "drop → make lead";
+  position: absolute;
+  top: -7px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 0 6px;
+  background: var(--bg-0);
+  color: var(--accent);
+  font-size: var(--mc-fs-micro);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  line-height: 14px;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+/* ---- lane drag: insertion bar in the 14px gap between lanes (.mc-lanes column gap) ------------ */
+
+.mc-node[data-lane-drop]::after {
+  content: "";
+  position: absolute;
+  top: -6px;
+  bottom: -6px;
+  width: 2px;
+  background: var(--accent);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 30%, transparent);
+  pointer-events: none;
+}
+.mc-node[data-lane-drop="before"]::after {
+  left: -9px;
+}
+.mc-node[data-lane-drop="after"]::after {
+  right: -9px;
+}
+
+/* ---- mission task dragged from the board: assign target --------------------------------------- */
+
+.mc-card.is-assignable {
+  border-color: color-mix(in srgb, var(--ok) 45%, var(--mc-line));
+}
+.mc-card.is-assign-target {
+  border: 1px solid var(--ok);
+  background: color-mix(in srgb, var(--ok) 10%, var(--bg-0));
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--ok) 35%, transparent);
+}
+.mc-card.is-assign-target::after {
+  content: attr(data-assign-label);
+  position: absolute;
+  left: 8px;
+  bottom: -7px;
+  max-width: calc(100% - 16px);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  padding: 0 5px;
+  background: var(--bg-0);
+  color: var(--ok);
+  font-size: var(--mc-fs-micro);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  line-height: 14px;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+/* ---- new lane: tile at the end of the lanes, drop zone under them while a card is dragged ------ */
+
+.mc-newlane {
+  align-self: start;
+  min-height: 56px;
+  border: 1px dashed var(--mc-line);
+  border-radius: var(--radius-s);
+  background: transparent;
+  color: var(--text-2);
+  font-family: var(--font-mono);
+  font-size: var(--mc-fs-micro);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+.mc-newlane:hover:not(:disabled) {
+  color: var(--text-0);
+  border-color: var(--text-2);
+  background: var(--bg-1);
+}
+.mc-newlane:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+.mc-newlane.is-armed {
+  border-color: color-mix(in srgb, var(--accent) 50%, var(--mc-line));
+  color: var(--text-1);
+}
+.mc-newlane-zone {
+  width: 100%;
+  min-height: 64px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px dashed color-mix(in srgb, var(--accent) 50%, var(--mc-line));
+  border-radius: var(--radius-s);
+  color: var(--text-1);
+  font-size: var(--mc-fs-micro);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+.mc-newlane.is-over,
+.mc-newlane-zone.is-over {
+  border: 1px solid var(--accent);
+  color: var(--text-0);
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+}
+
+/* ---- screen-reader announcements -------------------------------------------------------------- */
+
+.mc-sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
