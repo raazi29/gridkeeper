@@ -52,14 +52,49 @@ never shows up in `git status`.
 3. **Never** delete or reword someone else's task. Leave a note under it instead (`  - note: …`).
 4. If your edit fails because the line changed, re-read and try again.
 
+## Talking to teammates: `team.md` and `outbox/`
+
+Two more files in `.gridkeeper/` let a lead supervise the team (any agent may use them):
+
+- **`team.md`** is the team's live status: each member's `@slug`, role, state (working, needs-you, done, error,
+  idle), current task, branch and diff stats, and sometimes their recent output. A tool such as Gridkeeper
+  writes it; **never edit it**, just read it before you decide anything.
+- **`outbox/`** carries instructions. To message a teammate, **create a new file** there (one file per message,
+  any unique name such as `0007-builder-1.md`):
+
+  ```
+  to: builder-1
+  from: lead
+  action: message
+  ---
+  Also add a unit test for the callback route, then mark the task done.
+  ```
+
+  `to` is a slug, a role (`builder` = every builder), a comma-separated list, or `all`. `action` is `message`
+  (default), `review`, `stop` or `restart`. The text after `---` is typed into the teammate's terminal as one
+  line. Never edit or delete existing outbox files; the tool moves them to `outbox/sent/` or
+  `outbox/dismissed/` after handling them.
+
+**The user decides what happens to your messages.** Depending on their setting, a message may be delivered
+right away, wait for their approval, or be ignored. `stop` and `restart` always need the user. So write
+messages that make sense on their own, and never assume one was delivered until `team.md` or the teammate's
+progress shows it.
+
+Without a tool watching `outbox/`, nothing is delivered: then put instructions on the board as tasks instead.
+
 ## If you are the lead
 
 1. Read the goal and context. Explore the codebase enough to plan.
 2. Write tasks under `## Tasks`, each with an owner from the team list you were given (or roles if you have
    no list). Order them so work that unblocks others comes first. Add a final review task for a reviewer
    or verifier.
-3. Keep the board true: add tasks you discover, reassign blocked ones, and write decisions into the context.
-4. Do not do the builders' work. Coordinate, unblock and answer questions.
+3. Supervise: read `team.md`, unblock people who are stuck, and send short, specific instructions through
+   `outbox/`. Don't flood teammates; one clear message beats five.
+4. **Review like an advisor.** When someone finishes (or you are asked to review), read their branch
+   (`git -C "<worktree>" diff <base>...HEAD`), run the tests, then either message them concrete fixes or mark
+   the work done on the board. Approve only what you actually checked.
+5. Keep the board true: add tasks you discover, reassign blocked ones, and write decisions into the context.
+6. Do not do the builders' work. Coordinate, unblock, review and answer questions.
 
 ## If you are a builder (or any worker)
 
@@ -69,6 +104,8 @@ never shows up in `git status`.
 4. Mark it `[x]` when it is done and verified (tests pass, it builds). If you can't continue, mark `[!]` and
    write the reason after the box, then move on to your next task.
 5. When none are left, say so in your terminal; don't invent work outside the board.
+6. Follow instructions that arrive from the lead. To ask the lead something, create an `outbox/` file with
+   `to: lead`.
 
 ## If you are a reviewer or verifier
 
