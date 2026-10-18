@@ -356,10 +356,26 @@ fn attention_fixture() -> (Arc<SessionCore>, Arc<Mutex<Vec<SessionAttention>>>) 
     (core, events)
 }
 
+/// The inbox ConPTY of older Windows builds (Windows 10, Server 2019 / 2022: typical CI VMs) swallows BEL and
+/// rewrites OSC 7501 (docs/HANDOFF.md, known issues). The two signal tests below need build 22000+ (Windows 11).
+fn conpty_passes_signals() -> bool {
+    let build = sysinfo::System::kernel_version().and_then(|v| v.split('.').next_back().and_then(|b| b.parse::<u32>().ok()));
+    match build {
+        Some(b) if b < 22000 => {
+            eprintln!("skipping: the ConPTY of Windows build {b} swallows these sequences (needs 22000+)");
+            false
+        }
+        _ => true,
+    }
+}
+
 /// BEL and notification escapes printed by a real program must survive ConPTY
 /// and reach the scanner without any view attached.
 #[test]
 fn attention_signals_through_conpty() {
+    if !conpty_passes_signals() {
+        return;
+    }
     let (core, events) = attention_fixture();
     let id = "it-attn";
     // Separate prints with sleeps: alerts are rate-limited to one per 2 s.
@@ -391,6 +407,9 @@ fn attention_signals_through_conpty() {
 /// the exact reply reaches the program's console input.
 #[test]
 fn status_probe_is_answered() {
+    if !conpty_passes_signals() {
+        return;
+    }
     // The reply is opt-in (see session.rs); enabling it process-wide is harmless for other tests.
     // SAFETY: tests do not read this variable concurrently with a write that could tear.
     unsafe { std::env::set_var("GRIDKEEPER_OSC7501_REPLY", "1") };
