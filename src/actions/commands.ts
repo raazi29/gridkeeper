@@ -19,6 +19,7 @@ import {
 } from "../store/appStore";
 import { nextAttentionTarget, useAttention, useAttentionUi } from "../store/attention";
 import { useMission } from "../store/mission";
+import { toggleSkills } from "../store/skills";
 import { confirmDialog, useUi } from "../store/uiStore";
 import { focusTerminal } from "../terminal/registry";
 import { THEMES, getTheme } from "../theme/themes";
@@ -461,6 +462,7 @@ export const COMMANDS: Command[] = [
   { id: "view.profiles", title: "Accounts (Claude, Codex, …)", category: "View", run: () => toggleDialog("profiles") },
   { id: "view.mission", title: "Mission Control (team view of this workspace)", category: "View", run: () => useMission.getState().toggle() },
   { id: "formation.launch", title: "Launch formation (agent team template)…", category: "Workspace", run: () => useMission.getState().openFormation() },
+  { id: "view.skills", title: "Skills: discover & add…", category: "Workspace", run: toggleSkills },
   ...EXPERIENCE_COMMANDS,
 ];
 

@@ -32,6 +32,8 @@ import type {
   WorktreeInfo,
 } from "./types";
 import { EVT_MISSION_CHANGED, EVT_SESSION_ATTENTION, EVT_SESSION_STATE } from "./types";
+// Skills
+import type { InstallResult, InstalledSkill, RepoSkills, SkillFileText, SkillRepoPage, SkillSort, SkillTarget, SkillUpdateCheck } from "./types";
 
 export interface AppInfo {
   version: string;
@@ -135,6 +137,22 @@ export const ipc = {
     invoke<string>("mission_outbox_archive", { projectDir, name, disposition }),
   /** Atomic write of .gridkeeper/team.md (redacted by the host, <= 256 KiB; never emits mission-changed). */
   missionTeamWrite: (projectDir: string, text: string) => invoke<void>("mission_team_write", { projectDir, text }),
+  // Skills: Agent Skills from GitHub. Rust does all network (curl.exe, user-initiated only, 10-minute cache);
+  // installs go into the project's .claude/skills / .agents/skills, never into agent homes. Nothing is executed.
+  /** One page of skill repositories. `query` is required for "best" / "stars"; rate limits return `rateLimited`. */
+  skillsSearch: (query: string, sort: SkillSort, page = 1) => invoke<SkillRepoPage>("skills_search", { query, sort, page }),
+  /** Skills of `repo` (owner/name) at `gitRef` (default branch when null), pinned to a commit SHA. */
+  skillsInspect: (repo: string, gitRef: string | null = null) => invoke<RepoSkills>("skills_inspect", { repo, gitRef }),
+  /** One file at a pinned commit (text up to 256 KiB), for review before install. */
+  skillsFile: (repo: string, commitSha: string, path: string) => invoke<SkillFileText>("skills_file", { repo, commitSha, path }),
+  /** Rejects with code "conflict" when a target folder exists and `replace` is false. */
+  skillsInstall: (projectDir: string, repo: string, commitSha: string, skillPath: string, targets: SkillTarget[], replace: boolean) =>
+    invoke<InstallResult>("skills_install", { projectDir, repo, commitSha, skillPath, targets, replace }),
+  skillsInstalled: (projectDir: string) => invoke<InstalledSkill[]>("skills_installed", { projectDir }),
+  /** `targetDirRel` = InstalledSkill.dirRel (".claude/skills/<name>" or ".agents/skills/<name>" only). */
+  skillsRemove: (projectDir: string, targetDirRel: string) => invoke<void>("skills_remove", { projectDir, targetDirRel }),
+  skillsCheckUpdate: (repo: string, skillPath: string, commitSha: string, treeSha: string | null) =>
+    invoke<SkillUpdateCheck>("skills_check_update", { repo, skillPath, commitSha, treeSha }),
 };
 
 export function onSessionState(cb: (info: SessionInfo) => void): Promise<UnlistenFn> {

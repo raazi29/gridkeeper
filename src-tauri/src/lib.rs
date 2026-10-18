@@ -13,6 +13,7 @@
 //! - `diagnostics` host/webview/session resource attribution
 //! - `ports`       LISTENING TCP ports per session process tree
 //! - `browser`     browser panes: URL validation, embeddability probe, pop-out windows
+//! - `skills`      Agent Skills: GitHub discovery (user-initiated), review, install into a project
 //! - `logging` / `redact` structured logs with secret redaction
 //! - `webview_guard` reload / rebuild the main window when a WebView2 process dies
 
@@ -31,6 +32,7 @@ pub mod profiles;
 pub mod pty;
 pub mod redact;
 pub mod sandbox;
+pub mod skills;
 pub mod state;
 pub mod types;
 pub mod webview_guard;
@@ -126,6 +128,13 @@ pub fn run() {
             commands::tools::browser_open_window,
             commands::tools::browser_close_window,
             commands::tools::browser_devtools,
+            commands::skills::skills_search,
+            commands::skills::skills_inspect,
+            commands::skills::skills_file,
+            commands::skills::skills_install,
+            commands::skills::skills_installed,
+            commands::skills::skills_remove,
+            commands::skills::skills_check_update,
         ])
         .build(context)
         .unwrap_or_else(|e| fatal_startup_error(&e.to_string()))
