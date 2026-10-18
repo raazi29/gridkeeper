@@ -1,5 +1,6 @@
 // Mission Control: a full-window team view — and cockpit — of the ACTIVE workspace in a terminal /
-// box-drawing style. Lead node(s) on top, one lane per group (a group is a phase / team), a SIGN-OFF dock
+// box-drawing style. The shared mission board (goal + tasks from <projectDir>/.gridkeeper/mission.md, watched
+// only while open) on top, then the lead node(s), one lane per group (a group is a phase / team), a SIGN-OFF dock
 // listing sessions that wait for review, connector lines, an activity river, the session log and a status
 // line. Lanes have actions (add session, message, restart, stop, formation); cards have a hover toolbar,
 // the shared session context menu and keyboard actions (Enter / R / S / M / Del / F2 / Shift+F10).
@@ -14,12 +15,14 @@ import { messageSessions, restartSessions, restartTargets, stopSessions } from "
 import { closeSession, startSession } from "../../actions/sessions";
 import { commandForEvent } from "../../keybindings";
 import { ipc } from "../../lib/ipc";
+import { countOwned, currentTaskFor, progress, type Task, type TeamMember } from "../../lib/missionDoc";
 import { BUILTIN_ROLES, roleInfo } from "../../lib/roles";
 import type { GitInfo, SessionId } from "../../lib/types";
 import { AgentGlyph } from "../../layout/icons";
 import { isLive, selectActiveGroup, selectActiveWorkspace, useApp } from "../../store/appStore";
 import { useAttention } from "../../store/attention";
 import { useMission } from "../../store/mission";
+import { useMissionFile } from "../../store/missionDoc";
 import { acquireRateSampler, formatRate, latestRate, useRates } from "../../store/rates";
 import { requestRename } from "../../store/renameRequest";
 import { confirmDialog, isTopModal, popModal, pushModal, useUi } from "../../store/uiStore";
@@ -31,6 +34,7 @@ import { useContextMenu, type MenuItem } from "../ui/Menu";
 import { ActivityRiver } from "./ActivityRiver";
 import { deriveMission, laneProgress, phaseMark, sessionStatus, type LaneModel } from "./derive";
 import { Links, type LinkSpec } from "./Links";
+import { MissionNode } from "./MissionNode";
 import { roleStyle } from "./RoleTag";
 import { SessionCard } from "./SessionCard";
 import { SessionLog } from "./SessionLog";
@@ -41,6 +45,8 @@ import "../../styles/attention.css";
 import "../../styles/mission.css";
 
 const SEP = "\u0000";
+
+const NO_TASKS: Task[] = [];
 
 type MenuEvent = { clientX: number; clientY: number; preventDefault?: () => void; stopPropagation?: () => void };
 type OpenMenu = (e: MenuEvent, items: MenuItem[]) => void;
@@ -74,6 +80,7 @@ export function MissionControl() {
   const menu = useContextMenu();
   const openMenu = menu.open;
 
+  const wsId = useApp((s) => selectActiveWorkspace(s)?.id ?? null);
   const wsName = useApp((s) => selectActiveWorkspace(s)?.name ?? "");
   const projectDir = useApp((s) => selectActiveWorkspace(s)?.projectDir ?? null);
   const activeGroupId = useApp((s) => selectActiveGroup(s)?.id);
@@ -132,6 +139,22 @@ export function MissionControl() {
     return [...builtins, ...[...set].filter((r) => !(BUILTIN_ROLES as readonly string[]).includes(r)).sort()];
   }, [roles]);
   const riverSessions = useMemo(() => flat.map((id) => ({ id, role: roles[id] ?? null })), [flat, roles]);
+
+  // Mission board: the file is watched + read only while this overlay is open (no polling). Owners are
+  // matched by session name slug or role, so the team needs names (primitive strings: no render loops).
+  const mission = useMissionFile(projectDir);
+  const names = useApp(useShallow((s) => allIds.map((id) => s.persisted.sessions.find((m) => m.id === id)?.name ?? "")));
+  const team = useMemo<TeamMember[]>(() => allIds.map((id, i) => ({ id, name: names[i] ?? "", role: roles[id] ?? null })), [allIds, names, roles]);
+  const tasks = mission.doc?.tasks ?? NO_TASKS;
+  const cardTasks = useMemo(() => {
+    const out: Record<SessionId, Task> = {};
+    for (const m of team) {
+      const t = currentTaskFor(tasks, m);
+      if (t) out[m.id] = t;
+    }
+    return out;
+  }, [tasks, team]);
+  const taskStats = progress(tasks);
 
   // Git branch: once per open (and when the folder changes). No polling.
   const [git, setGit] = useState<GitInfo | null>(null);
@@ -205,6 +228,13 @@ export function MissionControl() {
     [close],
   );
 
+  /** Owner chip on the mission board: focus (and so select + scroll to) that session's card. */
+  const selectCard = useCallback((id: SessionId) => {
+    const el = panel.current?.querySelector<HTMLElement>(`[data-card="${CSS.escape(id)}"]`);
+    if (el) el.focus();
+    else setSelected(id);
+  }, []);
+
   const openCardMenu = useCallback(
     (e: MenuEvent, id: SessionId) => openMenu(e, buildSessionMenu(id, { surface: "mission", onNavigate: close })),
     [openMenu, close],
@@ -267,9 +297,11 @@ export function MissionControl() {
   };
 
   // ---- connectors ------------------------------------------------------------------------------
-  const linkKey = model.lanes.map((l) => `${l.groupId}:${l.state}:${l.done}:${l.needs}`).join("|") + `|${model.signoff.length}|${model.leads.length}`;
+  const linkKey =
+    model.lanes.map((l) => `${l.groupId}:${l.state}:${l.done}:${l.needs}`).join("|") +
+    `|${model.signoff.length}|${model.leads.length}|m${taskStats.doing}:${taskStats.blocked}`;
   const links = useMemo<LinkSpec[]>(() => {
-    const out: LinkSpec[] = [];
+    const out: LinkSpec[] = [{ key: "mission", from: "mission", to: "lead", cls: taskStats.blocked ? "is-needs" : taskStats.doing ? "is-active" : "" }];
     for (const l of model.lanes) {
       out.push({ key: `in:${l.groupId}`, from: "lead", to: `lane:${l.groupId}`, cls: l.needs ? "is-needs" : l.working ? "is-active" : "" });
       const ready = l.ids.some((id) => model.signoff.includes(id));
@@ -281,7 +313,7 @@ export function MissionControl() {
 
   const now = sampledAt ?? Date.now();
   const total = model.counts.total;
-  const cardProps = { selected, onSelect: setSelected, onJump: jump, onMenu: openCardMenu, now };
+  const cardProps = { selected, onSelect: setSelected, onJump: jump, onMenu: openCardMenu, now, tasks: cardTasks };
 
   return createPortal(
     <div className="mc-backdrop" onMouseDown={(e) => e.target === e.currentTarget && close()}>
@@ -348,6 +380,9 @@ export function MissionControl() {
         <div className="mc-scroll">
           <div className="mc-canvas">
             <Links links={links} version={`${structure.join("|")}|${linkKey}`} />
+            <div className="mc-row">
+              <MissionNode workspaceId={wsId} projectDir={projectDir} mission={mission} team={team} onSelectSession={selectCard} openMenu={openMenu} />
+            </div>
             {total === 0 ? (
               <EmptyMission groupId={activeGroupId} />
             ) : (
@@ -357,7 +392,14 @@ export function MissionControl() {
                 </div>
                 <div className="mc-lanes">
                   {model.lanes.map((l, i) => (
-                    <LaneNode key={l.groupId} lane={l} index={i + 1} openMenu={openMenu} {...cardProps} />
+                    <LaneNode
+                      key={l.groupId}
+                      lane={l}
+                      index={i + 1}
+                      openMenu={openMenu}
+                      taskCount={countOwned(tasks, team.filter((m) => l.ids.includes(m.id)))}
+                      {...cardProps}
+                    />
                   ))}
                 </div>
                 <div className="mc-row mc-signoff-dock">
@@ -384,6 +426,11 @@ export function MissionControl() {
           <span className={model.counts.needs ? "is-needs" : ""}>
             needs-you [ <b>{model.counts.needs}</b> ]
           </span>
+          {taskStats.total > 0 && (
+            <span title="Mission tasks done / total (.gridkeeper/mission.md)">
+              tasks [ <b>{taskStats.done}</b>/<b>{taskStats.total}</b> ]
+            </span>
+          )}
           <span title="Terminal output of this workspace's sessions (PTY bytes, not tokens)">
             out [ <b>{formatRate(outTotal)}</b> ]
           </span>
@@ -408,9 +455,11 @@ interface CardProps {
   onJump: (id: SessionId) => void;
   onMenu: (e: MenuEvent, id: SessionId) => void;
   now: number;
+  /** Current mission task per session (see currentTaskFor). */
+  tasks: Record<SessionId, Task>;
 }
 
-function LeadNode({ leads, lanes, allIds, selected, onSelect, onJump, onMenu, now }: CardProps & { leads: SessionId[]; lanes: LaneModel[]; allIds: SessionId[] }) {
+function LeadNode({ leads, lanes, allIds, selected, onSelect, onJump, onMenu, now, tasks }: CardProps & { leads: SessionId[]; lanes: LaneModel[]; allIds: SessionId[] }) {
   const liveLeads = useApp((s) => leads.filter((id) => isLive(s.runtime[id])).length);
   const phases = lanes.length > 0 && (
     <div className="mc-lead-phases mc-micro" aria-label="Workflow phases">
@@ -456,7 +505,17 @@ function LeadNode({ leads, lanes, allIds, selected, onSelect, onJump, onMenu, no
       </div>
       <div className="mc-cards">
         {leads.map((id) => (
-          <SessionCard key={id} id={id} selected={id === selected} onSelect={onSelect} onJump={onJump} onMenu={onMenu} now={now} />
+          <SessionCard
+            key={id}
+            id={id}
+            selected={id === selected}
+            onSelect={onSelect}
+            onJump={onJump}
+            onMenu={onMenu}
+            now={now}
+            task={tasks[id]?.text ?? null}
+            taskState={tasks[id]?.state ?? null}
+          />
         ))}
       </div>
     </div>
@@ -500,7 +559,18 @@ function AssignLead({ ids }: { ids: SessionId[] }) {
   );
 }
 
-function LaneNode({ lane, index, openMenu, selected, onSelect, onJump, onMenu, now }: CardProps & { lane: LaneModel; index: number; openMenu: OpenMenu }) {
+function LaneNode({
+  lane,
+  index,
+  openMenu,
+  taskCount,
+  selected,
+  onSelect,
+  onJump,
+  onMenu,
+  now,
+  tasks,
+}: CardProps & { lane: LaneModel; index: number; openMenu: OpenMenu; taskCount: number }) {
   const progress = laneProgress(lane);
   const what = `lane “${lane.name}”`;
   const canRestart = useApp((s) => restartTargets(lane.ids, s.persisted.sessions, s.runtime).length > 0);
@@ -559,6 +629,7 @@ function LaneNode({ lane, index, openMenu, selected, onSelect, onJump, onMenu, n
             <span style={{ width: `${Math.round(progress.fraction * 100)}%` } as CSSProperties} />
           </span>
           <span>{progress.label}</span>
+          {taskCount > 0 && <span title="Mission tasks owned by this lane's sessions">· {taskCount === 1 ? "1 task" : `${taskCount} tasks`}</span>}
           <span className="mc-lane-stats">
             {lane.working > 0 && <span className="is-working">{lane.working} working</span>}
             {lane.needs > 0 && <span className="is-needs">{lane.needs} need you</span>}
@@ -570,7 +641,17 @@ function LaneNode({ lane, index, openMenu, selected, onSelect, onJump, onMenu, n
       )}
       <div className="mc-cards">
         {lane.ids.map((id) => (
-          <SessionCard key={id} id={id} selected={id === selected} onSelect={onSelect} onJump={onJump} onMenu={onMenu} now={now} />
+          <SessionCard
+            key={id}
+            id={id}
+            selected={id === selected}
+            onSelect={onSelect}
+            onJump={onJump}
+            onMenu={onMenu}
+            now={now}
+            task={tasks[id]?.text ?? null}
+            taskState={tasks[id]?.state ?? null}
+          />
         ))}
       </div>
     </div>

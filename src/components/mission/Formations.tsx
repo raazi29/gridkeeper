@@ -1,7 +1,7 @@
 // "Launch formation" dialog: pick a team template (built-in or saved), project folder, counts, worktrees,
-// Claude account per role and optional starter prompts. A live plan preview shows exactly what will
-// happen; ONE confirmation lists every group, session and `git worktree add` command before anything
-// is created. Also: save the current workspace as a formation.
+// Claude account per role and optional starter prompts (pre-filled from the mission file on request). A
+// live plan preview shows exactly what will happen; ONE confirmation lists every group, session and
+// `git worktree add` command before anything is created. Also: save the current workspace as a formation.
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -21,6 +21,7 @@ import {
   type FormationTemplate,
 } from "../../actions/formationPlan";
 import { deleteSavedFormation, launchFormation, loadSavedFormations, reusableEmptyGroup, saveWorkspaceAsFormation } from "../../actions/formations";
+import { formationBriefPrompts } from "../../actions/missionBrief";
 import { notify } from "../../actions/notify";
 import { ipc } from "../../lib/ipc";
 import { roleInfo } from "../../lib/roles";
@@ -78,6 +79,21 @@ export function FormationDialog() {
   const [busy, setBusy] = useState(false);
   const stamp = useMemo(() => formationStamp(new Date()), []);
   const seq = useRef(0);
+  // The workspace's mission file (read once per open): offers to brief the new team from it.
+  const [missionPath, setMissionPath] = useState<string | null>(null);
+  const [briefOn, setBriefOn] = useState(false);
+  const briefed = useRef<Record<string, string>>({});
+  useEffect(() => {
+    if (!wsDir) return;
+    let cancelled = false;
+    ipc
+      .missionRead(wsDir)
+      .then((f) => !cancelled && setMissionPath(f.exists ? f.path : null))
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [wsDir]);
 
   const checkDir = async (path: string) => {
     const n = ++seq.current;
@@ -158,6 +174,27 @@ export function FormationDialog() {
       liveProfileUse,
     });
   }, [template, dir, git, useWorktrees, prefix, stamp, profiles, effectiveProfiles, prompts, showPrompts, liveProfileUse]);
+
+  // Mission briefs as starter prompts: refilled when the planned team changes (names / roles), not on
+  // every prompt edit (the plan depends on the prompts, the team key does not).
+  const planTeam = useMemo(() => plan?.groups.flatMap((g) => g.sessions.map((s) => ({ name: s.name, role: s.role }))) ?? [], [plan]);
+  const teamKey = planTeam.map((m) => `${m.name}=${m.role ?? ""}`).join("|");
+  useEffect(() => {
+    if (!briefOn || !missionPath) return;
+    const next = formationBriefPrompts(roles.map((r) => r.role), planTeam, missionPath);
+    briefed.current = next;
+    setPrompts((p) => ({ ...p, ...next }));
+    setShowPrompts(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [briefOn, missionPath, teamKey]);
+  const toggleBrief = (on: boolean) => {
+    setBriefOn(on);
+    if (on) return;
+    // Clear the briefs the user did not edit.
+    const gen = briefed.current;
+    briefed.current = {};
+    setPrompts((p) => Object.fromEntries(Object.entries(p).filter(([k, v]) => gen[k] !== v)));
+  };
 
   const extraWarnings = useMemo(() => {
     const w: string[] = [];
@@ -382,6 +419,16 @@ export function FormationDialog() {
         )}
 
         <div>
+          {missionPath && (
+            <div style={{ marginBottom: 8 }}>
+              <Toggle
+                checked={briefOn}
+                onChange={toggleBrief}
+                label="Brief the team from the mission file"
+                hint={`Fills each role's starter prompt with how to use ${missionPath} (lead: split it into tasks; others: claim and finish theirs)`}
+              />
+            </div>
+          )}
           <Toggle checked={showPrompts} onChange={setShowPrompts} label="Starter prompts (optional)" hint="Sent once per new agent after it has started and gone quiet; held while it asks for confirmation" />
           {showPrompts && (
             <div className="fm-roles" style={{ marginTop: 8 }}>
