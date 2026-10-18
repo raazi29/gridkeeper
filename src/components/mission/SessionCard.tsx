@@ -170,7 +170,7 @@ export const SessionCard = memo(function SessionCard({
     e.stopPropagation();
     setAssignHover(false);
     endTaskDrag();
-    assignTaskToSession(id, t.line).catch((err: unknown) => notify("error", `Could not assign the task: ${err instanceof Error ? err.message : String(err)}`));
+    assignTaskToSession(id, t.line, t.text).catch((err: unknown) => notify("error", `Could not assign the task: ${err instanceof Error ? err.message : String(err)}`));
   };
 
   return (

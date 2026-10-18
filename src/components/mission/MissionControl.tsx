@@ -614,7 +614,7 @@ export function MissionControl() {
           <div className="mc-canvas">
             <Links links={links} version={`${structure.join("|")}|${linkKey}|${collapsedKey}`} />
             <div className="mc-row">
-              <MissionNode workspaceId={wsId} projectDir={projectDir} mission={mission} team={team} onSelectSession={selectCard} openMenu={openMenu} />
+              <MissionNode workspaceId={wsId} projectDir={projectDir} mission={mission} team={team} onSelectSession={selectCard} openMenu={openMenu} selectedSessionId={selected} />
             </div>
             {total === 0 ? (
               <EmptyMission groupId={activeGroupId} />

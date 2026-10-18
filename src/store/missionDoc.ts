@@ -10,6 +10,7 @@ import { notify } from "../actions/notify";
 import { errorMessage, ipc, onMissionChanged } from "../lib/ipc";
 import { parseMission, setTaskState, type MissionDoc, type TaskState } from "../lib/missionDoc";
 import type { MissionFile } from "../lib/types";
+import { actionToast } from "./uiStore";
 
 export interface MissionEntry {
   file: MissionFile | null;
@@ -133,7 +134,7 @@ export type WriteResult = { ok: true; file: MissionFile } | { ok: false; conflic
  * Write the mission file. `expected` = the modification time the text was based on (null = the file
  * must not exist yet); by default the last-read file's. On a conflict: re-read + toast.
  */
-export async function writeMission(dir: string, text: string, expected?: number | null): Promise<WriteResult> {
+export async function writeMission(dir: string, text: string, expected?: number | null, conflictMessage = CONFLICT_MESSAGE): Promise<WriteResult> {
   const cur = useMissionDocs.getState().byDir[dir]?.file;
   const base = expected !== undefined ? expected : cur?.exists ? cur.modifiedMs : null;
   try {
@@ -143,7 +144,7 @@ export async function writeMission(dir: string, text: string, expected?: number 
   } catch (e) {
     if (isConflict(e)) {
       await reloadMission(dir);
-      notify("warn", CONFLICT_MESSAGE);
+      notify("warn", conflictMessage);
       return { ok: false, conflict: true };
     }
     notify("error", `Could not save the mission file: ${errorMessage(e)}`);
@@ -151,19 +152,64 @@ export async function writeMission(dir: string, text: string, expected?: number 
   }
 }
 
+export const UNDO_CONFLICT_MESSAGE = "Can't undo: the mission file changed since — reloaded";
+
+// Board edits run one at a time per folder, each on the file the previous one left (rapid Alt+↓ presses,
+// a drop while a write is in flight).
+const queues = new Map<string, Promise<unknown>>();
+function serial<T>(dir: string, fn: () => Promise<T>): Promise<T> {
+  const run = (queues.get(dir) ?? Promise.resolve()).then(fn, fn);
+  const tail = run.catch(() => {});
+  queues.set(dir, tail);
+  void tail.then(() => {
+    if (queues.get(dir) === tail) queues.delete(dir);
+  });
+  return run;
+}
+
+export interface EditOptions {
+  /** After a successful write: a toast with this message and an Undo button (restores the previous text). */
+  undo?: string;
+  /** The task the edit is about, as the UI saw it: the edit is refused (re-read + toast) unless the file still has it on that line. */
+  expect?: { line: number; text: string };
+}
+
+/**
+ * Apply a pure edit (`edit(text)` → new text; null = the line is stale) to the last-read file and write it
+ * with that file's modification time, so a concurrent agent edit is never overwritten (conflict → re-read +
+ * toast). Returns true when the file now has the edit (also for a no-op).
+ */
+export function editMission(dir: string, edit: (text: string) => string | null, opts: EditOptions = {}): Promise<boolean> {
+  return serial(dir, async () => {
+    const file = useMissionDocs.getState().byDir[dir]?.file;
+    if (!file?.exists) return false;
+    const exp = opts.expect;
+    const stale = exp && !parseMission(file.text).tasks.some((t) => t.line === exp.line && t.text === exp.text);
+    const next = stale ? null : edit(file.text);
+    if (next === null) {
+      await reloadMission(dir);
+      notify("warn", CONFLICT_MESSAGE);
+      return false;
+    }
+    if (next === file.text) return true;
+    const r = await writeMission(dir, next, file.modifiedMs);
+    if (r.ok && opts.undo) {
+      const before = file.text;
+      const after = r.file.modifiedMs;
+      actionToast({ kind: "info", message: opts.undo, action: { label: "Undo", run: () => void undoMission(dir, before, after) } });
+    }
+    return r.ok;
+  });
+}
+
+/** Restore `before` if the file is still exactly what our edit wrote (modification time `after`). */
+export function undoMission(dir: string, before: string, after: number | null): Promise<boolean> {
+  return serial(dir, async () => (await writeMission(dir, before, after, UNDO_CONFLICT_MESSAGE)).ok);
+}
+
 /** Change one task's box (by line) in the last-read file. A stale line re-reads instead of guessing. */
-export async function updateTaskState(dir: string, line: number, state: TaskState): Promise<boolean> {
-  const file = useMissionDocs.getState().byDir[dir]?.file;
-  if (!file?.exists) return false;
-  const next = setTaskState(file.text, line, state);
-  if (next === null) {
-    await reloadMission(dir);
-    notify("warn", CONFLICT_MESSAGE);
-    return false;
-  }
-  if (next === file.text) return true;
-  const r = await writeMission(dir, next, file.modifiedMs);
-  return r.ok;
+export function updateTaskState(dir: string, line: number, state: TaskState): Promise<boolean> {
+  return editMission(dir, (text) => setTaskState(text, line, state));
 }
 
 /** Test hook: forget every hold / listener / cached entry. */
@@ -172,6 +218,7 @@ export function resetMissionDocsForTests() {
   readSeq.clear();
   inflight.clear();
   again.clear();
+  queues.clear();
   unlisten = null;
   useMissionDocs.setState({ byDir: {} });
 }
