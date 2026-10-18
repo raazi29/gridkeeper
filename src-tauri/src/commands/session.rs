@@ -90,8 +90,13 @@ pub async fn session_output_tail(ctx: State<'_, AppCtx>, id: SessionId, max_byte
     ctx.sessions.output_tail(&id, max_bytes as usize)
 }
 
-/// Forget an exited session (fails if still running).
+/// Forget an exited session (fails if still running). Its cost meter files are deleted too, also when
+/// it never ran in this app run.
 #[tauri::command]
 pub async fn session_remove(ctx: State<'_, AppCtx>, id: SessionId) -> AppResult<()> {
-    ctx.sessions.remove(&id)
+    let removed = ctx.sessions.remove(&id);
+    if !matches!(removed, Err(AppError::Invalid(_))) {
+        ctx.meter.forget(&id);
+    }
+    removed
 }

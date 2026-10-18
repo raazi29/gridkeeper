@@ -64,7 +64,7 @@ impl AgentAdapter for ClaudeAdapter {
         discovery::which_exe("claude")
     }
 
-    fn configure(&self, ctx: &LaunchContext<'_>, _exe: &Executable, plan: &mut PlanBuilder) -> AppResult<()> {
+    fn configure(&self, ctx: &LaunchContext<'_>, exe: &Executable, plan: &mut PlanBuilder) -> AppResult<()> {
         let spec = ctx.spec;
 
         // --- profile -------------------------------------------------------
@@ -129,6 +129,13 @@ impl AgentAdapter for ClaudeAdapter {
                     plan.arg("--session-id").arg(id.clone());
                 }
             }
+        }
+
+        // --- cost & context meter (opt-in, see crate::meter) -----------------
+        // `--settings <data_dir>\meter\settings-<session>.json` sets only `statusLine` for this process;
+        // skipped when the user's own args already pass `--settings`.
+        if let Some(file) = crate::meter::launch::prepare_claude(spec, ctx.settings, config_root.as_deref(), exe.via_cmd) {
+            plan.arg("--settings").arg(file.to_string_lossy().into_owned());
         }
         Ok(())
     }

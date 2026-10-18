@@ -31,6 +31,7 @@ import { buildGroupMenu } from "../menus/containerMenus";
 import { buildSessionMenu, confirmRestart, confirmStop } from "../menus/sessionMenu";
 import { QuickLaunchButton } from "../QuickLaunch";
 import { ReplayHeaderControls } from "../replay/ReplayControls";
+import { CostMeterHint, WorkspaceCost } from "../MeterChip";
 import { useContextMenu, type MenuItem } from "../ui/Menu";
 import { ActivityRiver } from "./ActivityRiver";
 import type { FleetLamp } from "../util/fleet";
@@ -675,6 +676,8 @@ export function MissionControl() {
           <span title="Terminal output of this workspace's sessions (PTY bytes, not tokens)">
             out [ <b>{formatRate(outTotal)}</b> ]
           </span>
+          <WorkspaceCost ids={allIds} />
+          <CostMeterHint ids={allIds} variant="mc" />
           <span className="mc-spacer" />
           <span className="mc-keys" title="Keyboard (selected card)">
             <kbd>←↑↓→</kbd> select · <kbd>enter</kbd> jump · <kbd>r</kbd> restart · <kbd>s</kbd> stop/start · <kbd>m</kbd> message · <kbd>del</kbd> close ·{" "}

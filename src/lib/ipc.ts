@@ -32,10 +32,11 @@ import type {
   SessionId,
   SessionAttention,
   SessionInfo,
+  SessionMeter,
   SessionSpec,
   WorktreeInfo,
 } from "./types";
-import { EVT_MISSION_CHANGED, EVT_SESSION_ATTENTION, EVT_SESSION_STATE } from "./types";
+import { EVT_MISSION_CHANGED, EVT_SESSION_ATTENTION, EVT_SESSION_METER, EVT_SESSION_STATE } from "./types";
 // Skills
 import type { InstallResult, InstalledSkill, RepoSkills, SkillFileText, SkillRepoPage, SkillSort, SkillTarget, SkillUpdateCheck } from "./types";
 
@@ -170,6 +171,8 @@ export const ipc = {
   /** Raw binary body (no JSON number[]: a 20 MB video stays 20 MB on the wire). Returns the written path. */
   replaySaveFile: (token: string, bytes: Uint8Array) =>
     invoke<string>("replay_save_file", bytes, { headers: { "x-replay-token": token } }),
+  // Meter: Claude Code cost & context per pane (status line JSON; live updates via onSessionMeter).
+  meterSnapshot: () => invoke<SessionMeter[]>("meter_snapshot"),
 };
 
 export function onSessionState(cb: (info: SessionInfo) => void): Promise<UnlistenFn> {
@@ -188,4 +191,8 @@ export function errorMessage(e: unknown): string {
 
 export function onMissionChanged(cb: (ev: MissionChanged) => void): Promise<UnlistenFn> {
   return listen<MissionChanged>(EVT_MISSION_CHANGED, (e) => cb(e.payload));
+}
+
+export function onSessionMeter(cb: (m: SessionMeter) => void): Promise<UnlistenFn> {
+  return listen<SessionMeter>(EVT_SESSION_METER, (e) => cb(e.payload));
 }

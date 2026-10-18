@@ -609,6 +609,12 @@ pub struct Settings {
     /// Synthesized ignite / retract sound with the saber effects (off by default).
     #[serde(default)]
     pub saber_sound: bool,
+    /// Cost & context meter for Claude panes (opt-in; see `meter`). Applies to newly started panes.
+    #[serde(default)]
+    pub cost_meter: bool,
+    /// The one-time "turn on the cost meter" hint was dismissed.
+    #[serde(default)]
+    pub cost_meter_hint_dismissed: bool,
 }
 
 fn default_right_click_action() -> String {
@@ -733,6 +739,8 @@ impl Default for Settings {
             saber_effects: default_saber_effects(),
             saber_blade_from_theme: default_saber_blade_from_theme(),
             saber_sound: false,
+            cost_meter: false,
+            cost_meter_hint_dismissed: false,
         }
     }
 }
@@ -1076,4 +1084,62 @@ pub struct ReplayAppend {
 pub struct ReplaySaveTarget {
     pub token: String,
     pub path: String,
+}
+
+// ---------------------------------------------------------------------------
+// Cost & context meter (Claude Code status line; see `meter`)
+// ---------------------------------------------------------------------------
+
+/// Emitted with payload `SessionMeter` when a pane's meter changes (new status line data or a launch).
+pub const EVT_SESSION_METER: &str = "session-meter";
+
+/// How the pane's last launch went for the meter.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum MeterStatus {
+    /// No launch seen in this app run (data, if any, is from an earlier run).
+    #[default]
+    Unknown,
+    /// Launched with Gridkeeper's status line; data arrives with Claude's first status line update.
+    Metered,
+    /// The session passes its own `--settings`, so the meter stays off.
+    CustomSettings,
+    /// Managed settings own the status line (or turn status line commands off).
+    Managed,
+    /// Not possible for this launch; `note` says why.
+    Unavailable,
+}
+
+/// One pane's meter. Numbers come from Claude Code's status line JSON; cost is Claude Code's own
+/// estimate at list price (on a subscription: API-equivalent value, not a bill).
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SessionMeter {
+    /// Gridkeeper's session id.
+    pub session_id: SessionId,
+    pub status: MeterStatus,
+    /// Why the meter is off or limited (shown in the tooltip).
+    pub note: Option<String>,
+    /// The user's own status line is chained (still shown inside the pane).
+    pub chained: bool,
+    /// Claude's conversation id of the latest data (changes on `/clear`).
+    pub claude_session_id: Option<String>,
+    /// `cost.total_cost_usd` of the current conversation.
+    pub cost_usd: Option<f64>,
+    /// Running pane total: the sum of the last cost seen per Claude conversation (survives `/clear`).
+    pub pane_cost_usd: Option<f64>,
+    /// `context_window.used_percentage`.
+    pub context_pct: Option<f64>,
+    pub context_size: Option<u64>,
+    /// Tokens currently in the context window (not cumulative).
+    pub input_tokens: Option<u64>,
+    pub output_tokens: Option<u64>,
+    pub api_duration_ms: Option<u64>,
+    pub duration_ms: Option<u64>,
+    pub model: Option<String>,
+    /// Subscription rate-limit windows (claude.ai Pro / Max), percent used.
+    pub five_hour_pct: Option<f64>,
+    pub seven_day_pct: Option<f64>,
+    /// When the helper last wrote data (ms since the epoch); `None` = no data yet.
+    pub updated_ms: Option<u64>,
 }

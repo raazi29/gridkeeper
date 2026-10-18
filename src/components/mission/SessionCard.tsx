@@ -24,6 +24,7 @@ import { IconExternal } from "../icons";
 import { confirmRestart, confirmStop } from "../menus/sessionMenu";
 import { IconBell } from "../AttentionBits";
 import { IconBellOff } from "../MutedGlyph";
+import { MeterCardLine } from "../MeterChip";
 import { formatUptime } from "../util/fleet";
 import { basename, formatCpu, formatMb, taskManagerCpu } from "../util/text";
 import { LAMP_TEXT, sessionStatus, type DropSide } from "./derive";
@@ -274,6 +275,7 @@ export const SessionCard = memo(function SessionCard({
           </span>
         </div>
       )}
+      <MeterCardLine sessionId={id} />
       {st.live && stats && (
         <div className="mc-card-row mc-res" title="CPU (share of all cores) · RAM of the process tree">
           cpu {formatCpu(taskManagerCpu(stats.cpuPercent, cores))} · ram {formatMb(stats.memoryBytes)}

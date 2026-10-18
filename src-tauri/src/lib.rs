@@ -15,6 +15,7 @@
 //! - `ports`       LISTENING TCP ports per session process tree
 //! - `browser`     browser panes: URL validation, embeddability probe, pop-out windows
 //! - `skills`      Agent Skills: GitHub discovery (user-initiated), review, install into a project
+//! - `meter`       Claude Code cost & context meter: status line helper mode, `--settings` file, folder watch
 //! - `logging` / `redact` structured logs with secret redaction
 //! - `webview_guard` reload / rebuild the main window when a WebView2 process dies
 
@@ -26,6 +27,7 @@ pub mod diagnostics;
 pub mod git;
 pub mod gpu;
 pub mod logging;
+pub mod meter;
 pub mod mission;
 pub mod persistence;
 pub mod ports;
@@ -143,6 +145,7 @@ pub fn run() {
             commands::replay::replay_delete,
             commands::replay::replay_save_dialog,
             commands::replay::replay_save_file,
+            commands::meter::meter_snapshot,
         ])
         .build(context)
         .unwrap_or_else(|e| fatal_startup_error(&e.to_string()))
