@@ -23,7 +23,8 @@ pub struct AppCtx {
     pub profiles: ProfileStore,
     pub store: StateStore,
     pub diag: Arc<DiagSampler>,
-    /// Ref-counted watches of `<projectDir>/.gridkeeper/mission.md` (`mission-changed` events).
+    /// Ref-counted watches of `<projectDir>/.gridkeeper/mission.md` and `.gridkeeper/outbox/`
+    /// (`mission-changed` events).
     pub missions: MissionWatchers,
     _log_guard: Option<crate::logging::LogGuard>,
 }
@@ -52,8 +53,8 @@ impl AppCtx {
         let profiles = ProfileStore::load(data_dir.join("profiles.json"));
         let sessions = Arc::new(SessionManager::new(app.clone()));
         let emitter = app.clone();
-        let missions = MissionWatchers::new(Arc::new(move |dir: &str| {
-            let payload = crate::types::MissionChanged { project_dir: dir.to_string() };
+        let missions = MissionWatchers::new(Arc::new(move |dir: &str, file: crate::types::MissionChangeKind| {
+            let payload = crate::types::MissionChanged { project_dir: dir.to_string(), file };
             if let Err(e) = emitter.emit(crate::types::EVT_MISSION_CHANGED, payload) {
                 tracing::warn!(error = %e, "could not emit mission-changed");
             }

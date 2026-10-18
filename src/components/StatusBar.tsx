@@ -5,6 +5,7 @@ import { useApp, isLive, selectActiveGroup, selectActiveWorkspace } from "../sto
 import { useUi } from "../store/uiStore";
 import { CommsButton, FleetButton } from "./Comms";
 import { gpuLoadText, gpuTooltip } from "./GpuSection";
+import { AutopilotChip } from "./mission/LeadControl";
 import { MemoryPressureChip } from "./ResourceWarnings";
 import { ThemeChip } from "./ThemeSwitcher";
 import { useDiagnosticsPoll, useRendererStatus, useShortcut } from "./hooks";
@@ -59,6 +60,7 @@ export function StatusBar() {
         <ThemeChip />
       </div>
       <div className="sb-right">
+        <AutopilotChip />
         <FleetButton />
         <CommsButton />
         <span className="sb-div" />

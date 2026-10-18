@@ -34,6 +34,7 @@ import { useContextMenu, type MenuItem } from "../ui/Menu";
 import { ActivityRiver } from "./ActivityRiver";
 import type { FleetLamp } from "../util/fleet";
 import { deriveMission, insertIndex, laneProgress, nextLaneName, phaseMark, reorderTarget, sessionStatus, sideOf, type DropSide, type LaneModel } from "./derive";
+import { LeadControl } from "./LeadControl";
 import { Links, type LinkSpec } from "./Links";
 import {
   beginLaneDrag,
@@ -809,6 +810,7 @@ function LeadNode({
         {phases}
         <div>no lead yet — pick the session that coordinates the others, or drag its card here</div>
         <AssignLead ids={allIds} />
+        <LeadControl leads={leads} />
       </div>
     );
   if (collapsed)
@@ -863,6 +865,7 @@ function LeadNode({
           />
         ))}
       </div>
+      <LeadControl leads={leads} />
     </div>
   );
 }
