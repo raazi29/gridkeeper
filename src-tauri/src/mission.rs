@@ -621,6 +621,11 @@ struct DirWatch {
 
 impl DirWatch {
     fn start(project: PathBuf, names: Arc<Mutex<Vec<(String, usize)>>>, emit: EmitFn) -> AppResult<Self> {
+        // FSEvents reports resolved paths (`/var/...` arrives as `/private/var/...`), so watch and match the
+        // real path. The UI still gets the spelling it passed in (`names`). Not on Windows, where
+        // canonicalize adds a `\\?\` prefix that event paths don't have.
+        #[cfg(target_os = "macos")]
+        let project = std::fs::canonicalize(&project).unwrap_or(project);
         let shared = Arc::new(Shared::default());
         let gk = project.join(DIR_NAME);
         let outbox = gk.join(OUTBOX_DIR);
