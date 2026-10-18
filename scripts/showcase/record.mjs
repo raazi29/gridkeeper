@@ -1,12 +1,12 @@
 // Records a scripted tour of the running dev app (CDP screencast) and encodes it with ffmpeg.
-// Prereqs: dev app launched with WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=--remote-debugging-port=9222, ffmpeg on PATH.
+// Prereqs: a dev sandbox (npm run sandbox; then CDP_PORT=9333), ffmpeg on PATH. Sessions run in E2E_CWD (default: cwd).
 // Usage: node scripts/showcase/record.mjs [outDir]   -> outDir/gridkeeper-demo.mp4 + .gif + key frames (.png)
 // The tour only uses a dedicated "Showcase" workspace with PowerShell panes (no accounts dialog, no e-mails).
 
 import { execFileSync } from "node:child_process";
 import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
-import { connect } from "../e2e/cdp.mjs";
+import { assertSandbox, connect, E2E_CWD } from "../e2e/cdp.mjs";
 
 const outDir = resolve(process.argv[2] ?? "docs/assets/showcase");
 const framesDir = join(outDir, "frames");
@@ -16,6 +16,7 @@ mkdirSync(framesDir, { recursive: true });
 const W = 1600;
 const H = 900;
 const c = await connect();
+await assertSandbox(c); // the tour creates and closes sessions: sandbox instances only (or E2E_ALLOW_LIVE=1)
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const js = (fn, ...args) => c.evaluate(`(${fn})(${args.map((a) => JSON.stringify(a)).join(",")})`);
 
@@ -48,19 +49,19 @@ async function recordLoop() {
 }
 
 // ---- tour helpers (run inside the page) -------------------------------------------------------
-const setup = () => (async () => {
+const setup = (cwd) => (async () => {
   const G = window.__gridkeeper;
   const { useApp } = G.store;
   for (const w of useApp.getState().persisted.workspaces.filter((w) => w.name === "Showcase")) {
     for (const id of w.groups.flatMap((g) => g.sessionIds)) await G.sessions.closeSession(id);
     useApp.getState().deleteWorkspace(w.id);
   }
-  const scripts = "D:\\AlteraAI\\scripts\\bench";
-  const wsId = useApp.getState().createWorkspace("Showcase", "D:\\AlteraAI");
+  const scripts = cwd + "\\scripts\\bench";
+  const wsId = useApp.getState().createWorkspace("Showcase", cwd);
   const g = useApp.getState().persisted.workspaces.find((w) => w.id === wsId).groups[0].id;
   useApp.getState().renameGroup(g, "Build");
   const mk = (name, args, role) => {
-    const id = G.sessions.newSession({ groupId: g, agent: "powershell", cwd: "D:\\AlteraAI", name, args });
+    const id = G.sessions.newSession({ groupId: g, agent: "powershell", cwd, name, args });
     if (role) useApp.getState().updateSessionMeta(id, { role });
     return id;
   };
@@ -81,7 +82,7 @@ const typeInto = (name, text) => {
 
 // ---- the tour ---------------------------------------------------------------------------------
 const prevTheme = await js(() => window.__gridkeeper.store.useApp.getState().persisted.settings.theme);
-await js(setup);
+await js(setup, E2E_CWD);
 await js(theme, "deep-space");
 await sleep(6000);
 recording = true;

@@ -4,9 +4,14 @@ Working notes for the next session's agents (and humans). Read this first, then
 [ARCHITECTURE.md](ARCHITECTURE.md) for depth and [TECHNICAL_DECISIONS.md](TECHNICAL_DECISIONS.md) for the why.
 Ideas for what to build next are in [ROADMAP.md](ROADMAP.md).
 
-**State as of 2026-10-17:** v0.1.0 released (`gh release view v0.1.0 -R raazi29/gridkeeper`, private repo,
-installer `Gridkeeper_0.1.1_x64-setup.exe`, ≈6 MB). 164 Rust and 400 frontend tests, 22/22 live e2e checks at
-release. License MIT. Main checkout: `D:\AlteraAI`. Agents work in `D:\AlteraAI\.claude\worktrees\agent-*`.
+**State as of 2026-10-18:** the repo is **public** (github.com/raazi29/gridkeeper, MIT). The latest published
+release is v0.1.1 (`gh release view v0.1.1 -R raazi29/gridkeeper`, installer `Gridkeeper_0.1.1_x64-setup.exe`,
+≈6 MB). The v0.1.2 commit (`e603751`, WebView2 crash recovery) is on `main`, but its GitHub release was **never
+published**. 164 Rust tests at v0.1.1, 420 frontend tests at `6c8cf73`, 22/22 live e2e checks at the v0.1.1 release.
+CI runs on every push to `main` and every PR (`.github/workflows/ci.yml`). Main checkout: `D:\AlteraAI`. Agents work
+in `D:\AlteraAI\.claude\worktrees\agent-*`, usually **while the developer runs the installed Gridkeeper with those
+very agents inside it**: read [section 6](#6-testing-next-to-a-live-gridkeeper) before you start, build or test
+anything.
 
 ## 1. Project map
 
@@ -14,7 +19,7 @@ release. License MIT. Main checkout: `D:\AlteraAI`. Agents work in `D:\AlteraAI\
 
 | Path | What lives there |
 |---|---|
-| `lib.rs` | App setup: plugins (single-instance, opener, dialog, clipboard, notification), `generate_handler![…]` (every IPC command), the `Exit` handler (`shutdown_all`). |
+| `lib.rs` | App setup: plugins (single-instance, opener, dialog, clipboard, notification), `generate_handler![…]` (every IPC command), the `Exit` handler (`shutdown_all`). Sandbox mode (`GRIDKEEPER_SANDBOX`) skips the single-instance lock and uses its own data and WebView2 folders. |
 | `main.rs` | Entry point; calls `gridkeeper_lib::run()`. |
 | `state.rs` | `AppCtx`, the context shared by all commands (session manager, stores, paths). |
 | `types.rs` | **The IPC contract** (serde `camelCase`). Mirrored by `src/lib/types.ts`. |
@@ -37,7 +42,8 @@ release. License MIT. Main checkout: `D:\AlteraAI`. Agents work in `D:\AlteraAI\
 | `accounts.rs` | Accounts for every agent with an isolated home (`CLAUDE_CONFIG_DIR`, `CODEX_HOME`, `HERMES_HOME`): discovery, status commands, launch env. Existence checks only. |
 | `profiles.rs` | `profiles.json` store and `claude auth status --json`. |
 | `persistence.rs` | Versioned, atomic, lenient `workspaces.json` (sanitize, migrate, read-only on newer versions). |
-| `git.rs` | Repo info, `git worktree add`, read-only status/diff for the Changes drawer. |
+| `git.rs` | Repo info, `git worktree add`, read-only status/diff for the Changes drawer, branch summaries for sign-off (`git_branch_summary`). |
+| *(mission file)* | `mission_read` / `mission_write` (atomic, conflict check) / `mission_watch` (filesystem watch, no polling → `mission-changed`) for `<projectDir>/.gridkeeper/mission.md`. |
 | `ports.rs` | Listening TCP ports (`GetExtendedTcpTable`) attributed to session trees. |
 | `browser.rs` | URL validation, `curl.exe` embed probe (`frame_verdict`, `html_title`), pop-out `WebviewWindow`s. |
 | `diagnostics.rs` | CPU/RAM attribution via one Toolhelp snapshot (host / WebView2 / session trees), export bundle. |
@@ -71,7 +77,7 @@ release. License MIT. Main checkout: `D:\AlteraAI`. Agents work in `D:\AlteraAI\
 | `layout/GroupGrid.tsx`, `Pane.tsx`, `PaneHeader.tsx`, `BrowserPane.tsx`, `gridGeometry.ts`, `paneDrag.ts` | Grid, panes, headers, drag and drop. |
 | `browser/BrowserLayer.tsx`, `frameHosts.ts`, `nav.ts`, `OpenUrlDialog.tsx`, `PortsList.tsx` | Browser panes: one persistent iframe layer positioned over host boxes. |
 | `components/*` | Shell, sidebar, dialogs, palette, Fleet, Broadcast, Comms, Inspector, Diagnostics, ChangesDrawer, settings, welcome, theme switcher, menus. |
-| `components/mission/*` | Mission Control, Formations UI, activity river, session log. |
+| `components/mission/*` | Mission Control (mission board from `mission.md`, lanes, sign-off with branch evidence, "brief team…" / "hand off…"), Formations UI, activity river, session log. |
 | `keybindings/combo.ts`, `index.ts` | `DEFAULT_BINDINGS`, `forbiddenReason()`, capture-phase listener. |
 | `theme/themes.ts`, `applyTheme.ts`, `saber.ts`, `effectPrefs.ts` | 12 themes (pure data), CSS variable application, saber colours, effect prefs. |
 | `styles/*.css` | `tokens.css` (derived tokens), `signature.css` (theme-specific accents), feature CSS. |
@@ -82,16 +88,19 @@ release. License MIT. Main checkout: `D:\AlteraAI`. Agents work in `D:\AlteraAI\
 
 | Path | What |
 |---|---|
-| `scripts/e2e/` | `cdp.mjs` (CDP driver) + live test scripts (`full-verify.js`, `ps-basic.js`, `multi-agent.js`, `formation.js`, `browser-ports.js`, `reliability.js`, `codex-*.js`). |
+| `scripts/e2e/` | `cdp.mjs` (CDP driver; `file` mode refuses non-sandbox instances and injects `E2E_CWD`) + live test scripts (`full-verify.js`, `ps-basic.js`, `multi-agent.js`, `formation.js`, `mission.js`, `browser-ports.js`, `reliability.js`, `codex-*.js`). |
 | `scripts/bench/` | `flood.ps1` (output generator), `sample.ps1` (CPU/RAM/GPU sampler), `run-all.ps1` (standard scenarios). |
 | `scripts/showcase/record.mjs` | Scripted CDP tour → MP4/GIF/screenshots in `docs/assets/showcase/`. |
+| `scripts/dev/sandbox.ps1`, `sandbox-stop.ps1` | Run / stop an isolated test instance next to the live app (section 6). `npm run sandbox`, `npm run sandbox:stop`. |
 | `scripts/dev/eol-merge.sh` | Re-run a conflicted merge with CRLF/LF normalized. |
+| `.github/workflows/ci.yml` | CI on `windows-latest`: `tsc`, `vitest`, `npm run build`, `cargo test`; on `v*` tags also `tauri build` → NSIS installer as a workflow artifact (no release is created). |
+| `<project>/.gridkeeper/mission.md` | Not in this repo: the shared task board Mission Control reads and writes in each project folder (`# Mission: <goal>`, `## Tasks`, `- [ ] text @owner`; `[~]` doing, `[x]` done, `[!]` blocked). Created with a self-ignoring `.gitignore`. |
 | `docs/assets/` | Hero banner, social preview, showcase media, `logo/` (brand guide + tools), `readme/` (animated crawl + saber dividers + `tools/gen-readme-art.mjs`). |
 | `docs/research-notes/` | Raw verified findings (CLI flags, terminal stack, market/agents). |
 
-## 2. Architecture in 15 bullets
+## 2. Architecture in 17 bullets
 
-1. One Tauri 2 host process (`gridkeeper.exe`) plus WebView2; `tauri-plugin-single-instance` focuses the existing window on a second launch.
+1. One Tauri 2 host process (`gridkeeper.exe`) plus WebView2; `tauri-plugin-single-instance` focuses the existing window on a second launch (except in sandbox mode, bullet 16).
 2. Every session is a real ConPTY (`portable-pty` 0.9 on the system `conpty`) whose root process is assigned to its own Job Object right after spawn.
 3. Per session there are OS threads, not async tasks: `pty-read`, `pty-write`, `pty-wait`, one `pty-pump` per attachment, all inside `spawn_guarded` (`catch_unwind`); release builds use `panic = "unwind"`.
 4. The reader appends to a bounded ring (`Settings.buffer_kib`, default 2 MiB) and never waits on anything.
@@ -106,6 +115,8 @@ release. License MIT. Main checkout: `D:\AlteraAI`. Agents work in `D:\AlteraAI\
 13. Accounts are isolated home directories selected with each CLI's documented variable; status comes from the CLI's own status command; credentials are never read.
 14. Attention is detected in Rust from BEL/OSC signals and output activity (`pty/attention.rs`) and reduced in `store/attention.ts`; notifications, Comms, Fleet and Mission Control consume it.
 15. Built-in tools are read-only or sandboxed: Changes drawer (`git status`/`diff` only), ports (TCP table), browser panes (sandboxed iframes in one persistent layer, pop-outs as separate webviews without IPC).
+16. `GRIDKEEPER_SANDBOX=<name>` (`[a-z0-9-]{1,32}`) runs an isolated instance: data in `%APPDATA%\app.gridkeeper.desktop\sandboxes\<name>`, its own WebView2 profile, no single-instance lock, title `Gridkeeper [sandbox: <name>]`, `ipc.appInfo().sandbox`. That is how tests run next to the live app (section 6).
+17. Team coordination is a plain file: `<projectDir>/.gridkeeper/mission.md`, which every agent CLI can edit. Rust reads/writes it atomically (conflict check on modified time) and watches it with filesystem notifications (`mission-changed`); Mission Control renders it as a board and sign-off shows each builder's branch evidence (`git_branch_summary`).
 
 ## 3. The IPC contract
 
@@ -114,7 +125,7 @@ release. License MIT. Main checkout: `D:\AlteraAI`. Agents work in `D:\AlteraAI\
 - Commands are registered in `lib.rs` `generate_handler![…]` and wrapped one-to-one in `src/lib/ipc.ts`. Nothing
   else calls `invoke`.
 - Output goes over a `tauri::ipc::Channel` passed to `session_attach` (binary frames, generation-tagged); state goes
-  over events (`session-state` with `SessionInfo`, `session-attention`).
+  over events (`session-state` with `SessionInfo`, `session-attention`, `mission-changed`).
 - Sync commands run on the main thread and must be quick; slow work uses `spawn_blocking`.
 - Errors are `AppError` and redacted before they reach the UI.
 - Contract-first worked well for parallel agents: land the `types.rs`/`types.ts`/`ipc.ts` change first (or agree on
@@ -145,24 +156,34 @@ release. License MIT. Main checkout: `D:\AlteraAI`. Agents work in `D:\AlteraAI\
 
 ## 5. Build, test, verify, benchmark, record, release
 
-All `cargo`/`tauri` commands from **PowerShell**.
+All `cargo`/`tauri` commands from **PowerShell**. On the developer's machine, start the app only through the
+sandbox script (section 6), never with a bare `npm run tauri dev`.
 
 ```powershell
 npm install
-npm run tauri dev                         # dev
+npm run sandbox                           # dev build as sandbox "dev" (CDP 9333), see section 6
 npx tsc --noEmit; npx vitest run          # frontend checks
 cd src-tauri; cargo test; cd ..           # Rust unit + ConPTY tests
 npm run tauri build                       # release + NSIS installer → src-tauri\target\release\bundle\nsis\
 ```
 
-**Live verification (always do this for UI or lifecycle changes):**
+**CI** (`.github/workflows/ci.yml`, `windows-latest`) runs `npm ci`, `tsc --noEmit`, `vitest run`, `npm run build`
+(`generate_context!` needs `dist/`) and `cargo test` on every push to `main` and every PR. A `v*` tag additionally
+runs `tauri build` and uploads the NSIS installer as a workflow artifact; it does **not** create a GitHub release.
+Live CDP e2e stays local (it needs a desktop session).
+
+**Live verification (always do this for UI or lifecycle changes), in a sandbox:**
 
 ```powershell
-$env:WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS = "--remote-debugging-port=9222"
-npm run tauri dev
+npm run sandbox                                              # wait for the window "Gridkeeper [sandbox: dev]"
+$env:CDP_PORT = 9333
 node scripts/e2e/cdp.mjs file scripts/e2e/full-verify.js
-node scripts/e2e/cdp.mjs shot shot.png     # then look at the PNG
+node scripts/e2e/cdp.mjs file scripts/e2e/mission.js        # Mission Control board, FS watch, sign-off evidence
+node scripts/e2e/cdp.mjs shot shot.png                       # then look at the PNG
+npm run sandbox:stop -- -Name dev
 ```
+
+`formation.js` still needs its `__REPO__` placeholder replaced with a throwaway repo path before running.
 
 **Benchmarks:** `pwsh -File scripts/bench/run-all.ps1 -Exe src-tauri/target/release/gridkeeper.exe` → `bench-results/summary.csv`;
 compare with [PERFORMANCE.md](PERFORMANCE.md) (idle 6 sessions: host 0.06 %, WebView2 0.42 % CPU).
@@ -178,12 +199,66 @@ compare with [PERFORMANCE.md](PERFORMANCE.md) (idle 6 sessions: host 0.06 %, Web
 ```powershell
 # bump version in package.json, src-tauri/Cargo.toml and src-tauri/tauri.conf.json,
 # and the static release badge + installer name in README.md
-npm run tauri build
-gh release create v0.1.1 "src-tauri\target\release\bundle\nsis\Gridkeeper_0.1.1_x64-setup.exe" `
-  -R raazi29/gridkeeper --title "Gridkeeper v0.1.1" --notes-file notes.md
+npm run tauri build                       # or push the tag and take the installer from the CI run's artifact
+gh release create v0.1.2 "src-tauri\target\release\bundle\nsis\Gridkeeper_0.1.2_x64-setup.exe" `
+  -R raazi29/gridkeeper --title "Gridkeeper v0.1.2" --notes-file notes.md
 ```
 
-## 6. Environment quirks
+v0.1.2 is the pending one: the commit and version bump exist, the release was never published.
+
+## 6. Testing next to a live Gridkeeper
+
+The developer builds Gridkeeper **while running the installed Gridkeeper** (`D:\Gridkeeper\gridkeeper.exe`) with
+many live agents inside it, including the agents working on this repo. Nothing you do may disturb that instance.
+What goes wrong otherwise:
+
+- A dev/test build has the same identifier (`app.gridkeeper.desktop`). Started plainly, it either hits the
+  single-instance lock (it just focuses the live window and exits) or shares
+  `%APPDATA%\app.gridkeeper.desktop\workspaces.json` and the WebView2 profile with the live app.
+- Heavy cargo builds can exhaust commit on this 16 GB box; Windows then kills WebView2 processes, including the
+  live app's (black window, crash; see the `0x8007139F` quirk below).
+- e2e scripts create and close sessions and workspaces in whatever instance they connect to.
+
+**Use the sandbox script:**
+
+```powershell
+npm run sandbox                                   # = pwsh -NoProfile -File scripts/dev/sandbox.ps1 (dev mode, name "dev")
+npm run sandbox -- -DryRun                        # print checks, env and command; change nothing
+pwsh -NoProfile -File scripts/dev/sandbox.ps1 -Mode release -Name rel -CdpPort 9334   # target\release\gridkeeper.exe
+pwsh -NoProfile -File scripts/dev/sandbox.ps1 -Mode exe -Exe C:\path\gridkeeper.exe -Fresh
+npm run sandbox:stop -- -Name dev                 # stops only what sandbox.ps1 started
+```
+
+- It sets `GRIDKEEPER_SANDBOX=<name>` (own data folder `...\sandboxes\<name>`, own WebView2 profile, no
+  single-instance lock, title `Gridkeeper [sandbox: <name>]`),
+  `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=--remote-debugging-port=<port>`,
+  `WEBVIEW2_USER_DATA_FOLDER=<sandbox>\EBWebView`, `CARGO_BUILD_JOBS` (`-Jobs`,
+  default 2), `RUST_MIN_STACK=16777216` and `CDP_PORT`, for the child process only, and starts it at below-normal
+  priority. Dev mode logs to `<sandbox>\sandbox-logs\sandbox.log`.
+- **CDP port 9333** by default. 9222 is refused: the developer may use it for their own instance.
+- **Memory guard:** it reads free commit (`Win32_OperatingSystem.FreeVirtualMemory`) and free RAM and refuses to
+  start a dev build below 4 GB of free commit (`-MinFreeCommitGB`; 1.5 GB for `release`/`exe`). `-Force` overrides.
+- Dev mode fails fast when Vite's port 1420 is taken (another `tauri dev`, maybe from another worktree): only one
+  dev sandbox at a time; use `-Mode release`/`exe` for a second instance.
+- `-Fresh` deletes that sandbox's data folder first, only ever `...\sandboxes\<name>` (no junctions, not while the
+  sandbox runs).
+- The PID it started is recorded with its creation time and command line in `<sandbox>\sandbox-launch.json`.
+  `sandbox-stop.ps1` re-verifies both before it touches anything, closes the app window politely, then stops the
+  remaining tree. **Never** `Stop-Process -Name gridkeeper`, `taskkill /IM gridkeeper.exe` or kill `msedgewebview2`
+  by name: that kills the live app and every agent in it.
+- Started from an agent's pane, the sandbox lives inside that pane's Job Object: closing the pane stops it too.
+- `cdp.mjs file` (and `record.mjs`) refuse to run unless `ipc.appInfo().sandbox` is set; `E2E_ALLOW_LIVE=1`
+  overrides for a dev instance you really mean. `eval` and `shot` are not guarded. e2e scripts need a dev build
+  (`window.__gridkeeper` exists only there) and get their working folder from `E2E_CWD` (default: the current
+  directory).
+
+**Parallel agents and builds:** every worktree has its own `src-tauri\target` (several GB each, and a full rebuild).
+Agents that build share one cache with `$env:CARGO_TARGET_DIR = 'D:\AlteraAI\src-tauri\target'` (or
+`sandbox.ps1 -TargetDir ...`) and keep `CARGO_BUILD_JOBS` at 2. Cargo's lock on a shared target folder makes
+concurrent builds wait for each other, which is what you want on this machine. Don't run `cargo build`/`tauri build`
+from an agent at all when the memory guard would refuse.
+
+## 7. Environment quirks
 
 - **Run cargo only from PowerShell.** Git Bash's `/usr/bin/link.exe` shadows the MSVC linker.
 - **Low RAM / rustc stack overflow:** `$env:RUST_MIN_STACK='16777216'; $env:CARGO_BUILD_JOBS=2`.
@@ -191,8 +266,9 @@ gh release create v0.1.1 "src-tauri\target\release\bundle\nsis\Gridkeeper_0.1.1_
   machine ran out of commit (System log event 2004). Before 0.1.2 this left a black window; `webview_guard` now
   rebuilds the window. Look for `WebView2 process failed` in the log.
 - **WebView2 `0x8007139F` at startup:** another instance holds the default WebView2 user-data folder with different
-  browser arguments (for example a normal instance while you start one with `--remote-debugging-port`). Close it or
-  set `WEBVIEW2_USER_DATA_FOLDER` to a separate folder (`scripts/bench/run-all.ps1` does this per scenario).
+  browser arguments (for example a normal instance while you start one with `--remote-debugging-port`). Use the
+  sandbox script (its own profile), or set `WEBVIEW2_USER_DATA_FOLDER` to a separate folder
+  (`scripts/bench/run-all.ps1` does this per scenario). Don't "fix" it by closing the live app.
 - **Vite HMR vs e2e:** a dynamic `import()` from a CDP script gets a fresh module instance after HMR. Use the dev
   handles `window.__gridkeeper` (`store`, `sessions`, `registry`, `ipc`, `mission`, `commands`),
   `window.__gridkeeperTerminals.list()/text(id)` and `window.__gridkeeperForceContextLoss(id?)`.
@@ -202,10 +278,11 @@ gh release create v0.1.1 "src-tauri\target\release\bundle\nsis\Gridkeeper_0.1.1_
   CRLF to LF, so use `perl -pi` or the Edit tool). For whole-file merge conflicts caused by endings:
   `scripts/dev/eol-merge.sh <branch>` during the conflicted merge.
 - **Headless Edge on this machine reports `prefers-reduced-motion: reduce`.** Pass `--force-prefers-no-reduced-motion` when screenshotting animations.
-- e2e scripts hard-code `D:\AlteraAI` as the working folder.
+- e2e scripts take their working folder from the `E2E_CWD` global that `cdp.mjs file` injects (env `E2E_CWD`,
+  default: the current directory).
 - Windows notifications show the right name and icon only from the installed app; dev builds appear under PowerShell.
 
-## 7. Known issues and limitations
+## 8. Known issues and limitations
 
 - Processes don't survive app exit (no daemon); conversations resume, processes don't.
 - Codex can't pin conversation ids; panes sharing a folder get the picker. Codex occasionally fails at startup on its
@@ -220,9 +297,13 @@ gh release create v0.1.1 "src-tauri\target\release\bundle\nsis\Gridkeeper_0.1.1_
 - `conhost.exe` is not attributed in in-app diagnostics (`sample.ps1` reports it).
 - Installer unsigned (SmartScreen), no auto-update.
 - `@fontsource-variable/inter` is in `package.json` but not imported anywhere (candidate for removal).
-- Private vulnerability reporting may need enabling in the repo settings (it is a private repo).
+- Private vulnerability reporting is **disabled** in the repo settings
+  (`gh api repos/raazi29/gridkeeper/private-vulnerability-reporting` → `{"enabled":false}`), so the link in
+  SECURITY.md doesn't work yet. Enable it under Settings › Code security (or
+  `gh api -X PUT repos/raazi29/gridkeeper/private-vulnerability-reporting`), then drop the fallback note in SECURITY.md.
+- The v0.1.2 GitHub release is still unpublished (see section 5).
 
-## 8. The multi-agent workflow that worked
+## 9. The multi-agent workflow that worked
 
 - **One worktree per agent** (`.claude/worktrees/agent-*`, branch `worktree-agent-*`). Never share a checkout.
 - **Disjoint file ownership.** Each brief lists exactly which files the agent may touch. Shared hot spots
@@ -231,8 +312,12 @@ gh release create v0.1.1 "src-tauri\target\release\bundle\nsis\Gridkeeper_0.1.1_
 - **Contract first.** Agree on IPC types and command names in the brief before parallel work starts.
 - **Integrator merges.** One session merges branches into `main` in order, resolves conflicts (`eol-merge.sh` for
   CRLF noise), runs `tsc` + `vitest` + `cargo test`, then the live suite.
-- **Live CDP verification** of every feature in the running app (`full-verify.js`, screenshots that are actually
-  looked at), not only unit tests.
+- **Live CDP verification** of every feature in a sandbox instance (`npm run sandbox`, `full-verify.js`,
+  `mission.js`, screenshots that are actually looked at), not only unit tests. Never against the live app.
+- **Builds are shared and throttled.** One `CARGO_TARGET_DIR`, `CARGO_BUILD_JOBS=2`, the sandbox memory guard; a
+  machine that runs out of commit takes the developer's live agents down with it (section 6).
+- **Coordinate through the mission file.** `<projectDir>/.gridkeeper/mission.md` is the team's task board; agents
+  update their own task lines (`[~]`, `[x]`, `[!]`) and Mission Control shows it live.
 - **Evidence over assumption.** Research notes mark findings VERIFIED vs hypothesis; performance claims come from
   `scripts/bench`; agent CLI flags come from each tool's docs or `--help`.
 - **Never send prompts to real agents in tests**, and never show account e-mails in screenshots or logs.

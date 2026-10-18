@@ -6,7 +6,7 @@
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   const st = useApp.getState();
   const group = selectActiveGroup(st);
-  const id = newSession({ groupId: group.id, agent: "powershell", cwd: "D:\\AlteraAI", name: "e2e-ps" });
+  const id = newSession({ groupId: group.id, agent: "powershell", cwd: E2E_CWD, name: "e2e-ps" });
   const text = () => window.__gridkeeperTerminals?.text(id) ?? "";
   const waitFor = async (pred, ms = 15000) => {
     const t0 = Date.now();

@@ -14,8 +14,8 @@
     return false;
   };
   const text = (id) => window.__gridkeeperTerminals?.text(id) ?? "";
-  const cwd = "D:\\AlteraAI";
-  const scripts = "D:\\AlteraAI\\scripts\\bench";
+  const cwd = E2E_CWD;
+  const scripts = E2E_CWD + "\\scripts\\bench";
   const results = {};
 
   for (const w of useApp.getState().persisted.workspaces.filter((w) => w.name === "Reliability")) {

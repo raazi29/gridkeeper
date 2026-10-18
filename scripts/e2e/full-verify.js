@@ -36,10 +36,10 @@
     for (const id of w.groups.flatMap((g) => g.sessionIds)) await S.closeSession(id);
     useApp.getState().deleteWorkspace(w.id);
   }
-  const wsId = useApp.getState().createWorkspace("Verify", "D:\\AlteraAI");
+  const wsId = useApp.getState().createWorkspace("Verify", E2E_CWD);
   const groupId = useApp.getState().persisted.workspaces.find((w) => w.id === wsId).groups[0].id;
-  const a = S.newSession({ groupId, agent: "powershell", cwd: "D:\\AlteraAI", name: "verify-a" });
-  const b = S.newSession({ groupId, agent: "powershell", cwd: "D:\\AlteraAI", name: "verify-b" });
+  const a = S.newSession({ groupId, agent: "powershell", cwd: E2E_CWD, name: "verify-a" });
+  const b = S.newSession({ groupId, agent: "powershell", cwd: E2E_CWD, name: "verify-b" });
   await waitFor(() => /PS .*>/.test(text(a)) && /PS .*>/.test(text(b)));
 
   // ---- core terminal
@@ -65,7 +65,7 @@
 
   // ---- add + close via actions
   await check("session.addAndClose", async () => {
-    const c = S.newSession({ groupId, agent: "powershell", cwd: "D:\\AlteraAI", name: "verify-c" });
+    const c = S.newSession({ groupId, agent: "powershell", cwd: E2E_CWD, name: "verify-c" });
     const up = await waitFor(() => useApp.getState().runtime[c]?.state.state === "running");
     await S.closeSession(c);
     const gone = await waitFor(() => !useApp.getState().persisted.sessions.some((m) => m.id === c));
@@ -154,7 +154,7 @@
     return r.filter((x) => x.path && !x.error).map((x) => x.label ?? x.kind).join(", ");
   });
   await check("ports.api", async () => Array.isArray(await ipc.portsList()));
-  await check("git.info", async () => (await ipc.gitInfo("D:\\AlteraAI")).isRepo);
+  await check("git.info", async () => (await ipc.gitInfo(E2E_CWD)).isRepo);
 
   // ---- crash detection + restart
   await check("crash.detectAndRestart", async () => {

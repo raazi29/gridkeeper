@@ -1,0 +1,92 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  CARGO_TERM_COLOR: always
+  # rustc can overflow its default stack on the larger crates (see docs/HANDOFF.md, environment quirks).
+  RUST_MIN_STACK: "16777216"
+
+jobs:
+  check:
+    name: typecheck, unit tests, cargo test
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: npm ci
+        run: npm ci
+
+      - name: Typecheck
+        run: npx tsc --noEmit
+
+      - name: Frontend unit tests
+        run: npx vitest run
+
+      # tauri::generate_context!() embeds the frontend (tauri.conf.json frontendDist = ../dist), so the Rust
+      # crate only compiles once dist/ exists.
+      - name: Build frontend (dist/ for generate_context)
+        run: npm run build
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
+
+      # Unit tests plus the ConPTY integration tests (they spawn real pwsh/cmd). live_profiles tests are #[ignore].
+      - name: cargo test
+        run: cargo test --manifest-path src-tauri/Cargo.toml
+
+  installer:
+    name: NSIS installer (tags only)
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: check
+    runs-on: windows-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: npm ci
+        run: npm ci
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
+          key: release
+
+      # Unsigned build (see ROADMAP item 1). This uploads a workflow artifact only; GitHub releases stay manual.
+      - name: tauri build
+        run: npx tauri build
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: gridkeeper-${{ github.ref_name }}-nsis
+          path: src-tauri/target/release/bundle/nsis/*.exe
+          if-no-files-found: error
+          retention-days: 30
