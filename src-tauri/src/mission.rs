@@ -1094,6 +1094,8 @@ mod tests {
         write(&project, "mission", None, false).unwrap();
         let (watchers, rx) = channel_watchers(None);
         watchers.watch(&project).unwrap();
+        // FSEvents (macOS) can still deliver the mission.md write made just before the watch started.
+        drain(&rx, 600);
         let gk = t.path().join(DIR_NAME);
         let ob = gk.join(OUTBOX_DIR);
 
