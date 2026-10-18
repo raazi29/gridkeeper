@@ -75,6 +75,10 @@ export interface UiStore {
   /** Read-only git Changes drawer (right side, this run only). */
   changesOpen: boolean;
   setChangesOpen: (on: boolean) => void;
+  /** Repository root / worktree path the Changes drawer should bring into view (cleared on close). */
+  changesFocus: string | null;
+  /** Open the Changes drawer, optionally focused on one repository / worktree. */
+  openChanges: (focus?: string) => void;
 
   openDialog: (d: DialogState) => void;
   closeDialog: () => void;
@@ -131,7 +135,9 @@ export const useUi = create<UiStore>()((set) => ({
   presentation: false,
   scanlines: readScanlines(),
   changesOpen: false,
-  setChangesOpen: (changesOpen) => set({ changesOpen }),
+  setChangesOpen: (changesOpen) => set(changesOpen ? { changesOpen } : { changesOpen, changesFocus: null }),
+  changesFocus: null,
+  openChanges: (focus) => set({ changesOpen: true, changesFocus: focus ?? null }),
 
   openDialog: (dialog) => set({ dialog, palette: { open: false, mode: "all" } }),
   closeDialog: () => set({ dialog: null }),

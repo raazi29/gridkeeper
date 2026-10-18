@@ -4,6 +4,7 @@
 // Refreshes on open, on the Refresh button, and when a session inside a shown repository goes idle.
 
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { pathKey, useBranchSummaries } from "../actions/handoff";
 import { errorMessage, ipc, onSessionAttention } from "../lib/ipc";
 import type { ChangedFile, FileDiff, RepoChanges } from "../lib/types";
 import { selectActiveWorkspace, useApp } from "../store/appStore";
@@ -12,6 +13,8 @@ import { IconBranch, IconClose, IconRestart } from "./icons";
 import { IconButton } from "./ui/Button";
 import { classifyDiffLine, defaultDiffSide, isInside, repoDirsFor, sameRoot, statusLetter, visibleRange } from "./util/changes";
 import { basename } from "./util/text";
+import { isOnBase } from "./mission/signoffModel";
+import "../styles/signoff.css";
 
 type Side = "unstaged" | "staged" | "untracked";
 interface Selection {
@@ -31,6 +34,15 @@ export function ChangesDrawer() {
   const [sel, setSel] = useState<Selection | null>(null);
   const reposRef = useRef(repos);
   reposRef.current = repos;
+  // Focus (Mission Control "review diff"): the repository holding that worktree / folder.
+  const focus = useUi((s) => s.changesFocus);
+  const focusRoot = useMemo(() => {
+    if (!focus) return null;
+    let best: string | null = null;
+    for (const r of repos) if (r.root && isInside(r.root, focus) && (!best || r.root.length > best.length)) best = r.root;
+    return best;
+  }, [focus, repos]);
+  const appliedFocus = useRef<string | null>(null);
 
   const refresh = useCallback(async () => {
     setBusy(true);
@@ -73,6 +85,20 @@ export function ChangesDrawer() {
     };
   }, [refresh]);
 
+  // Once per focus request: select the focused repository's first changed file (its section scrolls into
+  // view and expands itself).
+  useEffect(() => {
+    if (!focus) {
+      appliedFocus.current = null;
+      return;
+    }
+    if (!focusRoot || appliedFocus.current === focus) return;
+    appliedFocus.current = focus;
+    const r = repos.find((x) => sameRoot(x.root, focusRoot));
+    const f = r?.files[0];
+    if (r?.root && f) setSel({ root: r.root, file: f, side: defaultDiffSide(f) });
+  }, [focus, focusRoot, repos]);
+
   // Drop the selection when its file is no longer listed.
   useEffect(() => {
     if (!sel) return;
@@ -98,7 +124,7 @@ export function ChangesDrawer() {
         {error && <div className="callout is-error">{error}</div>}
         {!busy && dirs.length > 0 && repos.length === 0 && !error && <div className="inspector-empty">No git repository in this workspace’s folders.</div>}
         {repos.map((r) => (
-          <RepoSection key={r.root} repo={r} sel={sel} onSelect={setSel} />
+          <RepoSection key={r.root} repo={r} sel={sel} onSelect={setSel} focus={sameRoot(r.root, focusRoot) ? focus : null} />
         ))}
       </div>
       {sel && <DiffViewer key={`${sel.root}|${sel.file.path}|${sel.side}`} sel={sel} onSide={(side) => setSel({ ...sel, side })} />}
@@ -106,11 +132,31 @@ export function ChangesDrawer() {
   );
 }
 
-const RepoSection = memo(function RepoSection({ repo, sel, onSelect }: { repo: RepoChanges; sel: Selection | null; onSelect: (s: Selection) => void }) {
+const RepoSection = memo(function RepoSection({
+  repo,
+  sel,
+  onSelect,
+  focus,
+}: {
+  repo: RepoChanges;
+  sel: Selection | null;
+  onSelect: (s: Selection) => void;
+  /** The focused worktree / folder inside this repository, when this is the focused one. */
+  focus: string | null;
+}) {
   const [open, setOpen] = useState(true);
   const root = repo.root ?? "";
+  const ref = useRef<HTMLElement>(null);
+  useEffect(() => {
+    if (!focus) return;
+    setOpen(true);
+    ref.current?.scrollIntoView({ block: "nearest" });
+  }, [focus]);
+  // Committed work is not in `git status`: say so, from the sign-off's cached branch summary.
+  const summary = useBranchSummaries((s) => (focus ? (s.byPath[pathKey(focus)]?.summary ?? null) : null));
+  const committed = summary?.isRepo && summary.base && summary.ahead > 0 && !isOnBase(summary) ? summary : null;
   return (
-    <section className="changes-repo">
+    <section ref={ref} className={`changes-repo${focus ? " is-focus" : ""}`}>
       <button type="button" className="changes-repo-head" onClick={() => setOpen(!open)} title={root}>
         <span className="changes-caret">{open ? "▾" : "▸"}</span>
         <span className="changes-repo-name">{basename(root)}</span>
@@ -124,6 +170,12 @@ const RepoSection = memo(function RepoSection({ repo, sel, onSelect }: { repo: R
         )}
         <span className="changes-count">{repo.files.length}{repo.truncated ? "+" : ""}</span>
       </button>
+      {open && committed && (
+        <div className="changes-committed mono" title="This panel lists uncommitted changes only">
+          {`Committed work, not listed below: ${committed.ahead} commit${committed.ahead === 1 ? "" : "s"} on ${committed.branch ?? "HEAD"} not on ${committed.base} (${committed.filesChanged} file${committed.filesChanged === 1 ? "" : "s"} +${committed.insertions} −${committed.deletions}). Review with `}
+          <code>{`git -C "${root}" diff ${committed.base}...${committed.branch ?? "HEAD"}`}</code>
+        </div>
+      )}
       {open && (
         <ul className="changes-files">
           {repo.files.length === 0 && <li className="changes-clean">Working tree clean</li>}

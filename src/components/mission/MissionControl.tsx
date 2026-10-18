@@ -29,11 +29,12 @@ import { buildSessionMenu, confirmRestart, confirmStop } from "../menus/sessionM
 import { QuickLaunchButton } from "../QuickLaunch";
 import { useContextMenu, type MenuItem } from "../ui/Menu";
 import { ActivityRiver } from "./ActivityRiver";
-import { deriveMission, LAMP_TEXT, laneProgress, phaseMark, sessionStatus, type LaneModel } from "./derive";
+import { deriveMission, laneProgress, phaseMark, sessionStatus, type LaneModel } from "./derive";
 import { Links, type LinkSpec } from "./Links";
 import { roleStyle } from "./RoleTag";
 import { SessionCard } from "./SessionCard";
 import { SessionLog } from "./SessionLog";
+import { SignoffNode } from "./Signoff";
 import { processSessionIds } from "../../lib/browserPanes";
 import { useOutputTails } from "./useOutputTails";
 import "../../styles/attention.css";
@@ -573,52 +574,6 @@ function LaneNode({ lane, index, openMenu, selected, onSelect, onJump, onMenu, n
         ))}
       </div>
     </div>
-  );
-}
-
-function SignoffNode({ ids, onJump, onMenu }: { ids: SessionId[]; onJump: (id: SessionId) => void; onMenu: (e: MenuEvent, id: SessionId) => void }) {
-  return (
-    <div data-node="signoff" className={`mc-node mc-signoff${ids.length ? " is-solid" : ""}`}>
-      <span className="mc-node-label">sign-off · ready for review</span>
-      <span className="mc-node-label mc-node-label-right">{ids.length} waiting / done</span>
-      {ids.length === 0 ? (
-        <div className="mc-empty">nothing waiting for review — sessions appear here when they finish or ask for you</div>
-      ) : (
-        <div className="mc-signoff-list">
-          {ids.map((id) => (
-            <SignoffChip key={id} id={id} onJump={onJump} onMenu={onMenu} />
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function SignoffChip({ id, onJump, onMenu }: { id: SessionId; onJump: (id: SessionId) => void; onMenu: (e: MenuEvent, id: SessionId) => void }) {
-  const meta = useApp(
-    useShallow((s) => {
-      const m = s.persisted.sessions.find((x) => x.id === id);
-      return m ? { name: m.name, role: m.role ?? null } : null;
-    }),
-  );
-  const rt = useApp((s) => s.runtime[id]);
-  const a = useAttention((s) => s.sessions[id]);
-  if (!meta) return null;
-  const st = sessionStatus(rt, a);
-  return (
-    <button
-      type="button"
-      className={`mc-chip is-${st.lamp}`}
-      style={roleStyle(meta.role)}
-      title={a?.lastMessage ?? LAMP_TEXT[st.lamp]}
-      onClick={() => onJump(id)}
-      onContextMenu={(e) => onMenu(e, id)}
-    >
-      <span className="mc-chip-sq" />
-      {meta.name}
-      <span className="mc-bracket">[ {st.lamp === "waiting" ? "needs you" : "done"} ]</span>
-      {st.lamp === "waiting" && <span className="mc-chip-go">answer →</span>}
-    </button>
   );
 }
 
