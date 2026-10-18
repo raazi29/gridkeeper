@@ -3,6 +3,7 @@ import { MEMORY_PRESSURE_PERCENT, memoryPressure, memoryPressureLabel, webglOver
 import { findKeyAction, findLabel, queryError } from "./findState";
 import { PASTE_MAX_BYTES, checkPaste, countLines, pasteTitle, utf8Length } from "./pasteGuard";
 import { ZOOM_MAX_FONT, ZOOM_MIN_FONT, clampZoom, zoomStep } from "./zoom";
+import { MAX_WEBGL, maxWebglFor } from "./webglBudget";
 import { isLongGap } from "../lib/clockGap";
 
 describe("paste guard", () => {
@@ -105,8 +106,11 @@ describe("memory pressure", () => {
   });
 
   it("detects more visible panes than WebGL contexts", () => {
-    expect(webglOverBudget(12)).toBe(false);
-    expect(webglOverBudget(13)).toBe(true);
+    // Pinned to Windows' budget: the default follows the host OS (8 on Linux).
+    expect(webglOverBudget(12, maxWebglFor("windows"))).toBe(false);
+    expect(webglOverBudget(13, maxWebglFor("windows"))).toBe(true);
+    expect(webglOverBudget(9, maxWebglFor("linux"))).toBe(true);
+    expect(webglOverBudget(MAX_WEBGL)).toBe(false);
     expect(webglOverBudget(5, 4)).toBe(true);
   });
 });

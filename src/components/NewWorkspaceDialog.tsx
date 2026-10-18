@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { switchWorkspace } from "../actions/commands";
 import { ipc } from "../lib/ipc";
+import { folderPlaceholder } from "../lib/platform";
 import { useApp } from "../store/appStore";
 import { IconFolder } from "./icons";
 import { Button } from "./ui/Button";
@@ -88,7 +89,7 @@ export function NewWorkspaceDialog({ onClose }: { onClose: () => void }) {
                 setDir(e.target.value);
                 setError(null);
               }}
-              placeholder={"D:\\code\\project"}
+              placeholder={folderPlaceholder()}
             />
             <Button icon={<IconFolder size={13} />} onClick={() => void browse()}>
               Browse…

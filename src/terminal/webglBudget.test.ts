@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { MAX_WEBGL, allocateWebgl, diffAllocation, type WebglCandidate } from "./webglBudget";
+import { MAX_WEBGL, allocateWebgl, diffAllocation, maxWebglFor, type WebglCandidate } from "./webglBudget";
 
 const c = (id: string, priority: number, active = false): WebglCandidate => ({ id, priority, active });
 
@@ -13,6 +13,14 @@ describe("allocateWebgl", () => {
     const many = Array.from({ length: 40 }, (_, i) => c(`t${i}`, i, i % 3 === 0));
     expect(allocateWebgl(many).size).toBe(MAX_WEBGL);
     expect(MAX_WEBGL).toBeLessThan(16);
+    expect(allocateWebgl(many, maxWebglFor("windows")).size).toBe(12);
+  });
+
+  it("uses a per-platform budget below the engines' cap of 16", () => {
+    expect(maxWebglFor("windows")).toBe(12);
+    expect(maxWebglFor("macos")).toBe(12);
+    expect(maxWebglFor("linux")).toBe(8);
+    for (const os of ["windows", "macos", "linux"] as const) expect(maxWebglFor(os)).toBeLessThan(16);
   });
 
   it("keeps existing contexts (stable) instead of thrashing to higher priority newcomers", () => {

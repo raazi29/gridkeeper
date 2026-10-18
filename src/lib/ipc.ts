@@ -34,6 +34,8 @@ import { EVT_MISSION_CHANGED, EVT_SESSION_ATTENTION, EVT_SESSION_STATE } from ".
 export interface AppInfo {
   version: string;
   windowsBuild: number | null;
+  /** Host OS (absent from older backends; `lib/platform.ts` detects it from navigator too). */
+  os?: "windows" | "macos" | "linux";
   bench: string | null;
   benchScriptsDir: string | null;
   /** GRIDKEEPER_SANDBOX name when this is an isolated test instance (own data folder, no single-instance lock). */

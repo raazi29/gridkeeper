@@ -8,9 +8,10 @@ import { clearTerminal, getTerminalSize, writeLocalNotice } from "../terminal/re
 import { autoStartable, isBrowserMeta } from "../lib/browserPanes";
 import { dropNav, getNav } from "../browser/nav";
 import { notify } from "./notify";
+import { shellLabel } from "../lib/platform";
 
 const AGENT_LABEL: Record<AgentKind, string> = {
-  powershell: "PowerShell",
+  powershell: shellLabel(),
   claude: "Claude Code",
   codex: "Codex",
   generic: "Command",

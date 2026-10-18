@@ -7,6 +7,7 @@ import { notify } from "../actions/notify";
 import { newSession } from "../actions/sessions";
 import { accountsFor, accountStatus, defaultAccountId, isSignedIn, liveOnAccount, maskEmail } from "../lib/accounts";
 import { errorMessage, ipc } from "../lib/ipc";
+import { executablePlaceholder, folderPlaceholder, isMac } from "../lib/platform";
 import type { AgentKind, GitInfo, LayoutPreset, WorktreeRef } from "../lib/types";
 import { selectActiveWorkspace, useApp } from "../store/appStore";
 import { confirmDialog, useUi } from "../store/uiStore";
@@ -266,10 +267,10 @@ export function NewSessionDialog({ groupId, preset, onClose }: { groupId?: strin
         className="form"
         onSubmit={(e) => void submit(e)}
         onKeyDown={(e) => {
-          // Enter in any text field submits (Ctrl+Enter from anywhere).
+          // Enter in any text field submits (Ctrl+Enter, ⌘↩ on macOS, from anywhere).
           if (e.key !== "Enter" || e.shiftKey || e.altKey) return;
           const t = e.target as HTMLElement;
-          if (e.ctrlKey || (t.tagName === "INPUT" && (t as HTMLInputElement).type !== "checkbox")) {
+          if ((isMac ? e.metaKey : e.ctrlKey) || (t.tagName === "INPUT" && (t as HTMLInputElement).type !== "checkbox")) {
             e.preventDefault();
             void submit();
           }
@@ -379,7 +380,7 @@ export function NewSessionDialog({ groupId, preset, onClose }: { groupId?: strin
         {agent === "generic" && !tool && (
           <Field label="Command" htmlFor="ns-cmd" error={commandError} hint="Executable path or a command on PATH">
             <div className="input-group">
-              <Input id="ns-cmd" mono value={command} onChange={(e) => setCommand(e.target.value)} placeholder={"C:\\tools\\bin\\tool.exe"} invalid={!!commandError} />
+              <Input id="ns-cmd" mono value={command} onChange={(e) => setCommand(e.target.value)} placeholder={executablePlaceholder()} invalid={!!commandError} />
               <Button
                 icon={<IconFolder size={13} />}
                 onClick={async () => {
@@ -406,7 +407,7 @@ export function NewSessionDialog({ groupId, preset, onClose }: { groupId?: strin
                 setGit(null);
               }}
               onBlur={(e) => void validateCwd(e.currentTarget.value)}
-              placeholder={"D:\\code\\project"}
+              placeholder={folderPlaceholder()}
             />
             <Button
               icon={<IconFolder size={13} />}
