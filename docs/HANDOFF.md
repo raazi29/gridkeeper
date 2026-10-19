@@ -452,3 +452,57 @@ restores, ⌘Q stops the agents, the Dock badge, notifications, retina sharpness
 and WebGL with many terminals, the login-shell PATH with real dotfiles (nvm / fnm / asdf, Claude Code in
 `~/.local/bin`), IME input, App Nap while hidden, full screen; on Linux: NVIDIA (X11 and Wayland), the AppImage on
 Ubuntu 24.04, the `.deb` desktop entry and dock icon on GNOME / KDE, notifications.
+
+## 11. Agent browser
+
+Agents drive one shared browser (a tab each) through MCP tools; the user watches every tab in the *Agent browser*
+view and can take over. Research and the option comparison (Playwright MCP, chrome-devtools-mcp, built-in):
+[research-notes/agent-browser.md](research-notes/agent-browser.md).
+
+| Path | What lives there |
+|---|---|
+| `src-tauri/src/agent_browser/mod.rs` | Overview, constants (`gk-browser` server name, `--gk-mcp-browser`, `GK_AGENT_BROWSER_TOKEN`). |
+| `agent_browser/mcp.rs` | Helper mode (dispatched from `main.rs` before Tauri): dual-era MCP over stdio (`initialize` and `server/discover`), each `tools/call` forwarded to the host on its own thread and connection. |
+| `agent_browser/ipc.rs` | Helper ⇄ host transport: per-user named pipe (DACL user + SYSTEM, `FILE_FLAG_FIRST_PIPE_INSTANCE`, `PIPE_REJECT_REMOTE_CLIENTS`) / Unix socket in a 0700 folder; one JSON line each way; peer pid. |
+| `agent_browser/launch.rs` | Injection: Claude `--mcp-config=<data>\agent-browser\mcp-<session>.json` (skipped when `managed-mcp.json` exists), Codex `-c mcp_servers.gk-browser.*` (TOML literal strings, `tool_timeout_sec = 600`). Called from the two adapters. |
+| `agent_browser/chrome.rs` | Find Edge / Chrome / Chromium; launch headless with `--remote-debugging-pipe` (Windows: inherited pipe handles via `--remote-debugging-io-pipes` + CRT fds 3/4, suspended start, own Job Object; Unix: fds 3/4, `setsid`, session container). |
+| `agent_browser/cdp.rs` | CDP client: NUL-delimited JSON, flat sessions, blocking calls with timeouts, `call_until` (gives up when a JS dialog opens). |
+| `agent_browser/hub.rs` | State: browser lifecycle, a browser context + page per session, auth (token + session process tree), take-over, confirmations, screencast watch, janitor (`plan_janitor`). |
+| `agent_browser/events.rs`, `actions.rs`, `page.rs` + `page.js` | CDP events (console / network rings, dialogs, popups, downloads, crashes, frames); tool implementations; the in-page helper evaluated in an isolated world (snapshot with refs, hit-test, focus, select). |
+| `agent_browser/config.rs`, `policy.rs`, `model.rs` | `<data>\agent-browser\config.json` (opt-ins, allowlist, idle minutes); URL / allowlist policy; IPC types (mirrored at the end of `src/lib/types.ts`). |
+| `commands/agent_browser.rs` | `agent_browser_*` commands; events `agent-browser-state`, `agent-browser-activity`. |
+| `src/components/agentBrowser/*` | View (grid of live tabs, focus with take-over, action log, allowlist), confirmation prompts, store, frame / input helpers. |
+
+**Invariants:**
+- One browser per Gridkeeper instance, never a DevTools port. Started on the first tool call; stopped after `idleMinutes`
+  (default 10) with no tool call and no viewer, 60 s after the last tab closed, from the view, and on app exit. Windows:
+  its own kill-on-close Job Object (a crash of the host kills it). macOS / Linux: its own POSIX session, killed on exit /
+  by the exit guards; a hard crash can orphan it like agents.
+- A tool call reaches only its own session's page. Requests carry the session id and a per-launch token (rotated on every
+  start, sent through the MCP config's `env`); the host also checks that the connecting pid is in that session's tree.
+- The opt-in lives in `config.json`, not in `workspaces.json` / `SessionMeta` (the shared IPC contract stays untouched);
+  sessions that no longer exist are pruned at startup. It applies at launch, so the UI says "restart to apply".
+- Confirmation (the tool call waits up to 2 minutes, then counts as no): form submission (submit button, Enter in a form,
+  `submit: true`) or `browser_evaluate` when the page or form target is outside loopback / the allowlist / this machine's
+  private addresses on a session's dev-server port; every upload; every download (it lands in
+  `<data>\agent-browser\downloads\<session>\<guid>` and is deleted unless allowed). Navigation is http(s) / about:blank only.
+- Each agent gets its own browser context (separate cookies and storage), discarded with the tab. Popups are closed and
+  reported. Password values never appear in snapshots or logs; queries are dropped from logged URLs.
+- Screencast only while the view shows a tab and the window is visible; acks at most every 100 ms.
+
+**Memory (estimates, not measured on this machine yet):** headless Edge with one about:blank tab ≈ 150-250 MB (browser,
+GPU / utility and one renderer); each further agent tab ≈ 30-100 MB depending on the app; the helper per agent ≈ 5-10 MB
+(the Gridkeeper binary without a window). Compare: one Playwright MCP / chrome-devtools-mcp per agent = a Node process
+(~50-80 MB) plus, unless attached to a shared browser, a whole browser per agent.
+
+**Live checks still to do (integrator):** a Claude Code pane and a Codex pane with the box ticked list the `gk-browser`
+tools and keep the user's own MCP servers; `browser_navigate http://localhost:<dev port>` → snapshot → click → console;
+take over / hand back while a call waits; a form on an external site prompts; a download prompts; closing the pane closes
+the tab within ~75 s and the browser ~60 s later; app exit leaves no `msedge.exe` with `agent-browser\profile` in its
+command line; Edge on a managed PC (policy `RemoteDebuggingAllowed`) shows the error in the view; the `--mcp-config=`
+form is accepted by the installed Claude Code; Codex accepts the `-c` overrides through the npm shim. `cargo test --lib
+agent_browser::tests::live_ -- --ignored` runs the browser path headless without the app.
+
+**Follow-ups:** manual setup for other agent CLIs needs a token they can read (today only launched Claude / Codex
+sessions authenticate); iframes are not in snapshots; no `browser_tabs` (one tab per agent by design); the take-over
+view has no clipboard bridge (use the "type text" box).

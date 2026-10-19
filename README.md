@@ -137,6 +137,21 @@ full the context window is (amber from 80 %). Mission Control totals the workspa
 documented status-line fields (no transcripts, no credentials) and your own status line keeps working. Codex and
 Gemini CLI don't report usage to other programs, so they show "n/a".
 
+### Agent browser
+
+Tick *Give this agent a browser* in the New session dialog (or session menu › *Agent browser* on a Claude Code or Codex
+pane, then restart it) and the agent gets browser tools for a tab of its own: open the app you are building, read the
+page, click, type, check console and network errors, take screenshots. All agents share **one** headless Edge or
+Chrome with its own profile in Gridkeeper's data folder, so ten agents don't mean ten browsers. The browser starts on
+the first tool call and closes after 10 idle minutes. *Agent browser* (command palette) shows every agent's tab live;
+*Take over* gives you the mouse and keyboard while the agent's calls wait, *Stop agent browsing* closes its tab.
+
+Gridkeeper adds the tools for that one process (`--mcp-config` for Claude Code, `-c mcp_servers…` for Codex); your
+own MCP servers and config files are untouched, and no Node is needed. The browser is driven over a pipe, not a
+debugging port, and each agent can only reach its own tab. Submitting a form or running a script outside localhost
+(and an allowlist you control), every upload and every download wait for your OK; every action lands in the session
+log. Pages can contain prompt injections, so keep personal logins out of this browser.
+
 ## Features
 
 <table>
