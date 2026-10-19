@@ -109,6 +109,19 @@ output, paths or e-mails). *Replay…* turns it into a 15–60 s timelapse at 19
 exports **MP4 / WebM** or a **GIF**, rendered inside the app with no ffmpeg. The end card shows tasks done, commits,
 lines changed, agents and wall time.
 
+### Mission recap: a video of any agent session, without Gridkeeper
+
+The same install (`/plugin install agent-mission@gridkeeper` or `npx skills add raazi29/gridkeeper`) adds a second
+skill, [`mission-recap`](skills/mission-recap/SKILL.md). Ask any agent (Claude Code,
+Codex, Gemini CLI, Cursor, ...) to "make a recap video of what we did": it runs a Node script (no dependencies) that
+reads git history, one lane per branch or worktree, plus the mission board, and writes one offline HTML page with the
+same renderer. Preview it, then export MP4 or GIF in the browser, or headless with `--mp4` / `--gif`. Only branch
+names, counts, times and path-free commit subjects go in; no file contents, paths or e-mails.
+
+```bash
+node skills/mission-recap/scripts/recap.mjs --since "yesterday" --goal "Add OAuth login" --aspect vertical --mp4
+```
+
 ### Skills: add trending agent skills to your project
 
 *Skills: discover & add…* (command palette) lists trending and top Agent Skills on GitHub, or any repo you paste.
