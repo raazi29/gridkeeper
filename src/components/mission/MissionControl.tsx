@@ -6,6 +6,8 @@
 // river and the session log (both foldable, the log resizable) and a status line. The header keeps the primary
 // actions; flight log, replay recording and the project folder are also in its "⋯" menu. Lanes have actions (add session, message, restart, stop, formation); cards have a hover toolbar,
 // the shared session context menu and keyboard actions (Enter / R / S / M / Del / F2 / Shift+F10).
+// Effects (gold entry jump, panel assembly, energy connectors with comets on real events, lit cards, the
+// briefing crawl) live in MissionFx.tsx / mission.css behind one class, `has-fx`.
 // Every number shown is real: process state, exit codes, attention state, PTY output bytes/s (sampled
 // once per second ONLY while this overlay is open), CPU/RAM from the shared diagnostics poll.
 
@@ -25,10 +27,12 @@ import type { GitInfo, SessionId } from "../../lib/types";
 import { startRecording, stopRecording } from "../../replay/recorder";
 import { AgentGlyph } from "../../layout/icons";
 import { findGroupOf, isLive, selectActiveGroup, selectActiveWorkspace, useApp } from "../../store/appStore";
+import { useActivity } from "../../store/activity";
 import { useAttention } from "../../store/attention";
 import { openFlightLog, useFlightLog } from "../../store/flightlog";
 import { LEAD_BOX, useMission } from "../../store/mission";
 import { dirKey, useMissionFile } from "../../store/missionDoc";
+import { DEFAULT_POLICY, effectiveMode, useLeadControl } from "../../store/leadControl";
 import { acquireRateSampler, formatRate, latestRate, useRates } from "../../store/rates";
 import { openReplay, useReplay } from "../../store/replay";
 import { requestRename } from "../../store/renameRequest";
@@ -45,7 +49,21 @@ import { copyText, revealPath } from "../util/pick";
 import { shortPath } from "../util/text";
 import { ActivityRiver } from "./ActivityRiver";
 import type { FleetLamp } from "../util/fleet";
-import { deriveMission, insertIndex, laneProgress, nextLaneName, phaseMark, reorderTarget, sessionStatus, sideOf, type DropSide, type LaneModel } from "./derive";
+import {
+  deriveMission,
+  insertIndex,
+  laneProgress,
+  nextLaneName,
+  phaseMark,
+  pulseFor,
+  reorderTarget,
+  sessionStatus,
+  sideOf,
+  type DropSide,
+  type LaneModel,
+  type Pulse,
+  type PulseTone,
+} from "./derive";
 import { LeadControl } from "./LeadControl";
 import { Links, type LinkSpec } from "./Links";
 import {
@@ -60,6 +78,7 @@ import {
   SESSION_MIME,
   useMcDragKind,
 } from "./mcDrag";
+import { Briefing, playEntryJump, useMcFx } from "./MissionFx";
 import { MissionNode } from "./MissionNode";
 import { SessionCard } from "./SessionCard";
 import { SessionLog } from "./SessionLog";
@@ -236,6 +255,10 @@ function headerMenu(projectDir: string | null): MenuItem[] {
   return items;
 }
 
+/** Entry jump + staggered panel assembly (mission.css): `is-entering` stays on this long. */
+const ENTRY_MS = 1700;
+let pulseSeq = 1;
+
 /** CSS breakpoint where the mission board and the lead box sit side by side (mission.css, .mc-top). */
 const SPLIT_TOP = "(min-width: 1360px)";
 
@@ -309,8 +332,9 @@ export function MissionControl() {
   const attn = useAttention((s) => s.sessions);
   const diagOn = useApp((s) => s.persisted.settings.statusBarDiagnostics);
   const stillSetting = useApp((s) => (s.persisted.settings as { reduceMotion?: boolean }).reduceMotion === true);
-  const prefersReduced = useMemo(() => typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches, []);
+  const prefersReduced = useMedia("(prefers-reduced-motion: reduce)");
   const still = stillSetting || prefersReduced;
+  const fx = useMcFx(prefersReduced);
   const now = useVisibleClock();
   const splitTop = useMedia(SPLIT_TOP);
   const collapsed = useMission((s) => s.collapsed);
@@ -376,6 +400,58 @@ export function MissionControl() {
     return out;
   }, [tasks, team]);
   const taskStats = progress(tasks);
+  const autopilot = useLeadControl((s) => !!projectDir && effectiveMode(s.policies[dirKey(projectDir)] ?? DEFAULT_POLICY) === "autopilot");
+
+  // ---- effects: entry, comets, briefing -------------------------------------------------------------
+  const [entering, setEntering] = useState(fx);
+  useEffect(() => {
+    if (!entering || !panel.current) return;
+    const dispose = playEntryJump(panel.current);
+    const t = setTimeout(() => setEntering(false), ENTRY_MS);
+    return () => {
+      clearTimeout(t);
+      dispose();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  const [pulses, setPulses] = useState<Pulse[]>([]);
+  const addPulses = useCallback((add: { key: string; tone: PulseTone }[]) => {
+    if (add.length) setPulses((p) => [...p, ...add.map((a) => ({ ...a, id: pulseSeq++ }))].slice(-16));
+  }, []);
+  const dropPulse = useCallback((id: number) => setPulses((p) => p.filter((x) => x.id !== id)), []);
+  // Where each session sits, read by the activity subscription below (a ref: no re-subscribe per render).
+  const home = useRef<(id: SessionId) => string | null>(() => null);
+  home.current = (id) => (model.leads.includes(id) ? "lead" : (model.lanes.find((l) => l.ids.includes(id))?.groupId ?? null));
+  useEffect(() => {
+    if (!fx) return;
+    // Only events from now on: opening Mission Control never replays the log as a burst.
+    const seen = useActivity.getState().events;
+    let last = seen[seen.length - 1]?.seq ?? 0;
+    return useActivity.subscribe((s) => {
+      const fresh = s.events.filter((e) => e.seq > last);
+      if (!fresh.length) return;
+      last = fresh[fresh.length - 1].seq;
+      addPulses(fresh.map((e) => pulseFor(e, home.current)).filter((x) => x !== null));
+    });
+  }, [fx, addPulses]);
+  // A task turned done on the board: a comet from the board to the lead (the first read is the baseline).
+  const doneBase = useRef<number | null>(null);
+  const boardDone = mission.doc ? taskStats.done : null;
+  useEffect(() => {
+    const prev = doneBase.current;
+    doneBase.current = boardDone;
+    if (fx && prev !== null && boardDone !== null && boardDone > prev) addPulses([{ key: "mission", tone: "gold" }]);
+  }, [boardDone, fx, addPulses]);
+  const [briefing, setBriefing] = useState(false);
+  const briefingFrom = useRef<HTMLElement | null>(null);
+  const openBriefing = useCallback(() => {
+    briefingFrom.current = document.activeElement as HTMLElement | null;
+    setBriefing(true);
+  }, []);
+  const closeBriefing = useCallback(() => {
+    setBriefing(false);
+    requestAnimationFrame(() => (briefingFrom.current?.isConnected ? briefingFrom.current.focus() : panel.current?.focus()));
+  }, []);
 
   // Git branch: once per open (and when the folder changes). No polling.
   const [git, setGit] = useState<GitInfo | null>(null);
@@ -646,7 +722,7 @@ export function MissionControl() {
     <div className="mc-backdrop" onMouseDown={(e) => e.target === e.currentTarget && close()}>
       <div
         ref={panel}
-        className={`mc${still ? " is-still" : ""}`}
+        className={`mc${still ? " is-still" : ""}${fx ? " has-fx" : ""}${fx && entering ? " is-entering" : ""}`}
         role="dialog"
         aria-modal="true"
         aria-label="Mission Control"
@@ -728,21 +804,22 @@ export function MissionControl() {
 
         <div className="mc-scroll">
           <div className="mc-canvas">
-            <Links links={links} version={`${structure.join("|")}|${linkKey}|${collapsedKey}`} />
+            <Links links={links} version={`${structure.join("|")}|${linkKey}|${collapsedKey}`} pulses={pulses} onPulseEnd={dropPulse} />
             <div className="mc-top" data-node="top">
               <div className="mc-row">
-                <MissionNode workspaceId={wsId} projectDir={projectDir} mission={mission} team={team} onSelectSession={selectCard} openMenu={openMenu} selectedSessionId={selected} />
+                <MissionNode workspaceId={wsId} projectDir={projectDir} mission={mission} team={team} onSelectSession={selectCard} openMenu={openMenu} selectedSessionId={selected} onBriefing={fx && mission.doc ? openBriefing : undefined} />
               </div>
               <div className="mc-row">
                 {total === 0 ? (
                   <EmptyMission groupId={activeGroupId} />
                 ) : (
-                  <LeadNode leads={model.leads} lanes={model.lanes} allIds={allIds} collapsed={!!collapsed[LEAD_BOX]} {...cardProps} />
+                  <LeadNode leads={model.leads} lanes={model.lanes} allIds={allIds} collapsed={!!collapsed[LEAD_BOX]} autopilot={autopilot} {...cardProps} />
                 )}
               </div>
             </div>
             {total > 0 && (
               <>
+                <i className="mc-gap" aria-hidden="true" />
                 <div className="mc-lanes">
                   {model.lanes.map((l, i) => (
                     <LaneNode
@@ -760,6 +837,7 @@ export function MissionControl() {
                   <NewLaneDrop wsId={wsId} onMoved={onMoved} onRenaming={setRenamingLane} />
                 </div>
                 <NewLaneDrop zone wsId={wsId} onMoved={onMoved} onRenaming={setRenamingLane} />
+                <i className="mc-gap" aria-hidden="true" />
                 <div className="mc-row mc-signoff-dock">
                   <SignoffNode ids={model.signoff} onJump={jump} onMenu={openCardMenu} />
                 </div>
@@ -806,6 +884,7 @@ export function MissionControl() {
         <div className="mc-sr" role="status" aria-live="polite" aria-atomic="true">
           {announce}
         </div>
+        {briefing && mission.doc && <Briefing doc={mission.doc} title={wsName || "Mission"} onClose={closeBriefing} />}
       </div>
       {menu.element}
     </div>,
@@ -913,10 +992,11 @@ function LeadNode({
   diag,
   lamps,
   onMoved,
-}: CardProps & { leads: SessionId[]; lanes: LaneModel[]; allIds: SessionId[]; collapsed: boolean }) {
+  autopilot,
+}: CardProps & { leads: SessionId[]; lanes: LaneModel[]; allIds: SessionId[]; collapsed: boolean; autopilot: boolean }) {
   const liveLeads = useApp((s) => leads.filter((id) => isLive(s.runtime[id])).length);
   const drop = useLeadDrop(onMoved);
-  const dropCls = drop.over ? " is-drop-target" : "";
+  const dropCls = `${drop.over ? " is-drop-target" : ""}${autopilot ? " is-autopilot" : ""}`;
   const phases = lanes.length > 0 && (
     <div className="mc-lead-phases mc-micro" aria-label="Workflow phases">
       <span>workflow</span>
@@ -1215,6 +1295,7 @@ function LaneNode({
         <div className="mc-lane-head mc-micro">
           <span className="mc-progress" role="progressbar" aria-valuemin={0} aria-valuemax={lane.total} aria-valuenow={lane.done} aria-label={progress.label}>
             <span style={{ width: `${Math.round(progress.fraction * 100)}%` } as CSSProperties} />
+            {lane.done > 0 && <i key={lane.done} className="mc-progress-sweep" aria-hidden="true" />}
           </span>
           <span>{progress.label}</span>
           {taskCount > 0 && <span title="Mission tasks owned by this lane's sessions">· {taskCount === 1 ? "1 task" : `${taskCount} tasks`}</span>}

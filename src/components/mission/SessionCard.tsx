@@ -205,6 +205,7 @@ export const SessionCard = memo(function SessionCard({
       className={cls}
       style={roleStyle(meta.role)}
       data-drop={dropSide ?? undefined}
+      data-lamp={st.lamp}
       data-assign-label={assignHover ? `assign → ${meta.name}` : undefined}
       draggable={!editing}
       onDragStart={onDragStart}
@@ -220,6 +221,8 @@ export const SessionCard = memo(function SessionCard({
         onMenu(e, id);
       }}
     >
+      {/* effects: lit border (working: a rotating gold arc; needs you: pulsing amber), mission.css */}
+      <span className="mc-card-fx" aria-hidden="true" />
       <div className="mc-card-row">
         <span className={`attn-lamp attn-lamp--${st.lamp}`} />
         <span className="mc-card-glyph">

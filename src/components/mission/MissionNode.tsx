@@ -75,9 +75,11 @@ export interface MissionNodeProps {
   openMenu: (e: MenuEvent, items: MenuItem[]) => void;
   /** The card selected in Mission Control: the board's "mine" filter shows the tasks it owns. */
   selectedSessionId?: SessionId | null;
+  /** Plays the briefing crawl (effects on only; no button without it). */
+  onBriefing?: () => void;
 }
 
-export function MissionNode({ workspaceId, projectDir, mission, team, onSelectSession, openMenu, selectedSessionId = null }: MissionNodeProps) {
+export function MissionNode({ workspaceId, projectDir, mission, team, onSelectSession, openMenu, selectedSessionId = null, onBriefing }: MissionNodeProps) {
   const [dialog, setDialog] = useState<"edit" | "brief" | null>(null);
   const root = useRef<HTMLDivElement>(null);
   // A closed dialog would hand focus back to the terminal under the overlay: keep it in Mission Control.
@@ -160,6 +162,7 @@ export function MissionNode({ workspaceId, projectDir, mission, team, onSelectSe
         openMenu={openMenu}
         onEdit={() => setDialog("edit")}
         onBrief={() => setDialog("brief")}
+        onBriefing={onBriefing}
       />
       {dialog === "edit" && <EditMissionDialog projectDir={projectDir} file={file} onClose={() => setDialog(null)} />}
       {dialog === "brief" && <BriefDialog missionPath={file.path} team={team} onClose={() => setDialog(null)} />}
@@ -221,6 +224,7 @@ function Board({
   openMenu,
   onEdit,
   onBrief,
+  onBriefing,
 }: {
   projectDir: string;
   file: MissionFile;
@@ -232,6 +236,7 @@ function Board({
   openMenu: (e: MenuEvent, items: MenuItem[]) => void;
   onEdit: () => void;
   onBrief: () => void;
+  onBriefing?: () => void;
 }) {
   const [showDone, setShowDone] = useState(false);
   const [writing, setWriting] = useState(false);
@@ -251,6 +256,7 @@ function Board({
   const [, bumpFocus] = useReducer((n: number) => n + 1, 0);
 
   const p = progress(doc.tasks);
+  const justDone = useJustDone(doc.tasks);
   const unassigned = doc.tasks.filter((t) => t.state !== "done" && ownersFor(t, team).length === 0).length;
   const slugs = useMemo(() => teamSlugs(team), [team]);
   const member = (selectedSessionId && team.find((m) => m.id === selectedSessionId)) || null;
@@ -452,6 +458,7 @@ function Board({
   });
 
   const rowCtx: RowCtx = {
+    justDone,
     team,
     slugs,
     writing,
@@ -565,6 +572,7 @@ function Board({
   const progressBar = (
     <span className="mc-progress" role="progressbar" aria-valuemin={0} aria-valuemax={p.total} aria-valuenow={p.done} aria-label={`${p.done} of ${p.total} tasks done`}>
       <span style={{ width: `${Math.round(p.fraction * 100)}%` } as CSSProperties} />
+      {p.done > 0 && <i key={p.done} className="mc-progress-sweep" aria-hidden="true" />}
     </span>
   );
   const stats = (
@@ -707,7 +715,7 @@ function Board({
                 <button
                   key={s}
                   type="button"
-                  className={`mb-done-toggle mc-micro${dropHere ? " is-drop" : ""}`}
+                  className={`mb-done-toggle mc-micro${dropHere ? " is-drop" : ""}${justDone.size ? " is-just-done" : ""}`}
                   aria-expanded={false}
                   onClick={() => setShowDone(true)}
                   {...sectionDrag(s)}
@@ -763,6 +771,11 @@ function Board({
         <button type="button" className="mc-btn" title={`Show mission.md in ${fileManagerName()}`} onClick={() => void revealPath(file.path)}>
           open folder
         </button>
+        {onBriefing && (
+          <button type="button" className="mc-btn mb-briefing" title="Play the mission briefing: an opening crawl of the goal and the open tasks (click or Esc skips)" onClick={onBriefing}>
+            ▶ briefing
+          </button>
+        )}
         <button
           type="button"
           className="mc-btn is-primary"
@@ -776,9 +789,34 @@ function Board({
   );
 }
 
+const NONE: ReadonlySet<string> = new Set();
+
+/**
+ * Tasks that turned done since the last change of the board, by text (rows are keyed by line, which moves),
+ * for ~1.6 s. The first load is only the baseline.
+ */
+function useJustDone(tasks: Task[]): ReadonlySet<string> {
+  const [fresh, setFresh] = useState(NONE);
+  const base = useRef<Map<string, TaskState> | null>(null);
+  const timer = useRef<ReturnType<typeof setTimeout>>(undefined);
+  useEffect(() => {
+    const prev = base.current;
+    base.current = new Map(tasks.map((t) => [t.text, t.state]));
+    const now = prev ? tasks.filter((t) => t.state === "done" && prev.has(t.text) && prev.get(t.text) !== "done").map((t) => t.text) : [];
+    if (!now.length) return;
+    setFresh(new Set(now));
+    clearTimeout(timer.current);
+    timer.current = setTimeout(() => setFresh(NONE), 1600);
+  }, [tasks]);
+  useEffect(() => () => clearTimeout(timer.current), []);
+  return fresh;
+}
+
 // ---- rows ----------------------------------------------------------------------------------------
 
 interface RowCtx {
+  /** Texts of tasks that just turned done (a gold burst on their row). */
+  justDone: ReadonlySet<string>;
   team: TeamMember[];
   slugs: string[];
   writing: boolean;
@@ -816,6 +854,7 @@ function TaskRow({ task, ctx, children }: { task: Task; ctx: RowCtx; children?: 
     dropPos ? `is-drop-${dropPos}` : "",
     ctx.dragLine === task.line ? "is-dragged" : "",
     editing ? "is-editing" : "",
+    task.state === "done" && ctx.justDone.has(task.text) ? "is-just-done" : "",
   ]
     .filter(Boolean)
     .join(" ");

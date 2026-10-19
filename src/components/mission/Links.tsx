@@ -2,8 +2,11 @@
 // the scrolling content (positions are relative to it, so scrolling changes nothing); a ResizeObserver
 // (container + every node) triggers re-measurement. Lines sit behind the nodes, so crossings are hidden.
 // Two nodes side by side (the mission board and the lead box on wide windows) are joined edge to edge.
+// With effects on, each line also carries a flowing energy path and real events send a comet along it
+// (`pulses`, CSS-animated; each one reports its end so the parent drops it).
 
 import { useLayoutEffect, useRef, useState } from "react";
+import type { Pulse } from "./derive";
 
 export interface LinkSpec {
   key: string;
@@ -31,7 +34,7 @@ export function linkPathH(a: { x: number; y: number }, b: { x: number; y: number
 }
 
 /** Rendered as the first child of the positioned content element whose descendants carry `data-node`. */
-export function Links({ links, version }: { links: LinkSpec[]; version: string }) {
+export function Links({ links, version, pulses = [], onPulseEnd }: { links: LinkSpec[]; version: string; pulses?: Pulse[]; onPulseEnd?: (id: number) => void }) {
   const [paths, setPaths] = useState<Path[]>([]);
   // The parent's ref is not attached yet when this child's layout effect runs: use our own SVG's parent.
   const svg = useRef<SVGSVGElement>(null);
@@ -66,10 +69,14 @@ export function Links({ links, version }: { links: LinkSpec[]; version: string }
     };
     const ro = new ResizeObserver(schedule);
     ro.observe(root);
+    // The entry assembly moves nodes with transforms (no resize): measure again once they have landed.
+    const onAnim = (e: AnimationEvent) => e.animationName === "mc-assemble" && schedule();
+    root.addEventListener("animationend", onAnim);
     for (const el of root.querySelectorAll<HTMLElement>("[data-node]")) ro.observe(el);
     measure();
     return () => {
       ro.disconnect();
+      root.removeEventListener("animationend", onAnim);
       if (frame) cancelAnimationFrame(frame);
     };
   }, [links, version]);
@@ -77,7 +84,18 @@ export function Links({ links, version }: { links: LinkSpec[]; version: string }
   return (
     <svg ref={svg} className="mc-links" aria-hidden="true">
       {paths.map((p) => (
-        <path key={p.key} d={p.d} className={`mc-link ${p.cls}`} />
+        <g key={p.key}>
+          <path d={p.d} className={`mc-link ${p.cls}`} />
+          <path d={p.d} className={`mc-link-energy ${p.cls}`} />
+          {pulses
+            .filter((c) => c.key === p.key)
+            .map((c) => (
+              <g key={c.id} className={`mc-comet is-${c.tone}`} onAnimationEnd={(e) => e.target === e.currentTarget.lastChild && onPulseEnd?.(c.id)}>
+                <path d={p.d} pathLength={1} className="mc-comet-tail" />
+                <path d={p.d} pathLength={1} className="mc-comet-head" />
+              </g>
+            ))}
+        </g>
       ))}
     </svg>
   );

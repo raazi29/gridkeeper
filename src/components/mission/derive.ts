@@ -2,6 +2,7 @@
 // Everything comes from real state — process state, exit codes, attention — nothing is estimated.
 
 import type { SessionId, SessionInfo } from "../../lib/types";
+import type { ActivityEvent } from "../../store/activity";
 import { needsAttention, type SessionAttn } from "../../store/attention";
 import { fleetLamp, type FleetLamp } from "../util/fleet";
 
@@ -168,4 +169,29 @@ export function nextLaneName(names: readonly string[]): string {
 /** Which side of a box the pointer is on (horizontal halves). */
 export function sideOf(clientX: number, rect: { left: number; width: number }): DropSide {
   return clientX < rect.left + rect.width / 2 ? "before" : "after";
+}
+
+// ---- connector pulses (effects) ----------------------------------------------------------------
+
+export type PulseTone = "gold" | "amber";
+export interface Pulse {
+  id: number;
+  /** LinkSpec key: "mission" (board ↔ lead), "in:<groupId>" (lead → lane), "out:<groupId>" (lane → sign-off). */
+  key: string;
+  tone: PulseTone;
+}
+
+/**
+ * Connector a real event travels along (pure). `home` says where a session sits: "lead", its lane's group id,
+ * or null (not on screen). Needs-you is amber toward sign-off; start / stop runs lead → lane; done runs
+ * lane → sign-off; anything about a lead runs along the board ↔ lead link. "working" toggles are too chatty.
+ */
+export function pulseFor(e: Pick<ActivityEvent, "sessionId" | "kind" | "level">, home: (id: SessionId) => string | null): Omit<Pulse, "id"> | null {
+  const g = e.sessionId ? home(e.sessionId) : null;
+  if (!g) return null;
+  const done = e.kind === "attention" && e.level === "ok";
+  if (e.level === "needs") return { key: g === "lead" ? "mission" : `out:${g}`, tone: "amber" };
+  if (e.kind !== "lifecycle" && !done) return null;
+  if (g === "lead") return { key: "mission", tone: "gold" };
+  return { key: done ? `out:${g}` : `in:${g}`, tone: "gold" };
 }
