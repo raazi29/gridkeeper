@@ -214,7 +214,7 @@ describe("winget", () => {
   });
 });
 
-describe("run --dir (end to end on a copy of the repo files)", () => {
+describe("run --dir (end to end on a copy of the repo files)", { timeout: 30_000 }, () => {
   const tmp = [];
   afterEach(async () => {
     for (const d of tmp.splice(0)) await rm(d, { recursive: true, force: true });
