@@ -3,6 +3,7 @@
 // first failure and never deletes anything), then groups, then sessions (with roles), then optional
 // starter prompts. Saved formations live in localStorage (best effort, try/catch).
 
+import { isBrowserMeta } from "../lib/browserPanes";
 import { errorMessage, ipc } from "../lib/ipc";
 import type { WorktreeRef } from "../lib/types";
 import { uid, useApp } from "../store/appStore";
@@ -128,6 +129,24 @@ function writeSaved(list: FormationTemplate[]): boolean {
 
 /** Snapshot the workspace's groups / roles / agents / accounts (no prompts, env or conversation ids). */
 export function saveWorkspaceAsFormation(workspaceId: string, name: string): FormationTemplate | null {
+  const ws = useApp.getState().persisted.workspaces.find((w) => w.id === workspaceId);
+  const t = workspaceFormation(workspaceId, name);
+  if (!ws || !t) return null;
+  if (!t.groups.length) {
+    notify("info", "This workspace has no sessions to save");
+    return null;
+  }
+  const list = [...loadSavedFormations().filter((x) => x.name !== t.name), t];
+  if (!writeSaved(list)) {
+    notify("error", "Could not save the formation (storage unavailable)");
+    return null;
+  }
+  logFormation("info", `saved workspace “${ws.name}” as formation “${t.name}”`, "saved");
+  return t;
+}
+
+/** The workspace's layout as a formation template (also used by team template export). */
+export function workspaceFormation(workspaceId: string, name: string): FormationTemplate | null {
   const s = useApp.getState();
   const ws = s.persisted.workspaces.find((w) => w.id === workspaceId);
   if (!ws) return null;
@@ -137,7 +156,7 @@ export function saveWorkspaceAsFormation(workspaceId: string, name: string): For
     layout: g.layout.preset,
     sessions: g.sessionIds
       .map((id) => metas.get(id))
-      .filter((m): m is NonNullable<typeof m> => !!m)
+      .filter((m): m is NonNullable<typeof m> => !!m && !isBrowserMeta(m))
       .map(
         (m): SnapshotSession => ({
           name: m.name,
@@ -151,18 +170,7 @@ export function saveWorkspaceAsFormation(workspaceId: string, name: string): For
         }),
       ),
   }));
-  const t = templateFromWorkspace(name, groups, uid());
-  if (!t.groups.length) {
-    notify("info", "This workspace has no sessions to save");
-    return null;
-  }
-  const list = [...loadSavedFormations().filter((x) => x.name !== t.name), t];
-  if (!writeSaved(list)) {
-    notify("error", "Could not save the formation (storage unavailable)");
-    return null;
-  }
-  logFormation("info", `saved workspace “${ws.name}” as formation “${t.name}”`, "saved");
-  return t;
+  return templateFromWorkspace(name, groups, uid());
 }
 
 export function deleteSavedFormation(id: string): FormationTemplate[] {

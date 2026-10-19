@@ -36,6 +36,8 @@ import { Field, Input, Segmented, Select, Toggle } from "../ui/Field";
 import { Modal } from "../ui/Modal";
 import { pickFolder } from "../util/pick";
 import { RoleTag } from "./RoleTag";
+import { TeamTemplates } from "../teamTemplates/TeamTemplates";
+import { useTeamTemplateUi } from "../../store/teamTemplates";
 import "../../styles/mission.css";
 
 type Choice = { kind: "builtin"; id: BuiltinFormationId } | { kind: "saved"; id: string };
@@ -65,6 +67,7 @@ export function FormationDialog() {
   const agents = useApp((s) => s.agents);
   const runtime = useApp((s) => s.runtime);
 
+  const [tab, setTab] = useState<"formations" | "templates">(() => (useTeamTemplateUi.getState().intent ? "templates" : "formations"));
   const [saved, setSaved] = useState<FormationTemplate[]>(() => loadSavedFormations());
   const [choice, setChoice] = useState<Choice>({ kind: "builtin", id: "pbv" });
   const [params, setParams] = useState<BuiltinParams>(DEFAULT_PARAMS);
@@ -249,11 +252,26 @@ export function FormationDialog() {
   const claudeRoles = roles.filter((r) => r.claude);
   const codexOrTools = useMemo(() => agents.filter((a) => a.preset && !a.error), [agents]);
 
+  const tabs = (
+    <Segmented
+      size="sm"
+      ariaLabel="Formations or team templates"
+      value={tab}
+      onChange={setTab}
+      options={[
+        { value: "formations", label: "Formations" },
+        { value: "templates", label: "Templates" },
+      ]}
+    />
+  );
+  if (tab === "templates") return <TeamTemplates onClose={close} tabs={tabs} />;
+
   return (
     <Modal
       title="Launch formation"
       onClose={close}
       width={720}
+      headerExtra={tabs}
       footer={
         <>
           <span className="fm-save">
