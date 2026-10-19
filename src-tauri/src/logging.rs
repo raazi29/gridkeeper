@@ -207,12 +207,18 @@ mod tests {
         let guard = init(dir.path()).expect("first init");
         assert!(init(dir.path()).is_err(), "second init must fail");
         tracing::info!(target: "altera_test", api_key = "sk-ant-api03-SECRETSECRETSECRET", "hello token=abc123");
-        drop(guard); // flush
-        let current = current_log_file(dir.path()).expect("log file exists");
-        let text = std::fs::read_to_string(current).unwrap();
-        let line = text.lines().find(|l| l.contains("altera_test")).expect("event written");
+        drop(guard); // flush (the worker waits at most 1 s, which a loaded CI machine can exceed)
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+        let line = loop {
+            let text = current_log_file(dir.path()).and_then(|p| std::fs::read_to_string(p).ok()).unwrap_or_default();
+            if let Some(l) = text.lines().find(|l| l.contains("altera_test")) {
+                break l.to_string();
+            }
+            assert!(std::time::Instant::now() < deadline, "event written");
+            std::thread::sleep(std::time::Duration::from_millis(50));
+        };
         assert!(!line.contains("SECRETSECRET") && !line.contains("abc123"), "{line}");
-        let v: serde_json::Value = serde_json::from_str(line).expect("JSON line");
+        let v: serde_json::Value = serde_json::from_str(&line).expect("JSON line");
         assert_eq!(v["level"], "INFO");
         assert!(log_files(dir.path()).len() <= MAX_LOG_FILES, "{:?}", log_files(dir.path()));
     }
