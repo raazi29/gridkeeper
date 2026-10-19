@@ -1,0 +1,112 @@
+;; Scripted demo output for the "lead" pane (scripts/showcase/fake-agent.ps1). Not an AI run.
+;; Sections match the shots in scripts/showcase/launch.mjs. "go" is signalled when recording starts.
+
+@@section grid
+@@fast
+{dim}lead · main · C:\gk-demo\oauth-app{/}
+{cyan}▸{/} read  .gridkeeper/mission.md
+  {dim}goal{/}  Add OAuth login with GitHub
+  {dim}8 tasks · 1 done · 2 doing · 1 blocked{/}
+@@normal
+@@wait go
+@@pace 650
+{cyan}▸{/} read  .gridkeeper/team.md
+  {dim}builder-1{/}  working · gk/builder-1
+  {dim}builder-2{/}  working · gk/builder-2
+  {dim}reviewer{/}   idle
+~ The callback and the button can land in parallel. The reviewer waits for both.
+{cyan}▸{/} check  src/auth/routes.ts
+  {dim}router: /auth/start, /auth/callback{/}
+~ /auth/start needs rate limiting before it ships.
+{cyan}▸{/} plan
+  {dim}1{/}  builder-1  callback + token storage
+  {dim}2{/}  builder-2  login button, then rate limiting
+  {dim}3{/}  reviewer   integration test, then review both branches
+@@mark
+{dim}  watching mission.md for changes{/}
+@@sleep 900
+{dim}  builder-1 · editing src/auth/callback.ts{/}
+@@sleep 1100
+{dim}  builder-2 · running the button tests{/}
+@@sleep 900
+@@loop
+
+@@section board
+@@fast
+{dim}lead · main{/}
+{cyan}▸{/} plan posted to .gridkeeper/mission.md
+@@normal
+@@wait go
+@@pace 800
+{dim}  watching mission.md for changes{/}
+{dim}  builder-2 · Wire the login button → done{/}
+{dim}  reviewer · claimed the integration test{/}
+@@sleep 400
+{cyan}▸{/} secret is in .env now (git-ignored)
+@@task done Get the GitHub client secret into .env
+  {green}✓{/} mission.md  [!] → [x]  Get the GitHub client secret into .env
+~ Logout is missing from the plan. Adding it.
+@@add - [ ] Add a logout route @builder-1
+  {green}✓{/} mission.md  + Add a logout route @builder-1
+@@mark
+{dim}  watching mission.md for changes{/}
+@@sleep 1000
+{dim}  builder-1 · tests for the callback route{/}
+@@sleep 1100
+@@loop
+
+@@section autopilot
+@@fast
+{dim}lead · main{/}
+{cyan}▸{/} 3 of 9 tasks done · builder-2 finished the login button
+@@normal
+@@wait go
+@@pace 750
+{dim}  waiting for lead control{/}
+@@wait autopilot-on 90
+@@sleep 500
+{cyan}▸{/} read  .gridkeeper/team.md
+  {dim}builder-2{/}  idle · gk/builder-2 · 1 commit ahead of main
+~ builder-2 is free. Rate limiting is next on the board.
+{cyan}▸{/} write  .gridkeeper/outbox/ → builder-2
+@@outbox builder-2 message | Take "Add rate limiting to /auth/start" next. Reuse the session store from the callback branch.
+  {dim}instruction written; Gridkeeper delivers it under the lead-control mode{/}
+@@mark
+@@sleep 1200
+{dim}  watching mission.md for changes{/}
+@@sleep 1400
+@@loop
+
+@@section signoff
+@@fast
+{dim}lead · main{/}
+{cyan}▸{/} waiting on builder-1 (callback) and builder-2 (rate limiting)
+@@normal
+@@wait go
+@@pace 1000
+@@mark
+{dim}  watching mission.md for changes{/}
+{dim}  builder-1 · running tests{/}
+{dim}  builder-2 · editing src/auth/rate-limit.ts{/}
+{dim}  reviewer · writing the login flow test{/}
+@@loop
+
+@@section drag
+@@fast
+{dim}lead · main{/}
+{cyan}▸{/} 4 of 9 tasks done
+@@normal
+@@wait go
+@@pace 950
+@@mark
+~ Moving the reviewer to its own lane for the verify phase.
+{dim}  watching mission.md for changes{/}
+{dim}  builder-2 · rate limiting tests{/}
+@@loop
+
+@@section replay
+@@fast
+{dim}lead · main{/}
+{green}✓{/} all tasks done · mission complete
+@@normal
+@@hold
