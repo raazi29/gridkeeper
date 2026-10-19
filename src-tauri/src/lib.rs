@@ -112,6 +112,16 @@ pub fn run() {
                 }
             });
     }
+    // Windows / Linux: closing the main window quits, even with a browser pop-out (it has no parent) still
+    // open; a headless app would keep its agents running and ignore a relaunch (no main window to focus).
+    #[cfg(not(target_os = "macos"))]
+    {
+        builder = builder.on_window_event(|window, event| {
+            if matches!(event, tauri::WindowEvent::Destroyed) && window.label() == webview_guard::MAIN && !webview_guard::rebuilding() {
+                window.app_handle().exit(0);
+            }
+        });
+    }
     builder
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())

@@ -152,7 +152,9 @@ function clearRetry(id: SessionId) {
 /** Probe the URL (embeddable? reachable? title?). Results for a URL the pane left are dropped. */
 export async function runProbe(id: SessionId, url: string, isRetry = false): Promise<void> {
   if (!isRetry) clearRetry(id);
-  if (!/^https?:/i.test(url)) return;
+  // Only the iframe's onLoad clears `loading`; a pane that shows no frame (file: card, refused, unreachable) never gets one.
+  const settle = () => setNav(id, (n) => (n.loading && viewOf(n, ownOrigin()) !== "frame" ? { ...n, loading: false } : n));
+  if (!/^https?:/i.test(url)) return settle();
   setNav(id, (n) => ({ ...n, probing: true }));
   let probe;
   try {
@@ -164,6 +166,7 @@ export async function runProbe(id: SessionId, url: string, isRetry = false): Pro
   if (!n || n.url !== url) return;
   const wasUnreachable = n.probeUrl === url && n.probe && !n.probe.reachable;
   setNav(id, (x) => ({ ...x, probing: false, probe, probeUrl: url, nonce: wasUnreachable && probe.reachable ? x.nonce + 1 : x.nonce }));
+  settle();
   const meta = useApp.getState().persisted.sessions.find((m) => m.id === id);
   if (probe.title && meta?.titleAsName && meta.name !== probe.title) useApp.getState().updateSessionMeta(id, { name: probe.title });
   // Waiting for a local dev server: try again for a while.

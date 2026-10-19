@@ -5,7 +5,7 @@ import { useEffect, useMemo, useRef } from "react";
 import { jumpToSession } from "../actions/commands";
 import { toggleDnd, useDnd } from "../actions/notifyPrefs";
 import { useApp } from "../store/appStore";
-import { useUi } from "../store/uiStore";
+import { isKeyCaptureSuspended, useUi } from "../store/uiStore";
 import { IconBellOff } from "./MutedGlyph";
 import { useContextMenu } from "./ui/Menu";
 import { openAppMenu } from "./ContextMenuHost";
@@ -139,6 +139,7 @@ export function CommsPanel() {
     const onKey = (e: KeyboardEvent) => {
       if ((document.activeElement as HTMLElement | null)?.closest(".menu-root")) return; // a row's context menu handles its keys
       if (e.key === "Escape") {
+        if (!ref.current?.contains(document.activeElement) || isKeyCaptureSuspended()) return; // not ours: a dialog or other pane owns Escape
         e.preventDefault();
         e.stopPropagation();
         close();

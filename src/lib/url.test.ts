@@ -27,6 +27,13 @@ describe("normalizeUrlInput", () => {
     expect(normalizeUrlInput("example.com/path")).toBe("https://example.com/path");
     expect(normalizeUrlInput("http://example.com")).toBe("http://example.com/");
   });
+  it("uses http for LAN IPs and for any host with an explicit port", () => {
+    expect(normalizeUrlInput("192.168.1.20:5173")).toBe("http://192.168.1.20:5173/");
+    expect(normalizeUrlInput("192.168.1.20")).toBe("http://192.168.1.20/");
+    expect(normalizeUrlInput("devbox:8080")).toBe("http://devbox:8080/");
+    expect(normalizeUrlInput("myhost.lan:3000/x")).toBe("http://myhost.lan:3000/x");
+    expect(normalizeUrlInput("devbox:99999")).toBeNull();
+  });
   it("turns Windows paths into file URLs", () => {
     expect(normalizeUrlInput("C:\\docs\\a b.html")).toBe("file:///C:/docs/a%20b.html");
   });

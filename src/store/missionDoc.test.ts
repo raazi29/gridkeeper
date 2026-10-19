@@ -61,6 +61,20 @@ beforeEach(() => {
 });
 
 describe("mission store: watch lifecycle", () => {
+  it("never lets an unwatch overtake its still-pending watch", async () => {
+    const { ipc } = await import("../lib/ipc");
+    let finish!: () => void;
+    vi.mocked(ipc.missionWatch).mockImplementationOnce(
+      () => new Promise<void>((res) => (finish = () => (calls.push(`watch ${DIR}`), res()))),
+    );
+    acquireMission(DIR)();
+    await flush();
+    expect(calls).not.toContain(`unwatch ${DIR}`);
+    finish();
+    await flush();
+    expect(calls.filter((c) => /^(un)?watch/.test(c))).toEqual([`watch ${DIR}`, `unwatch ${DIR}`]);
+  });
+
   it("watches + reads on first acquire, re-reads on change events, unwatches on last release", async () => {
     put("# Mission: A\n- [ ] t @lead\n", 5);
     const r1 = acquireMission(DIR);

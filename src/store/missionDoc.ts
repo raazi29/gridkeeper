@@ -90,15 +90,22 @@ function dropListener() {
   void p?.then((off) => off?.());
 }
 
+// watch / unwatch are separate async invokes: chain them per folder so an unwatch never overtakes its watch.
+const watchOps = new Map<string, Promise<unknown>>();
+function watchOp(dir: string, call: (d: string) => Promise<unknown>) {
+  const p = (watchOps.get(dir) ?? Promise.resolve()).then(() => call(dir)).catch(() => {});
+  watchOps.set(dir, p);
+  void p.then(() => watchOps.get(dir) === p && watchOps.delete(dir));
+}
+
 /** Watch + read `dir` until the returned release function is called. */
 export function acquireMission(dir: string): () => void {
   const n = (holds.get(dir) ?? 0) + 1;
   holds.set(dir, n);
   if (n === 1) {
     ensureListener();
-    ipc.missionWatch(dir).catch(() => {
-      /* no watcher: the board still shows the last read and updates after our own writes */
-    });
+    // no watcher on failure: the board still shows the last read and updates after our own writes
+    watchOp(dir, ipc.missionWatch);
     void reloadMission(dir);
   }
   let released = false;
@@ -111,7 +118,7 @@ export function acquireMission(dir: string): () => void {
       return;
     }
     holds.delete(dir);
-    ipc.missionUnwatch(dir).catch(() => {});
+    watchOp(dir, ipc.missionUnwatch);
     if (holds.size === 0) dropListener();
   };
 }

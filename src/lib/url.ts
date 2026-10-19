@@ -68,6 +68,8 @@ export function normalizeUrlInput(input: string, os: Os = OS): string | null {
   const hostPart = s.split(/[/?#]/)[0];
   const host = hostPart.replace(/:\d+$/, "");
   if (LOCAL_HOST_RE.test(host)) return validateUrl(`http://${s}`);
+  // LAN dev servers (192.168.1.20:5173, devbox:8080) have no certificate: http, not https.
+  if (/^\d{1,3}(\.\d{1,3}){3}$/.test(host) || /:\d+$/.test(hostPart)) return validateUrl(`http://${s}`);
   // Any other scheme (javascript:, data:, ftp:, …) is refused.
   if (/^[a-z][a-z0-9+.-]*:(?!\d)/i.test(s)) return null;
   if (/^[^\s.]+(\.[^\s.]+)+$/.test(host)) return validateUrl(`https://${s}`);
