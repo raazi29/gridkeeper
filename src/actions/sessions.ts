@@ -250,6 +250,9 @@ export async function closeSession(id: SessionId) {
     useApp.getState().removeSessionMeta(id);
     return;
   }
+  // The pane goes away at once; the process is stopped in the background (runtime events still arrive, so
+  // waitForExit works without the meta) and the host entry is removed once it has exited.
+  useApp.getState().removeSessionMeta(id);
   if (isLive(useApp.getState().runtime[id])) {
     await stopSession(id, false);
     if (!(await waitForExit(id, 4000))) await stopSession(id, true);
@@ -257,7 +260,6 @@ export async function closeSession(id: SessionId) {
   }
   await ipc.sessionRemove(id).catch(() => {});
   useApp.getState().dropRuntime(id);
-  useApp.getState().removeSessionMeta(id);
 }
 
 export function hideView(id: SessionId) {
