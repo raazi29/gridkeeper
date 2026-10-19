@@ -20,6 +20,11 @@
 //!   `outbox/dismissed/` (a rename, so an agent creating a new file never races with it).
 //! - `.gridkeeper/team.md`: written only by Gridkeeper ([`team_write`], redacted, atomic). It never
 //!   produces an event, so regenerating it cannot trigger itself.
+//!
+//! Brain (`crate::brain`, long-term project memory): the watch also observes `.gridkeeper/brain/`
+//! (recursive, re-armed when it appears) and emits [`MissionChangeKind::Brain`] for note files in
+//! `brain/notes/` and `brain/inbox/` (created, written, renamed or deleted), after regenerating
+//! `brain/INDEX.md` on the watcher thread. INDEX.md itself never produces an event.
 
 use std::collections::HashMap;
 use std::fs;
@@ -191,7 +196,7 @@ pub(crate) fn ensure_dir(dir: &Path) -> AppResult<()> {
 }
 
 /// Write `<dir>/.<name>.<pid>.<n>.tmp`, fsync, rename over `path` (replaces atomically on NTFS).
-fn atomic_replace(path: &Path, bytes: &[u8]) -> io::Result<()> {
+pub(crate) fn atomic_replace(path: &Path, bytes: &[u8]) -> io::Result<()> {
     static SEQ: AtomicU64 = AtomicU64::new(0);
     let name = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
     let tmp = path.with_file_name(format!(
@@ -540,13 +545,17 @@ struct Relevance {
     rearm: bool,
     /// `.gridkeeper/outbox` appeared, vanished or was replaced: re-establish its watch.
     rearm_outbox: bool,
+    /// A note in `.gridkeeper/brain/notes/` or `brain/inbox/` changed (or one of those folders did).
+    brain: bool,
+    /// `.gridkeeper/brain` appeared, vanished or was replaced: re-establish its (recursive) watch.
+    rearm_brain: bool,
 }
 
 impl Relevance {
-    const IGNORE: Self = Self { mission: false, outbox: false, rearm: false, rearm_outbox: false };
+    const IGNORE: Self = Self { mission: false, outbox: false, rearm: false, rearm_outbox: false, brain: false, rearm_brain: false };
 
     fn any(&self) -> bool {
-        self.mission || self.outbox || self.rearm || self.rearm_outbox
+        self.mission || self.outbox || self.rearm || self.rearm_outbox || self.brain || self.rearm_brain
     }
 
     fn merge(&mut self, o: Relevance) {
@@ -554,16 +563,21 @@ impl Relevance {
         self.outbox |= o.outbox;
         self.rearm |= o.rearm;
         self.rearm_outbox |= o.rearm_outbox;
+        self.brain |= o.brain;
+        self.rearm_brain |= o.rearm_brain;
     }
 
     /// The `mission-changed` kinds to emit for this batch.
     fn kinds(&self) -> Vec<MissionChangeKind> {
-        let mut out = Vec::with_capacity(2);
+        let mut out = Vec::with_capacity(3);
         if self.mission || self.rearm {
             out.push(MissionChangeKind::Mission);
         }
         if self.outbox || self.rearm || self.rearm_outbox {
             out.push(MissionChangeKind::Outbox);
+        }
+        if self.brain || self.rearm || self.rearm_brain {
+            out.push(MissionChangeKind::Brain);
         }
         out
     }
@@ -581,7 +595,10 @@ fn is_name(path: &Path, name: &str) -> bool {
 /// and going (their content-driven "modified" events are ignored; the inner watches report those), and
 /// instruction files arriving in the outbox (created, written, renamed in; never removals or the old
 /// name of a rename, so archiving a file to `outbox/sent/` stays silent). `team.md` never matters.
-fn classify(event: &notify::Event, project: &Path, gk: &Path, outbox: &Path) -> Relevance {
+/// Brain: `.gridkeeper/brain` coming and going, any change to a note file in `brain/notes/` or
+/// `brain/inbox/` (removals included), and those two folders coming and going; never `brain/INDEX.md`
+/// or temporary files.
+fn classify(event: &notify::Event, project: &Path, gk: &Path, outbox: &Path, brain: &Path) -> Relevance {
     use notify::event::{ModifyKind, RenameMode};
     let structural = matches!(
         event.kind,
@@ -592,6 +609,10 @@ fn classify(event: &notify::Event, project: &Path, gk: &Path, outbox: &Path) -> 
         EventKind::Remove(_) | EventKind::Modify(ModifyKind::Name(RenameMode::From))
     );
     let rename_pair = matches!(event.kind, EventKind::Modify(ModifyKind::Name(RenameMode::Both)));
+    // `brain/notes` or `brain/inbox`.
+    let brain_folder = |p: &Path| {
+        (is_name(p, crate::brain::NOTES_DIR) || is_name(p, crate::brain::INBOX_DIR)) && p.parent().is_some_and(|b| same_path(b, brain))
+    };
     let mut out = Relevance::IGNORE;
     for (i, path) in event.paths.iter().enumerate() {
         let parent = path.parent().unwrap_or(Path::new(""));
@@ -601,6 +622,12 @@ fn classify(event: &notify::Event, project: &Path, gk: &Path, outbox: &Path) -> 
             out.rearm |= structural;
         } else if is_name(path, OUTBOX_DIR) && same_path(parent, gk) {
             out.rearm_outbox |= structural;
+        } else if is_name(path, crate::brain::BRAIN_DIR) && same_path(parent, gk) {
+            out.rearm_brain |= structural;
+        } else if brain_folder(parent) && crate::brain::is_note_file_name(path) {
+            out.brain = true;
+        } else if brain_folder(path) {
+            out.brain |= structural;
         } else if same_path(parent, outbox) && is_outbox_file_name(path) {
             // A rename pair lists [from, to]: only the destination arrives. And only a file that exists now
             // has arrived: FSEvents (macOS) reports each side of a rename on its own and coalesces flags, so
@@ -631,14 +658,15 @@ impl DirWatch {
         let shared = Arc::new(Shared::default());
         let gk = project.join(DIR_NAME);
         let outbox = gk.join(OUTBOX_DIR);
+        let brain = gk.join(crate::brain::BRAIN_DIR);
         let mut watcher = {
             let shared = Arc::clone(&shared);
-            let (project, gk, outbox) = (project.clone(), gk.clone(), outbox.clone());
+            let (project, gk, outbox, brain) = (project.clone(), gk.clone(), outbox.clone(), brain.clone());
             notify::recommended_watcher(move |res: notify::Result<notify::Event>| {
                 let relevance = match &res {
-                    Ok(ev) => classify(ev, &project, &gk, &outbox),
+                    Ok(ev) => classify(ev, &project, &gk, &outbox, &brain),
                     // Lost events / dead handle: re-check the folders and let the UI re-read.
-                    Err(_) => Relevance { rearm: true, rearm_outbox: true, ..Relevance::IGNORE },
+                    Err(_) => Relevance { rearm: true, rearm_outbox: true, rearm_brain: true, ..Relevance::IGNORE },
                 };
                 if relevance.any() {
                     shared.poke(relevance);
@@ -649,9 +677,10 @@ impl DirWatch {
         watcher.watch(&project, RecursiveMode::NonRecursive).map_err(watch_err)?;
         let gk_watched = gk.is_dir() && watcher.watch(&gk, RecursiveMode::NonRecursive).is_ok();
         let outbox_watched = outbox.is_dir() && watcher.watch(&outbox, RecursiveMode::NonRecursive).is_ok();
+        let brain_watched = brain.is_dir() && watcher.watch(&brain, RecursiveMode::Recursive).is_ok();
         let thread_shared = Arc::clone(&shared);
         let thread = crate::pty::spawn_guarded("mission-watch".into(), move || {
-            let mut armed = Armed { watcher, gk, outbox, gk_watched, outbox_watched };
+            let mut armed = Armed { watcher, project, gk, outbox, brain, gk_watched, outbox_watched, brain_watched };
             debounce_loop(&mut armed, &thread_shared, &names, &emit)
         })?;
         Ok(Self { shared, thread: Some(thread) })
@@ -661,15 +690,18 @@ impl DirWatch {
 /// The watcher plus which inner folders it currently observes.
 struct Armed {
     watcher: notify::RecommendedWatcher,
+    project: PathBuf,
     gk: PathBuf,
     outbox: PathBuf,
+    brain: PathBuf,
     gk_watched: bool,
     outbox_watched: bool,
+    brain_watched: bool,
 }
 
 impl Armed {
     /// The old handles may be dead (folder deleted / replaced): always start over.
-    fn rearm(&mut self, gk: bool, outbox: bool) {
+    fn rearm(&mut self, gk: bool, outbox: bool, brain: bool) {
         if gk {
             if self.gk_watched {
                 let _ = self.watcher.unwatch(&self.gk);
@@ -682,6 +714,12 @@ impl Armed {
             }
             self.outbox_watched =
                 self.outbox.is_dir() && self.watcher.watch(&self.outbox, RecursiveMode::NonRecursive).is_ok();
+        }
+        if gk || brain {
+            if self.brain_watched {
+                let _ = self.watcher.unwatch(&self.brain);
+            }
+            self.brain_watched = self.brain.is_dir() && self.watcher.watch(&self.brain, RecursiveMode::Recursive).is_ok();
         }
     }
 }
@@ -716,8 +754,14 @@ fn debounce_loop(armed: &mut Armed, shared: &Shared, names: &Mutex<Vec<(String, 
             st.last = None;
             std::mem::take(&mut st.fired)
         };
-        armed.rearm(fired.rearm, fired.rearm_outbox);
+        armed.rearm(fired.rearm, fired.rearm_outbox, fired.rearm_brain);
         let kinds = fired.kinds();
+        // An agent edited a note directly: bring the generated INDEX.md up to date before the UI re-reads.
+        if kinds.contains(&MissionChangeKind::Brain) {
+            if let Err(e) = crate::brain::regenerate_index(&armed.project) {
+                tracing::warn!(error = %e, "could not write brain INDEX.md");
+            }
+        }
         let targets: Vec<String> = names.lock().iter().map(|(n, _)| n.clone()).collect();
         for name in targets {
             for &kind in &kinds {
@@ -903,7 +947,8 @@ mod tests {
         let project = Path::new(r"D:\proj");
         let gk = project.join(DIR_NAME);
         let ob = gk.join(OUTBOX_DIR);
-        let classify = |e: &notify::Event| classify(e, project, &gk, &ob);
+        let br = gk.join(crate::brain::BRAIN_DIR);
+        let classify = |e: &notify::Event| classify(e, project, &gk, &ob, &br);
         let ev = |kind, p: PathBuf| notify::Event::new(kind).add_path(p);
         let modify = EventKind::Modify(ModifyKind::Any);
         assert_eq!(classify(&ev(modify, gk.join(FILE_NAME))), MISSION);
@@ -933,7 +978,8 @@ mod tests {
 ---
 hi").unwrap();
         }
-        let classify = |e: &notify::Event| classify(e, project, &gk, &ob);
+        let br = gk.join(crate::brain::BRAIN_DIR);
+        let classify = |e: &notify::Event| classify(e, project, &gk, &ob, &br);
         let ev = |kind, p: PathBuf| notify::Event::new(kind).add_path(p);
         let create = EventKind::Create(CreateKind::File);
         let modify = EventKind::Modify(ModifyKind::Any);
@@ -980,7 +1026,7 @@ hi").unwrap();
         assert_eq!(MISSION.kinds(), vec![MissionChangeKind::Mission]);
         assert_eq!(OUTBOX.kinds(), vec![MissionChangeKind::Outbox]);
         assert_eq!(REARM_OUTBOX.kinds(), vec![MissionChangeKind::Outbox]);
-        assert_eq!(REARM.kinds(), vec![MissionChangeKind::Mission, MissionChangeKind::Outbox]);
+        assert_eq!(REARM.kinds(), vec![MissionChangeKind::Mission, MissionChangeKind::Outbox, MissionChangeKind::Brain]);
         assert!(IGNORE.kinds().is_empty());
         let mut m = MISSION;
         m.merge(OUTBOX);
@@ -1036,7 +1082,108 @@ hi").unwrap();
         fs::create_dir_all(&ob).unwrap();
         fs::write(ob.join("0003-lead.md"), "to: lead\n---\nhi").unwrap();
         let ev = notify::Event::new(EventKind::Modify(ModifyKind::Name(RenameMode::Any))).add_path(ob.join("0003-lead.md"));
-        assert_eq!(classify(&ev, t.path(), &gk, &ob), OUTBOX);
+        assert_eq!(classify(&ev, t.path(), &gk, &ob, &gk.join(crate::brain::BRAIN_DIR)), OUTBOX);
+    }
+
+    const BRAIN: Relevance = Relevance { brain: true, ..Relevance::IGNORE };
+    const REARM_BRAIN: Relevance = Relevance { rearm_brain: true, ..Relevance::IGNORE };
+
+    #[test]
+    fn classifies_brain_events() {
+        use notify::event::{CreateKind, ModifyKind, RemoveKind, RenameMode};
+        let project = Path::new(r"D:\proj");
+        let gk = project.join(DIR_NAME);
+        let ob = gk.join(OUTBOX_DIR);
+        let br = gk.join(crate::brain::BRAIN_DIR);
+        let notes = br.join(crate::brain::NOTES_DIR);
+        let inbox = br.join(crate::brain::INBOX_DIR);
+        let classify = |e: &notify::Event| classify(e, project, &gk, &ob, &br);
+        let ev = |kind, p: PathBuf| notify::Event::new(kind).add_path(p);
+        let create = EventKind::Create(CreateKind::File);
+        let modify = EventKind::Modify(ModifyKind::Any);
+        let remove = EventKind::Remove(RemoveKind::File);
+        // Note files: every change counts, deletions too (the index must drop them).
+        for kind in [create, modify, remove, EventKind::Modify(ModifyKind::Name(RenameMode::From))] {
+            assert_eq!(classify(&ev(kind, notes.join("token-storage.md"))), BRAIN, "{kind:?}");
+            assert_eq!(classify(&ev(kind, inbox.join("ci-cache.MD"))), BRAIN, "{kind:?}");
+        }
+        let pair = notify::Event::new(EventKind::Modify(ModifyKind::Name(RenameMode::Both)))
+            .add_path(notes.join(".a.md.4.0.tmp"))
+            .add_path(notes.join("a.md"));
+        assert_eq!(classify(&pair), BRAIN, "atomic write: temp renamed onto the note");
+        // The generated index, temp files, other names and deeper folders are silent.
+        for p in [
+            br.join(crate::brain::INDEX_FILE),
+            br.join(".INDEX.md.4.1.tmp"),
+            br.join("loose.md"),
+            notes.join(".a.md.4.0.tmp"),
+            notes.join("My Note.md"),
+            notes.join("readme.txt"),
+            notes.join("sub").join("a.md"),
+            gk.join("notes").join("a.md"),
+        ] {
+            assert_eq!(classify(&ev(create, p.clone())), IGNORE, "{p:?}");
+        }
+        // notes/ and inbox/ coming and going (not their last-write time).
+        assert_eq!(classify(&ev(EventKind::Create(CreateKind::Folder), notes.clone())), BRAIN);
+        assert_eq!(classify(&ev(EventKind::Remove(RemoveKind::Folder), inbox.clone())), BRAIN);
+        assert_eq!(classify(&ev(modify, notes.clone())), IGNORE);
+        // The brain folder itself coming and going.
+        assert_eq!(classify(&ev(EventKind::Create(CreateKind::Folder), br.clone())), REARM_BRAIN);
+        assert_eq!(classify(&ev(EventKind::Remove(RemoveKind::Any), br.clone())), REARM_BRAIN);
+        assert_eq!(classify(&ev(modify, br.clone())), IGNORE);
+        assert_eq!(classify(&ev(EventKind::Create(CreateKind::Folder), project.join("brain"))), IGNORE);
+        assert_eq!(BRAIN.kinds(), vec![MissionChangeKind::Brain]);
+        assert_eq!(REARM_BRAIN.kinds(), vec![MissionChangeKind::Brain]);
+    }
+
+    #[test]
+    fn watcher_reports_brain_notes_and_regenerates_the_index() {
+        use MissionChangeKind::Brain;
+        let t = tempfile::tempdir().unwrap();
+        let project = dir_s(t.path());
+        write(&project, "mission", None, false).unwrap();
+        let (watchers, rx) = channel_watchers(Some(Brain));
+        watchers.watch(&project).unwrap();
+        drain(&rx, 600);
+        let br = crate::brain::brain_path(t.path());
+        let notes = br.join(crate::brain::NOTES_DIR);
+        let index = br.join(crate::brain::INDEX_FILE);
+
+        // The brain folder does not exist yet: an agent creates brain/notes/x.md in one go.
+        fs::create_dir_all(&notes).unwrap();
+        fs::write(notes.join("first.md"), "---\ntitle: First memory\n---\nx").unwrap();
+        assert_eq!(recv_within(&rx, 3000), Some((project.clone(), Brain)));
+        drain(&rx, 600);
+        assert!(fs::read_to_string(&index).unwrap().contains("[First memory](notes/first.md)"), "index regenerated before the event");
+
+        // Inside the re-armed (recursive) brain watch: a direct edit, then a deletion.
+        fs::write(notes.join("second.md"), "---\ntitle: Second memory\n---\ny").unwrap();
+        assert_eq!(recv_within(&rx, 3000), Some((project.clone(), Brain)));
+        drain(&rx, 600);
+        assert!(fs::read_to_string(&index).unwrap().contains("[Second memory]"));
+        fs::remove_file(notes.join("first.md")).unwrap();
+        assert_eq!(recv_within(&rx, 3000), Some((project.clone(), Brain)));
+        drain(&rx, 600);
+        assert!(!fs::read_to_string(&index).unwrap().contains("[First memory]"));
+
+        // Writing INDEX.md (and other files in brain/) never notifies: no regenerate loop.
+        crate::brain::regenerate_index(t.path()).unwrap();
+        fs::write(&index, "hand edit").unwrap();
+        fs::write(br.join("loose.txt"), "x").unwrap();
+        assert_eq!(drain(&rx, 700), 0, "INDEX.md / loose files are silent");
+
+        // Inbox suggestions count too.
+        let inbox = br.join(crate::brain::INBOX_DIR);
+        fs::create_dir_all(&inbox).unwrap();
+        fs::write(inbox.join("idea.md"), "---\ntitle: An idea\n---\nz").unwrap();
+        let mut got = Vec::new();
+        while let Some(e) = recv_within(&rx, 1500) {
+            got.push(e);
+        }
+        assert!(got.iter().all(|(_, k)| *k == Brain) && !got.is_empty(), "{got:?}");
+        assert!(fs::read_to_string(&index).unwrap().contains("[An idea](inbox/idea.md)"), "the hand edit was replaced");
+        watchers.clear();
     }
 
     #[test]

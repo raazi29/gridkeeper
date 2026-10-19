@@ -523,11 +523,12 @@ export interface MissionFile {
 export interface MissionChanged {
   projectDir: string;
   /** What changed: `.gridkeeper/mission.md`, or a file arriving in the lead control outbox
-   *  (`.gridkeeper/outbox/`). Missing from older hosts: treat as both. `team.md` never emits. */
+   *  (`.gridkeeper/outbox/`), or a note in `.gridkeeper/brain/notes|inbox/`. Missing from older hosts: treat as
+   *  all. `team.md` and `brain/INDEX.md` never emit. */
   file?: MissionChangeKind;
 }
 
-export type MissionChangeKind = "mission" | "outbox";
+export type MissionChangeKind = "mission" | "outbox" | "brain";
 
 /** One instruction file directly in `<projectDir>/.gridkeeper/outbox/` (mission_outbox_list). */
 export interface OutboxItem {
@@ -808,4 +809,77 @@ export interface SessionMeter {
   sevenDayPct: number | null;
   /** When data was last written (ms since the epoch); null = no data yet. */
   updatedMs: number | null;
+}
+
+// ---- Brain (long-term project memory; src-tauri/src/brain.rs) -----------------------------------
+
+/** One memory file (`.gridkeeper/brain/notes/<slug>.md`, or a suggestion in `brain/inbox/`), as brain_list lists it. */
+export interface BrainNoteMeta {
+  /** File stem ("token-storage" for token-storage.md). */
+  slug: string;
+  /** From brain/inbox/: a suggestion waiting for the user. */
+  inbox: boolean;
+  title: string;
+  /** "decision" | "convention" | "gotcha" | "howto" | "fact" | "context" (unknown kinds read as "fact"). */
+  kind: string;
+  tags: string[];
+  source: string | null;
+  /** YYYY-MM-DD as written (null when missing). */
+  created: string | null;
+  /** `updated:`, else `created:`. */
+  updated: string | null;
+  /** "confirmed" | "suggested". */
+  confidence: string;
+  /** Slug of the note this one replaces. */
+  supersedes: string | null;
+  /** Slug of the confirmed note that replaces this one (computed). */
+  supersededBy: string | null;
+  /** Body's first ~160 characters on one line. */
+  excerpt: string;
+  modifiedMs: number;
+  /** File size; above 16 KiB brain_read refuses the note. */
+  bytes: number;
+}
+
+export interface BrainIndex {
+  /** Absolute path of <projectDir>/.gridkeeper/brain (whether or not it exists). */
+  dir: string;
+  exists: boolean;
+  /** .gridkeeper/.gitignore carries the "share the brain through git" block. */
+  shared: boolean;
+  /** brain/notes/, newest `updated` first. */
+  notes: BrainNoteMeta[];
+  /** brain/inbox/, newest file first. */
+  inbox: BrainNoteMeta[];
+  /** .md files whose names are not valid slugs ("notes/My Note.md"); not read. */
+  ignored: string[];
+  truncated: boolean;
+}
+
+export interface BrainNoteFile {
+  slug: string;
+  inbox: boolean;
+  path: string;
+  exists: boolean;
+  /** Contents (at most 16 KiB; "" when missing). */
+  text: string;
+  /** Pass back to brain_write for the conflict check; null when missing. */
+  modifiedMs: number | null;
+}
+
+export interface BrainHit {
+  slug: string;
+  inbox: boolean;
+  title: string;
+  kind: string;
+  tags: string[];
+  score: number;
+  /** The body line that matched (or the excerpt). */
+  snippet: string;
+  superseded: boolean;
+}
+
+export interface BrainShare {
+  shared: boolean;
+  gitignorePath: string;
 }
