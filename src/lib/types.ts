@@ -230,6 +230,48 @@ export interface FrameProbe {
   error: string | null;
 }
 
+// ---- Native browser panes (src-tauri/src/browser_view.rs; Windows) ----------------------------------
+
+/** A pane's host box in CSS px of the main webview + devicePixelRatio. */
+export interface BrowserViewRect {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  scale: number;
+}
+/** shown: placed and visible; occluded: hidden for an overlay / drag; parked: pane off screen (low memory). */
+export type BrowserViewVisibility = "shown" | "occluded" | "parked";
+export type BrowserViewAction = { kind: "url"; url: string } | { kind: "back" } | { kind: "forward" } | { kind: "reload" } | { kind: "stop" };
+export const EVT_BROWSER_VIEW_STATE = "browser-view-state";
+export const EVT_BROWSER_VIEW_FOCUS = "browser-view-focus";
+export const EVT_BROWSER_VIEW_SHORTCUT = "browser-view-shortcut";
+export const EVT_BROWSER_VIEW_NEW_WINDOW = "browser-view-new-window";
+export const EVT_BROWSER_VIEW_DOWNLOAD = "browser-view-download";
+export interface BrowserViewState {
+  paneId: SessionId;
+  url: string;
+  title: string;
+  canGoBack: boolean;
+  canGoForward: boolean;
+  loading: boolean;
+}
+export interface BrowserViewShortcut {
+  paneId: SessionId;
+  combo: string;
+  repeat: boolean;
+}
+export interface BrowserViewNewWindow {
+  paneId: SessionId;
+  url: string;
+}
+export interface BrowserViewDownload {
+  paneId: SessionId;
+  url: string;
+  path: string | null;
+  state: "started" | "done" | "failed";
+}
+
 export interface PathInfo {
   exists: boolean;
   isDir: boolean;
@@ -342,7 +384,14 @@ export interface Settings {
   costMeter: boolean;
   /** The one-time "turn on the cost meter" hint was dismissed. */
   costMeterHintDismissed: boolean;
+  /** Browser panes: "native" = a real WebView2 per pane (Windows), "frame" = sandboxed iframe (legacy; the only engine elsewhere). */
+  browserEngine: BrowserEngineSetting;
+  /** Native browser panes: where target=_blank / window.open links go. */
+  browserNewWindow: BrowserNewWindow;
 }
+
+export type BrowserEngineSetting = "native" | "frame";
+export type BrowserNewWindow = "pane" | "same";
 
 export type HyperspaceMode = "auto" | "on" | "off";
 export type SaberEffectsMode = "auto" | "off" | "subtle" | "full";
@@ -505,6 +554,8 @@ export const DEFAULT_SETTINGS: Settings = {
   rightClickAction: "menu",
   costMeter: false,
   costMeterHintDismissed: false,
+  browserEngine: "native",
+  browserNewWindow: "pane",
 };
 
 // ---- Mission (shared task board file) ------------------------------------------------------------

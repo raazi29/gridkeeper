@@ -628,6 +628,22 @@ pub struct Settings {
     /// The one-time "turn on the cost meter" hint was dismissed.
     #[serde(default)]
     pub cost_meter_hint_dismissed: bool,
+    /// Browser panes: "native" (a child webview per pane, Windows; `browser_view.rs`) | "frame"
+    /// (sandboxed iframe). String so unknown values never fail loading; the frontend falls back to
+    /// "frame" where native panes are not supported.
+    #[serde(default = "default_browser_engine")]
+    pub browser_engine: String,
+    /// Native browser panes: target=_blank / window.open opens in a new pane ("pane") or the same one ("same").
+    #[serde(default = "default_browser_new_window")]
+    pub browser_new_window: String,
+}
+
+fn default_browser_engine() -> String {
+    "native".into()
+}
+
+fn default_browser_new_window() -> String {
+    "pane".into()
 }
 
 fn default_right_click_action() -> String {
@@ -754,6 +770,8 @@ impl Default for Settings {
             saber_sound: false,
             cost_meter: false,
             cost_meter_hint_dismissed: false,
+            browser_engine: default_browser_engine(),
+            browser_new_window: default_browser_new_window(),
         }
     }
 }

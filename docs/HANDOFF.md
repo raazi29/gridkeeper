@@ -53,11 +53,12 @@ anything.
 | `ports.rs` | Listening TCP ports attributed to session trees: `GetExtendedTcpTable` (Windows), `/proc/net/tcp{,6}` + `/proc/<pid>/fd` (Linux), `lsof` (macOS). |
 | `browser.rs` | URL validation, `curl.exe` embed probe (`frame_verdict`, `html_title`), pop-out `WebviewWindow`s. |
 | `phone.rs` | Opt-in phone alerts through ntfy (ADR-020): `phone-alerts.json` settings, token in Credential Manager (0600 file on Unix), payload scrubbing, rate limiter, curl with the request on stdin (`-K -`), `phone_*` commands. |
+| `browser_view.rs` | Native browser panes (Windows, ADR-021): one child webview per pane (`bv-<pane id>`, `Window::add_child`, Tauri `unstable` for the Windows target only), bounds / visibility / navigation / snapshot / focus commands, WebView2 events → `browser-view-*`, app shortcuts via `AcceleratorKeyPressed`, downloads to the Downloads folder. Commands report "unsupported" on macOS / Linux. |
 | `diagnostics.rs` | CPU/RAM attribution via one Toolhelp snapshot (host / WebView2 / session trees), export bundle. macOS / Linux: one sysinfo walk (`procs.rs`); the webview bucket is the WebKit helper processes, best effort. |
 | `gpu.rs` | GPU telemetry from PDH counters (engine utilization, GPU memory), opened lazily. Windows only ("unavailable" elsewhere). |
 | `platform.rs` | Per-OS bits: `os()` for `app_info`; `init_process_env` for macOS / Linux GUI launches (PATH from the login shell when `TERM` is unset, 5 s cap; tool folders appended; macOS `LANG`; Linux `WEBKIT_DISABLE_DMABUF_RENDERER=1` with the NVIDIA proprietary driver or in an AppImage); Unix termination guards (SIGTERM/SIGINT/SIGHUP → normal exit; main-thread panic → kill sessions). |
 | `procs.rs` | Unix process table (one shared `sysinfo::System`): session membership for containment, trees and CPU/RAM for diagnostics. |
-| `webview_guard.rs` | WebView2 crash recovery (Windows only). |
+| `webview_guard.rs` | WebView2 crash recovery (Windows only). `main_window` / `main_webview`: use these, never `get_webview_window("main")` (None while native browser panes exist). |
 | `logging.rs`, `redact.rs` | JSON-lines logs with daily rotation; secret redaction at every sink. |
 | `src-tauri/tests/live_profiles.rs` | Optional live checks against real Claude profiles (`--ignored`). |
 | `src-tauri/capabilities/default.json` | IPC permissions, **scoped to webview `main`**. `macos.json` adds the Dock badge permission on macOS only (`"platforms": ["macOS"]`). |
@@ -91,6 +92,7 @@ anything.
 | `terminal/ackBatcher.ts`, `writeChunks.ts`, `pasteGuard.ts`, `zoom.ts`, `findState.ts`, `menuBridge.ts`, `theme.ts` | Terminal plumbing. |
 | `layout/GroupGrid.tsx`, `Pane.tsx`, `PaneHeader.tsx`, `BrowserPane.tsx`, `gridGeometry.ts`, `paneDrag.ts` | Grid, panes, headers, drag and drop. |
 | `browser/BrowserLayer.tsx`, `frameHosts.ts`, `nav.ts`, `OpenUrlDialog.tsx`, `PortsList.tsx` | Browser panes: one persistent iframe layer positioned over host boxes. |
+| `browser/engine.ts`, `nativeViews.ts`, `nativeSync.ts`, `BrowserSettings.tsx` | Native browser panes (Windows): engine choice + fallback, the sync manager (host box → bounds, hit-test occlusion → hide with a snapshot, drags, shortcuts, events), its pure decisions (unit-tested), the settings row. |
 | `components/*` | Shell, sidebar, dialogs, palette, Fleet, Broadcast, Comms, Inspector, Diagnostics, ChangesDrawer, settings, welcome, theme switcher, menus. |
 | `components/mission/*` | Mission Control (mission board from `mission.md`, lanes, sign-off with branch evidence, "brief team…" / "hand off…"), Formations UI, activity river, session log. |
 | `lib/brain.ts`, `store/brain.ts`, `actions/brainCapture.ts`, `components/brain/*` | Brain: note format helpers, the brief line, capture rules (board / review / lead decisions → inbox suggestions, scrubbed, deduplicated), panel state + per-project prefs (localStorage: capture, auto-approve, briefs), the panel, "add memory" dialog and the "remember…" selection chip over Mission Control. |
@@ -134,7 +136,7 @@ anything.
 12. Agents come from adapters (`AgentAdapter` trait) plus a data-only catalog; env plan: base TERM vars → strip parent-agent vars → adapter config → user args → user env.
 13. Accounts are isolated home directories selected with each CLI's documented variable; status comes from the CLI's own status command; credentials are never read.
 14. Attention is detected in Rust from BEL/OSC signals and output activity (`pty/attention.rs`) and reduced in `store/attention.ts`; notifications, Comms, Fleet and Mission Control consume it.
-15. Built-in tools are read-only or sandboxed: Changes drawer (`git status`/`diff` only), ports (TCP table), browser panes (sandboxed iframes in one persistent layer, pop-outs as separate webviews without IPC).
+15. Built-in tools are read-only or sandboxed: Changes drawer (`git status`/`diff` only), ports (TCP table), browser panes (Windows: a child webview per pane without IPC, hidden with a snapshot placeholder while DOM overlays cover it; elsewhere / legacy setting: sandboxed iframes in one persistent layer; pop-outs as separate webviews without IPC).
 16. `GRIDKEEPER_SANDBOX=<name>` (`[a-z0-9-]{1,32}`) runs an isolated instance: data in `%APPDATA%\app.gridkeeper.desktop\sandboxes\<name>`, its own WebView2 profile, no single-instance lock, title `Gridkeeper [sandbox: <name>]`, `ipc.appInfo().sandbox`. That is how tests run next to the live app (section 6).
 17. Team coordination is a plain file: `<projectDir>/.gridkeeper/mission.md`, which every agent CLI can edit. Rust reads/writes it atomically (conflict check on modified time) and watches it with filesystem notifications (`mission-changed`); Mission Control renders it as a board and sign-off shows each builder's branch evidence (`git_branch_summary`).
 
@@ -158,10 +160,15 @@ anything.
   selector (render loops, see commit `80b455c`).
 - **No polling while idle.** Every timer is tied to an open view and a visible window.
 - **WebGL budget is 12** (Chromium silently kills the oldest context beyond 16 per renderer; the spare slots are headroom for other WebGL users in the page and for transitions, ADR-006). Per platform in `maxWebglFor`: macOS 12, Linux 8 (WebKitGTK; both unmeasured).
-- **Capability scoped to webview `main`** (`"webviews": ["main"]`, not `"windows"`), so pop-out browser windows and
-  future child webviews never get IPC.
+- **Capability scoped to webview `main`** (`"webviews": ["main"]`, not `"windows"`), so pop-out browser windows
+  (`browser-*`) and native browser views (`bv-*`, child webviews of the main window) never get IPC.
 - **Browser iframes are sandboxed** (`FRAME_SANDBOX`: no top navigation, no popups) and `frameMode` refuses the
   app's own origins *before* framing; that's what makes `allow-same-origin` safe. `file:` URLs go to pop-outs.
+- **Native browser views never reach an app origin**: `browser_view::view_navigation_allowed` refuses Tauri's
+  protocol hosts and the dev URL for every top-level navigation (Tauri treats those as local, ACL-free origins);
+  new windows are always denied; each view uses the main window's `additionalBrowserArgs`.
+- **Never `get_webview_window("main")`** on Windows code paths: it returns None while browser views exist (Tauri
+  `unstable`); use `webview_guard::main_window` / `main_webview`.
 - **Job Objects** (`KILL_ON_JOB_CLOSE`, no breakaway) contain every session tree; app exit runs `shutdown_all(1500 ms)`
   and a crash still kills the trees. **macOS / Linux:** the POSIX session is the container; app exit, SIGTERM / SIGINT
   / SIGHUP and a main-thread panic stop the sessions, but a hard crash of the host can orphan agents (section 10).
@@ -339,8 +346,12 @@ from an agent at all when the memory guard would refuse.
 - Shift+Enter in Claude Code on Windows is unreliable (kitty keyboard protocol allowlist, Claude Code #92771).
 - System ConPTY swallows some sequences (OSC 7501 / DA1 pass-through needs a newer sideloaded ConPTY; see ROADMAP).
 - More than 12 visible terminals → DOM renderer for the rest.
-- Browser panes: iframe limits (no in-page history, static `<title>` only, `target=_blank` does nothing, app shortcuts
-  don't fire while focus is in the page); sites that refuse framing open in pop-outs.
+- Browser panes, native engine (Windows default, ADR-021): not live-verified yet (checklist in
+  [research-notes/native-browser-panes.md](research-notes/native-browser-panes.md)); covered panes show a still
+  snapshot while a menu / dialog / toast is open; views are not hidden while the window is minimised.
+- Browser panes, frame engine (macOS / Linux, or the legacy setting): iframe limits (no in-page history, static
+  `<title>` only, `target=_blank` does nothing, app shortcuts don't fire while focus is in the page); sites that
+  refuse framing open in pop-outs.
 - Port detection: TCP listeners inside the session tree only.
 - Job assignment race (process spawned before `AssignProcessToJobObject`): theoretical, never observed.
 - `conhost.exe` is not attributed in in-app diagnostics (`sample.ps1` reports it).

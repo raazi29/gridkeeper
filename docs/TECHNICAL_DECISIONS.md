@@ -23,6 +23,7 @@ These are short architecture decision records (ADRs). Each one gives the context
 | 017 | [panic = "unwind" in release](#adr-017-panic--unwind-in-release) |
 | 018 | [No telemetry](#adr-018-no-telemetry) |
 | 019 | [Browser panes: sandboxed iframes in a persistent layer + pop-out windows, no child webviews](#adr-019-browser-panes-sandboxed-iframes-in-a-persistent-layer--pop-out-windows-no-child-webviews) |
+| 020 | [Native browser panes on Windows: one child webview per pane, iframes as the fallback](#adr-020-native-browser-panes-on-windows-one-child-webview-per-pane-iframes-as-the-fallback) |
 
 ---
 
@@ -387,3 +388,33 @@ These are short architecture decision records (ADRs). Each one gives the context
 **Alternatives.** A relay run by us (a server to operate and trust); e-mail or SMS (accounts, credentials in the app); the ntfy web-push API from the webview (CSP and CORS changes for the whole UI).
 
 **Consequences.** ADR-018's "no requests of its own" now has three user-initiated exceptions. The notification text can reveal that an agent needs attention, and, with the names switches on, which pane and workspace; that is why they are separate switches.
+- Superseded on Windows by ADR-021 (native views by default); this engine stays as the setting "Embedded frame (legacy)", the only engine on macOS / Linux, and the fallback when a native view cannot be created.
+
+---
+
+## ADR-021: Native browser panes on Windows: one child webview per pane, iframes as the fallback
+
+**Context.** Users found the iframe panes (ADR-019) "not a browser": GitHub, Google and most sign-in pages refuse framing and pop out, there is no in-page history, `target=_blank` does nothing, page titles set by script are not seen, and app shortcuts die while focus is in a page. Research with sources: [research-notes/native-browser-panes.md](research-notes/native-browser-panes.md).
+
+**Decision.**
+- **Windows: a Tauri child webview per browser pane** (`src-tauri/src/browser_view.rs`, label `bv-<pane id>`), created with `Window::add_child` (Tauri `unstable` feature, enabled for the Windows target only) and laid over the pane's host box by `src/browser/nativeViews.ts`. Setting "Browser engine: Native (recommended) / Embedded frame (legacy)", default native where supported (`src/browser/engine.ts`); a failed creation switches to frames for the rest of the run with a toast.
+- **Geometry** comes from the same host-box registry as the iframe layer (`frameHosts.ts`): CSS rect × `devicePixelRatio`, edges rounded in Rust. Views are created lazily when their pane is first on screen; off-screen panes are **parked** (hidden, WebView2 `MemoryUsageTargetLevel` Low).
+- **Overlays**: a native view paints above all DOM. Each sync hit-tests a grid of points over every shown host box (`document.elementFromPoint`); anything on top hides the view (**occluded**) after a JPEG snapshot (`CapturePreview`) is put in its place. HTML drag and drop hides all views. No per-overlay protocol.
+- **Page state** from WebView2 events (`SourceChanged`, `HistoryChanged`, `DocumentTitleChanged`, `NavigationStarting/Completed`) → `browser-view-state`; back / forward / stop via `ICoreWebView2`, reload / navigate via Tauri. The address follows in-page navigation and is persisted; the name follows the real title.
+- **Keys**: the app's bound combos are registered with the host; WebView2 `AcceleratorKeyPressed` marks a match handled and sends it to the app, which moves focus back to its page and runs the command. Clicking a view focuses its pane; hiding a focused view returns focus to the app page.
+- **New windows** are denied and opened in a new pane (default) or the same pane; **downloads** go to the Downloads folder with a toast ("Show in folder").
+- **Security** as for pop-outs (ADR-019): no capability matches `bv-*`, Tauri refuses custom commands from remote origins, and `view_navigation_allowed` refuses the app's own (ACL-local) origins for every top-level navigation; channel data is per webview; events go to `main` only.
+- Every view uses the main window's `additionalBrowserArgs` (one WebView2 environment per user data folder must use identical options, else 0x8007139F).
+
+**Alternatives.**
+- **Keep iframes** (ADR-019): safe and overlay-friendly, but the limits above are what users report as "the browser doesn't work".
+- **Hide all views whenever any overlay is open** (a list of overlay states): simpler to reason about, but every new menu or panel would need wiring, and toasts in a corner would blank every pane. Hit-testing is generic and only hides views that are actually covered.
+- **Child webviews on macOS / Linux**: Linux can't position them (GtkBox packing, tauri#10420); macOS has open input bugs, no accelerator hook and nobody to verify it. Both keep the iframe engine.
+- **CEF / a separate browser process**: full control, but a large dependency and another process model; rejected.
+
+**Consequences.**
+- Every site works in a pane on Windows, with real history, titles, DevTools (debug builds), downloads and new-window handling; app shortcuts keep working from inside a page.
+- `unstable` changes the main window on Windows even with the frame engine: its webview is built as an auto-resizing child, and `get_webview_window("main")` returns None while views exist (use `webview_guard::main_window` / `main_webview`). Tauri may change the API in a minor release (tauri 2.12 locks unstable crates to minor versions).
+- While a menu, dialog or toast covers a pane, the pane shows a still picture of the page (or nothing if no picture could be taken in 180 ms).
+- Memory per pane is roughly a renderer process per site, as with cross-origin iframes (unmeasured; see the research note).
+- Must be verified live before release (research note, "What must be verified live").

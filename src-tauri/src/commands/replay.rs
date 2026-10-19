@@ -2,7 +2,7 @@
 //! blocking pool, never on the main thread.
 
 use tauri::ipc::{InvokeBody, Request};
-use tauri::{AppHandle, Manager};
+use tauri::AppHandle;
 use tauri_plugin_dialog::DialogExt;
 
 use crate::types::*;
@@ -64,7 +64,7 @@ pub async fn replay_save_dialog(
             .set_file_name(name)
             .add_filter(label, &[kind])
             .set_can_create_directories(true);
-        if let Some(w) = app.get_webview_window(crate::webview_guard::MAIN) {
+        if let Some(w) = crate::webview_guard::main_window(&app) {
             dialog = dialog.set_parent(&w);
         }
         let Some(picked) = dialog.blocking_save_file() else {

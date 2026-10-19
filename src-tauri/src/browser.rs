@@ -1,8 +1,9 @@
 //! Browser panes: URL validation, the embeddability probe and pop-out browser windows.
 //!
-//! In-pane pages render in a sandboxed `<iframe>` in the main webview (frontend); see
-//! docs/TECHNICAL_DECISIONS.md ADR-019 for why and for the security analysis. This module covers
-//! what the iframe cannot do:
+//! With the frame engine, in-pane pages render in a sandboxed `<iframe>` in the main webview
+//! (frontend); see docs/TECHNICAL_DECISIONS.md ADR-019 for why and for the security analysis. On
+//! Windows the default is a native child webview per pane instead (`browser_view.rs`, ADR-021), which
+//! reuses `validate_url` / `is_app_origin` from here. This module covers what the iframe cannot do:
 //! - `probe`: one user-initiated request (curl.exe, HEAD-less GET capped at 512 KiB) to the URL the
 //!   pane is about to show, to learn whether the site forbids framing (X-Frame-Options /
 //!   CSP frame-ancestors), whether a dev server is up yet, and the page `<title>`.
@@ -70,7 +71,7 @@ pub fn navigation_allowed(u: &Url, dev_url: Option<&Url>) -> bool {
     matches!(u.scheme(), "http" | "https" | "file") && !is_app_origin(u, dev_url)
 }
 
-fn dev_url(app: &AppHandle) -> Option<Url> {
+pub(crate) fn dev_url(app: &AppHandle) -> Option<Url> {
     if cfg!(debug_assertions) { app.config().build.dev_url.clone() } else { None }
 }
 

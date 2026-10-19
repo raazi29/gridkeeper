@@ -23,6 +23,7 @@ import { withSaber } from "../theme/saber";
 import { THEMES, getTheme } from "../theme/themes";
 import { HyperspaceToggle, MissionFxToggle, SaberSettings, ThemeEffects } from "./AppearanceExtras";
 import { ThemeCard } from "./ThemeCard";
+import { BrowserSettings } from "../browser/BrowserSettings";
 
 type Section = "appearance" | "terminal" | "agents" | "keys" | "interface" | "notifications";
 const SECTIONS: { id: Section; label: string }[] = [
@@ -375,6 +376,7 @@ function InterfaceSection() {
       <Toggle checked={diag} onChange={setDiag} label="Resource usage in status bar" hint="Polls every 2 s, only while the window is visible." />
       <Toggle checked={collapsed} onChange={setCollapsed} label="Collapse sidebar to a rail" />
       <Toggle checked={inspector} onChange={setInspector} label="Show inspector panel" />
+      <BrowserSettings />
       <Toggle
         checked={flightLog}
         onChange={setFlightLogEnabled}

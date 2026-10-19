@@ -37,6 +37,23 @@ import type {
   WorktreeInfo,
 } from "./types";
 import { EVT_MISSION_CHANGED, EVT_SESSION_ATTENTION, EVT_SESSION_METER, EVT_SESSION_STATE } from "./types";
+// Native browser panes
+import type {
+  BrowserViewAction,
+  BrowserViewDownload,
+  BrowserViewNewWindow,
+  BrowserViewRect,
+  BrowserViewShortcut,
+  BrowserViewState,
+  BrowserViewVisibility,
+} from "./types";
+import {
+  EVT_BROWSER_VIEW_DOWNLOAD,
+  EVT_BROWSER_VIEW_FOCUS,
+  EVT_BROWSER_VIEW_NEW_WINDOW,
+  EVT_BROWSER_VIEW_SHORTCUT,
+  EVT_BROWSER_VIEW_STATE,
+} from "./types";
 // Skills
 import type { InstallResult, InstalledSkill, RepoSkills, SkillFileText, SkillRepoPage, SkillSort, SkillTarget, SkillUpdateCheck } from "./types";
 // Phone alerts
@@ -126,6 +143,25 @@ export const ipc = {
   browserOpenWindow: (url: string, label: string | null) => invoke<string>("browser_open_window", { url, label }),
   browserCloseWindow: (label: string) => invoke<boolean>("browser_close_window", { label }),
   browserDevtools: (label: string) => invoke<void>("browser_devtools", { label }),
+  // Native browser panes (child webview per pane, Windows only; src/browser/nativeViews.ts drives them).
+  browserViewSupported: () => invoke<boolean>("browser_view_supported"),
+  /** Resolves true when an existing view was reused (frontend reload). */
+  browserViewCreate: (paneId: string, url: string, rect: BrowserViewRect, visibility: BrowserViewVisibility) =>
+    invoke<boolean>("browser_view_create", { paneId, url, rect, visibility }),
+  browserViewSetBounds: (paneId: string, rect: BrowserViewRect | null, visibility: BrowserViewVisibility) =>
+    invoke<void>("browser_view_set_bounds", { paneId, rect, visibility }),
+  browserViewNavigate: (paneId: string, action: BrowserViewAction) => invoke<void>("browser_view_navigate", { paneId, action }),
+  browserViewFocus: (paneId: string) => invoke<void>("browser_view_focus", { paneId }),
+  /** Keyboard focus back to the app page (when a view has it). */
+  browserViewBlur: () => invoke<void>("browser_view_blur"),
+  browserViewClose: (paneId: string) => invoke<boolean>("browser_view_close", { paneId }),
+  /** Close every view whose pane is not listed; resolves how many were closed. */
+  browserViewRetain: (paneIds: string[]) => invoke<number>("browser_view_retain", { paneIds }),
+  /** JPEG of the view (empty buffer when none could be taken in time). */
+  browserViewSnapshot: (paneId: string) => invoke<ArrayBuffer>("browser_view_snapshot", { paneId }),
+  /** App key bindings (canonical combos) that a focused page must hand to the app. */
+  browserViewSetShortcuts: (combos: string[]) => invoke<void>("browser_view_set_shortcuts", { combos }),
+  browserViewDevtools: (paneId: string) => invoke<void>("browser_view_devtools", { paneId }),
 
   diagnosticsSnapshot: () => invoke<Diagnostics>("diagnostics_snapshot"),
   diagnosticsExport: (frontend: unknown) => invoke<string>("diagnostics_export", { frontend }),
@@ -226,4 +262,24 @@ export function onMissionChanged(cb: (ev: MissionChanged) => void): Promise<Unli
 
 export function onSessionMeter(cb: (m: SessionMeter) => void): Promise<UnlistenFn> {
   return listen<SessionMeter>(EVT_SESSION_METER, (e) => cb(e.payload));
+}
+
+export interface BrowserViewHandlers {
+  state: (s: BrowserViewState) => void;
+  focus: (paneId: string) => void;
+  shortcut: (s: BrowserViewShortcut) => void;
+  newWindow: (r: BrowserViewNewWindow) => void;
+  download: (d: BrowserViewDownload) => void;
+}
+
+/** Events of the native browser panes. Resolves one function that removes every listener. */
+export async function onBrowserViewEvents(h: BrowserViewHandlers): Promise<UnlistenFn> {
+  const offs = await Promise.all([
+    listen<BrowserViewState>(EVT_BROWSER_VIEW_STATE, (e) => h.state(e.payload)),
+    listen<{ paneId: string }>(EVT_BROWSER_VIEW_FOCUS, (e) => h.focus(e.payload.paneId)),
+    listen<BrowserViewShortcut>(EVT_BROWSER_VIEW_SHORTCUT, (e) => h.shortcut(e.payload)),
+    listen<BrowserViewNewWindow>(EVT_BROWSER_VIEW_NEW_WINDOW, (e) => h.newWindow(e.payload)),
+    listen<BrowserViewDownload>(EVT_BROWSER_VIEW_DOWNLOAD, (e) => h.download(e.payload)),
+  ]);
+  return () => offs.forEach((off) => off());
 }

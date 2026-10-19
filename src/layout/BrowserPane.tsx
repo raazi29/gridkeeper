@@ -1,9 +1,11 @@
-// Browser pane: header + compact address bar + a host box the persistent iframe layer
-// (browser/BrowserLayer) is laid over, and cards for the start page / pages that cannot be framed.
+// Browser pane: header + compact address bar + a host box that the page is laid over (the persistent
+// iframe layer, browser/BrowserLayer, or a native view, browser/nativeViews), and cards for the start
+// page / pages that cannot be shown.
 
 import { memo, useCallback, useEffect, useLayoutEffect, useRef, useState, type MouseEvent } from "react";
 import { useShallow } from "zustand/react/shallow";
 import { forceFrame, goBack, goForward, navigate, openDevtools, openExternal, popOut, reload, runProbe, ensureNav } from "../actions/browser";
+import { useBrowserEngine } from "../browser/engine";
 import { canGoBack, canGoForward, ownOrigin, useBrowserNav, viewOf } from "../browser/nav";
 import { registerHost } from "../browser/frameHosts";
 import { PortsList } from "../browser/PortsList";
@@ -54,7 +56,7 @@ export const BrowserPane = memo(function BrowserPane({ sessionId, groupId, index
   );
 });
 
-/** The box the iframe is laid over. */
+/** The box the page is laid over (iframe or native view; holds the snapshot of a hidden native view). */
 function BrowserHost({ sessionId }: { sessionId: SessionId }) {
   const ref = useRef<HTMLDivElement>(null);
   useLayoutEffect(() => (ref.current ? registerHost(sessionId, ref.current) : undefined), [sessionId]);
@@ -70,6 +72,7 @@ const AddressBar = memo(function AddressBar({ sessionId }: { sessionId: SessionI
       return { url: n?.url ?? null, loading: !!n?.loading, back: canGoBack(n), fwd: canGoForward(n), popout: !!n?.popout };
     }),
   );
+  const native = useBrowserEngine() === "native";
   const [draft, setDraft] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -127,7 +130,7 @@ const AddressBar = memo(function AddressBar({ sessionId }: { sessionId: SessionI
         <button
           type="button"
           className="pane-icon-btn"
-          title={nav.popout ? "DevTools (pop-out window)" : "DevTools: pop the page out first"}
+          title={native ? "DevTools" : nav.popout ? "DevTools (pop-out window)" : "DevTools: pop the page out first"}
           aria-label="DevTools"
           disabled={!nav.url}
           onClick={() => void openDevtools(sessionId)}
@@ -153,7 +156,7 @@ function hostName(url: string | null): string {
 
 const BrowserCards = memo(function BrowserCards({ sessionId, visible }: { sessionId: SessionId; visible: boolean }) {
   const n = useBrowserNav((s) => s.panes[sessionId]);
-  const view = viewOf(n, ownOrigin());
+  const view = viewOf(n, ownOrigin(), useBrowserEngine());
   const url = n?.url ?? null;
 
   switch (view) {
@@ -228,6 +231,7 @@ const BrowserCards = memo(function BrowserCards({ sessionId, visible }: { sessio
 
 /** `visible`: the pane's group is on screen — the ports poll runs only then. */
 function StartPage({ sessionId, visible }: { sessionId: SessionId; visible: boolean }) {
+  const native = useBrowserEngine() === "native";
   const [value, setValue] = useState("");
   const [error, setError] = useState(false);
   const go = (raw: string | null) => {
@@ -267,7 +271,9 @@ function StartPage({ sessionId, visible }: { sessionId: SessionId; visible: bool
         <div className="section-label">Dev servers started by your sessions</div>
         <PortsList onPick={(port) => go(urlForPort(port))} poll={visible} />
         <div className="browser-card-hint">
-          Pages run sandboxed: no access to Gridkeeper or your sessions. Sites that refuse embedding open in a pop-out window.
+          {native
+            ? "Pages run in their own browser view, with no access to Gridkeeper or your sessions."
+            : "Pages run sandboxed: no access to Gridkeeper or your sessions. Sites that refuse embedding open in a pop-out window."}
         </div>
       </div>
     </div>
