@@ -6,7 +6,8 @@
 //   `.gridkeeper/outbox/` on every "outbox" change event (and once when a folder becomes controlled);
 // - turns each instruction file into a proposal (advisor), or queues message / review items for automatic
 //   delivery (autopilot, not paused). Delivery uses the same safe-send rules as "brief team" / "hand off":
-//   never while the target is "waiting" or its output tail reads like a question; autopilot additionally waits
+//   never while the target is "waiting", a Claude hook reports a permission / question prompt (exact; checked
+//   first, see hookWaitReason) or its output tail reads like a question; autopilot additionally waits
 //   while the target is working, at most 1 delivery per target per 20 s and 8 per minute, retries on the
 //   target's next attention transition and gives up after 10 minutes (it becomes a proposal). stop / restart
 //   are never automatic: they go through the confirmStop / confirmRestart dialogs;
@@ -42,7 +43,7 @@ import { normalizeRole } from "../lib/roles";
 import type { OutboxItem, SessionId, SessionMeta } from "../lib/types";
 import { recordActivity, sessionLabelOf } from "../store/activity";
 import { isLive, useApp } from "../store/appStore";
-import { useAttention } from "../store/attention";
+import { hookWaitReason, useAttention } from "../store/attention";
 import {
   DEFAULT_POLICY,
   effectiveMode,
@@ -377,6 +378,12 @@ async function sendTargets(key: string, auto: boolean): Promise<string | null> {
   for (const id of pendingTargets(p0)) {
     const name = label(id);
     if (auto) {
+      // Never deliver into a prompt Claude reports through its hooks (permission, question, plan approval).
+      const prompt = hookWaitReason(useAttention.getState().sessions[id]);
+      if (prompt) {
+        reasons.push(`${name} ${prompt}; sent after it is answered`);
+        continue;
+      }
       const wait = rateLimitWait(history, id, Date.now());
       if (wait > 0) {
         reasons.push(`rate limit: next automatic delivery to ${name} in ${Math.ceil(wait / 1000)} s`);

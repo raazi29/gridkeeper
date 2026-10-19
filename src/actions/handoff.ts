@@ -16,7 +16,7 @@ import { isTerminalMeta } from "../lib/browserPanes";
 import type { BranchSummary, SessionId, SessionMeta } from "../lib/types";
 import { isLive, selectActiveWorkspace, useApp } from "../store/appStore";
 import { recordActivity, sessionLabelOf } from "../store/activity";
-import { useAttention } from "../store/attention";
+import { hookWaitReason, useAttention } from "../store/attention";
 import { looksLikeQuestion } from "./starterPrompt";
 
 const ENTER_DELAY_MS = 80;
@@ -192,6 +192,9 @@ export async function handoffBlocker(targetId: SessionId): Promise<string | null
   const s = useApp.getState();
   const name = s.persisted.sessions.find((m) => m.id === targetId)?.name ?? "The session";
   if (!isLive(s.runtime[targetId])) return `${name} is not running.`;
+  // Exact, from Claude Code hooks: a permission / question prompt is up. Typing would answer it.
+  const prompt = hookWaitReason(useAttention.getState().sessions[targetId]);
+  if (prompt) return `${name} ${prompt}. Sending would type into that prompt; answer it in its pane first.`;
   if (useAttention.getState().sessions[targetId]?.state === "waiting")
     return `${name} is waiting for an answer. Sending would press Enter on its prompt; answer it in its pane first.`;
   let tail = "";

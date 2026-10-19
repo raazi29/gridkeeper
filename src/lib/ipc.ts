@@ -175,6 +175,9 @@ export const ipc = {
     invoke<string>("replay_save_file", bytes, { headers: { "x-replay-token": token } }),
   // Meter: Claude Code cost & context per pane (status line JSON; live updates via onSessionMeter).
   meterSnapshot: () => invoke<SessionMeter[]>("meter_snapshot"),
+  /** Spend guard ledger (`<data>/spend-ledger.json`, owned by src/store/spend.ts); null = none yet. */
+  spendLedgerRead: () => invoke<string | null>("spend_ledger_read"),
+  spendLedgerWrite: (text: string) => invoke<void>("spend_ledger_write", { text }),
 };
 
 export function onSessionState(cb: (info: SessionInfo) => void): Promise<UnlistenFn> {
