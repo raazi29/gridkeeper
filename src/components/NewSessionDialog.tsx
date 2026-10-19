@@ -21,6 +21,7 @@ import { MemoryPressureNotice } from "./ResourceWarnings";
 import { pickExecutable, pickFolder } from "./util/pick";
 import { AGENT_LABEL } from "./util/session";
 import { defaultWorktreePath, isValidBranchName, splitArgs } from "./util/text";
+import { isBrowserCapable, startWithBrowser } from "./agentBrowser/store";
 
 type WtMode = "none" | "existing" | "new";
 type PathState = { status: "idle" | "checking" | "ok" | "missing" | "unknown"; normalized?: string };
@@ -53,6 +54,7 @@ export function NewSessionDialog({ groupId, preset, onClose }: { groupId?: strin
   const [wtPathEdited, setWtPathEdited] = useState(false);
   const [name, setName] = useState("");
   const [role, setRole] = useState<string | null>(null);
+  const [giveBrowser, setGiveBrowser] = useState(false);
   const [argsText, setArgsText] = useState("");
   const [command, setCommand] = useState("");
   /** Catalog tool id when agent = generic ("" = custom command). */
@@ -217,7 +219,8 @@ export function NewSessionDialog({ groupId, preset, onClose }: { groupId?: strin
       if (preset) app.updateLayout(target, { preset, maximized: null });
       const n = Math.min(8, Math.max(1, count));
       for (let i = 0; i < n; i++) {
-        newSession({
+        const withBrowser = giveBrowser && isBrowserCapable(agent);
+        const id = newSession({
           groupId: target,
           agent,
           cwd: baseCwd,
@@ -228,7 +231,10 @@ export function NewSessionDialog({ groupId, preset, onClose }: { groupId?: strin
           args,
           worktree,
           role,
+          start: !withBrowser,
         });
+        // Opt in before the launch: the adapter reads the opt-in when it builds the command line.
+        if (withBrowser) void startWithBrowser(id);
       }
       useUi.getState().setLastSession({ agent, profileId: showAccounts && profileId ? profileId : last.profileId });
       // Make sure the target group is visible.
@@ -487,6 +493,15 @@ export function NewSessionDialog({ groupId, preset, onClose }: { groupId?: strin
         <Field label="Role" htmlFor="ns-role" hint="Optional team role, shown in the pane header and Mission Control">
           <RolePicker id="ns-role" value={role} onChange={setRole} />
         </Field>
+
+        {isBrowserCapable(agent) && (
+          <Field label="Browser" hint="A tab of its own in Gridkeeper's shared browser, with tools to open pages, click, type and read console / network errors. Watch it or take over in the Agent browser view (command palette, or the session menu).">
+            <label className="check">
+              <input type="checkbox" checked={giveBrowser} onChange={(e) => setGiveBrowser(e.target.checked)} />
+              Give this agent a browser
+            </label>
+          </Field>
+        )}
 
         <Field label="Arguments" htmlFor="ns-args" hint={args.length ? <span className="mono">{args.map((a) => (/\s/.test(a) || a === "" ? JSON.stringify(a) : a)).join("  ")}</span> : "Optional, quotes respected"}>
           <Input id="ns-args" mono value={argsText} onChange={(e) => setArgsText(e.target.value)} placeholder={agent === "claude" ? "--model opus" : agent === "codex" ? "--model gpt-5" : ""} />

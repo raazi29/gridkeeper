@@ -39,6 +39,9 @@ import type {
 import { EVT_MISSION_CHANGED, EVT_SESSION_ATTENTION, EVT_SESSION_METER, EVT_SESSION_STATE } from "./types";
 // Skills
 import type { InstallResult, InstalledSkill, RepoSkills, SkillFileText, SkillRepoPage, SkillSort, SkillTarget, SkillUpdateCheck } from "./types";
+// Agent browser
+import type { AgentBrowserActivity, AgentBrowserInput, AgentBrowserState } from "./types";
+import { EVT_AGENT_BROWSER_ACTIVITY, EVT_AGENT_BROWSER_STATE } from "./types";
 
 export interface AppInfo {
   version: string;
@@ -197,4 +200,34 @@ export function onMissionChanged(cb: (ev: MissionChanged) => void): Promise<Unli
 
 export function onSessionMeter(cb: (m: SessionMeter) => void): Promise<UnlistenFn> {
   return listen<SessionMeter>(EVT_SESSION_METER, (e) => cb(e.payload));
+}
+
+// ---- Agent browser (shared browser, a tab per agent; src-tauri/src/agent_browser) ---------------------------
+// Screencast frames arrive on the watch channel as `[u32 LE header length][header JSON][JPEG]`.
+
+export const agentBrowserIpc = {
+  state: () => invoke<AgentBrowserState>("agent_browser_state"),
+  /** "Give this agent a browser" (applies at the session's next launch). */
+  setSession: (id: SessionId, enabled: boolean) => invoke<void>("agent_browser_set_session", { id, enabled }),
+  /** Returns the normalized allowlist. */
+  setAllowlist: (entries: string[]) => invoke<string[]>("agent_browser_set_allowlist", { entries }),
+  setIdleMinutes: (minutes: number) => invoke<void>("agent_browser_set_idle_minutes", { minutes }),
+  /** "Stop agent browsing" (closes the tab, refuses calls) / allow again. */
+  setStopped: (id: SessionId, stopped: boolean) => invoke<void>("agent_browser_set_stopped", { id, stopped }),
+  takeOver: (id: SessionId, on: boolean) => invoke<void>("agent_browser_take_over", { id, on }),
+  answer: (promptId: number, allow: boolean, remember: boolean) => invoke<void>("agent_browser_answer", { promptId, allow, remember }),
+  /** `token` identifies this view: an unwatch from an older view never stops a newer one. */
+  watch: (id: SessionId, channel: Channel<ArrayBuffer>, maxWidth: number, maxHeight: number, token: number) =>
+    invoke<void>("agent_browser_watch", { id, channel, maxWidth, maxHeight, token }),
+  unwatch: (id: SessionId, token: number) => invoke<void>("agent_browser_unwatch", { id, token }),
+  input: (id: SessionId, event: AgentBrowserInput) => invoke<void>("agent_browser_input", { id, event }),
+  stopBrowser: () => invoke<void>("agent_browser_stop_browser"),
+};
+
+export function onAgentBrowserState(cb: (s: AgentBrowserState) => void): Promise<UnlistenFn> {
+  return listen<AgentBrowserState>(EVT_AGENT_BROWSER_STATE, (e) => cb(e.payload));
+}
+
+export function onAgentBrowserActivity(cb: (a: AgentBrowserActivity) => void): Promise<UnlistenFn> {
+  return listen<AgentBrowserActivity>(EVT_AGENT_BROWSER_ACTIVITY, (e) => cb(e.payload));
 }

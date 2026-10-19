@@ -32,6 +32,7 @@ import { BrowserLayer } from "../browser/BrowserLayer";
 import { ChangesDrawer } from "./ChangesDrawer";
 import { installPortsWatch } from "../store/ports";
 import { installMeterWatch } from "../store/meter";
+import { AgentBrowserLayer } from "./agentBrowser/AgentBrowserLayer";
 import "../browser/browser.css";
 
 export function Shell() {
@@ -92,6 +93,7 @@ export function Shell() {
       <AttentionLayer />
       <MissionLayer />
       <SkillsLayer />
+      <AgentBrowserLayer />
       <ExperienceLayer />
       <ContextMenuHost />
     </div>

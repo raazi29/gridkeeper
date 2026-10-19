@@ -20,6 +20,7 @@ import {
 import { nextAttentionTarget, useAttention, useAttentionUi } from "../store/attention";
 import { useMission } from "../store/mission";
 import { toggleSkills } from "../store/skills";
+import { toggleAgentBrowser } from "../components/agentBrowser/store";
 import { openReplay } from "../store/replay";
 import { confirmDialog, useUi } from "../store/uiStore";
 import { focusTerminal } from "../terminal/registry";
@@ -464,6 +465,7 @@ export const COMMANDS: Command[] = [
   { id: "view.mission", title: "Mission Control (team view of this workspace)", category: "View", run: () => useMission.getState().toggle() },
   { id: "formation.launch", title: "Launch formation (agent team template)…", category: "Workspace", run: () => useMission.getState().openFormation() },
   { id: "view.skills", title: "Skills: discover & add…", category: "Workspace", run: toggleSkills },
+  { id: "view.agentBrowser", title: "Agent browser (watch and take over agents' browser tabs)", category: "View", run: toggleAgentBrowser },
   { id: "mission.replay", title: "Mission replay… (timelapse video of a recorded mission)", category: "View", run: () => openReplay() },
   ...EXPERIENCE_COMMANDS,
 ];
