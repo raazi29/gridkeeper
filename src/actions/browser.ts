@@ -4,6 +4,7 @@
 
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { browserPaneForPort, isBrowserMeta } from "../lib/browserPanes";
+import { t } from "../i18n";
 import { errorMessage, ipc } from "../lib/ipc";
 import type { BrowserViewAction, BrowserViewState, SessionId, SessionMeta } from "../lib/types";
 import { displayUrl, isAppOrigin, isLocalDevUrl, urlForPort, validateUrl } from "../lib/url";
@@ -24,7 +25,7 @@ export interface OpenBrowserOptions {
 }
 
 function defaultName(url: string | null): string {
-  return url ? displayUrl(url) || "Browser" : "Browser";
+  return (url ? displayUrl(url) : "") || t("browser.defaultName");
 }
 
 /** Create a browser pane and focus it. Returns its id (null without a group). */
@@ -32,7 +33,7 @@ export function openBrowserPane(o: OpenBrowserOptions = {}): SessionId | null {
   const app = useApp.getState();
   const url = o.url ? validateUrl(o.url) : null;
   if (o.url && !url) {
-    notify("error", "Only http, https and file addresses can be opened");
+    notify("error", t("browser.toast.invalidUrl"));
     return null;
   }
   const loc = o.afterId ? findGroupOf(o.afterId) : undefined;
@@ -92,7 +93,7 @@ function persistUrl(id: SessionId, url: string | null) {
 export function navigate(id: SessionId, raw: string): boolean {
   const url = validateUrl(raw);
   if (!url) {
-    notify("error", "Only http, https and file addresses can be opened");
+    notify("error", t("browser.toast.invalidUrl"));
     return false;
   }
   initNav(id, null);
@@ -225,6 +226,7 @@ export async function runProbe(id: SessionId, url: string, isRetry = false): Pro
   try {
     probe = await ipc.browserProbe(url);
   } catch (e) {
+    // "Probe failed" stays English: viewOf (browser/nav.ts) matches it to tell a failed probe from an unreachable site.
     probe = { reachable: false, status: null, frameable: null, reason: null, title: null, error: `Probe failed: ${errorMessage(e)}` };
   }
   const n = getNav(id);
@@ -252,10 +254,10 @@ export async function runProbe(id: SessionId, url: string, isRetry = false): Pro
 export function openExternal(url: string | null | undefined) {
   const v = url ? validateUrl(url) : null;
   if (!v || !/^https?:/i.test(v)) {
-    notify("info", "Only http and https addresses open in the system browser");
+    notify("info", t("browser.toast.externalHttpOnly"));
     return;
   }
-  openUrl(v).catch((e) => notify("error", `Could not open the browser: ${errorMessage(e)}`));
+  openUrl(v).catch((e) => notify("error", t("browser.toast.openExternalFailed", { error: errorMessage(e) })));
 }
 
 /** Pop-out Gridkeeper browser window (real WebView2 window: any site, file: URLs, DevTools in debug builds). */
@@ -281,7 +283,7 @@ export async function openDevtools(id: SessionId) {
   }
   const label = getNav(id)?.popout;
   if (!label) {
-    notify("info", "DevTools work in pop-out windows: pop the page out first (debug builds only)");
+    notify("info", t("browser.toast.devtoolsNeedsPopout"));
     return;
   }
   try {

@@ -1,7 +1,9 @@
 // Pure parts of Mission Control's sign-off dock (unit-tested): the one-line evidence summary of a
 // session's branch / worktree, the order of hand-off targets, and the hand-off message.
 // Everything shown comes from read-only git (`git_branch_summary`): nothing is estimated.
+// The evidence line is in the UI language; the hand-off message is typed into an agent and stays English.
 
+import { intlLocale, t } from "../../i18n";
 import type { BranchSummary, SessionId } from "../../lib/types";
 
 /** Longest commit subject shown on a card (the full subject is in the tooltip). */
@@ -16,25 +18,26 @@ export interface SummaryPart {
   title?: string;
 }
 
+/** English counted noun for the hand-off message (agent-facing). */
 const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
 
 /** Collapse whitespace (a subject is one line) and cut at `max` characters with an ellipsis. */
 export function truncate(text: string, max: number): string {
-  const t = text.replace(/\s+/g, " ").trim();
+  const one = text.replace(/\s+/g, " ").trim();
   if (max <= 0) return "";
-  return t.length > max ? `${t.slice(0, Math.max(0, max - 1)).trimEnd()}…` : t;
+  return one.length > max ? `${one.slice(0, Math.max(0, max - 1)).trimEnd()}…` : one;
 }
 
-/** "just now", "42s ago", "4m ago", "3h ago", "2d ago". Future times (clock skew) read "just now". */
+/** "just now", "42s ago", "4m ago", "3h ago", "2d ago" (UI language). Future times (clock skew) read "just now". */
 export function formatAgo(ms: number, now: number): string {
   const s = Math.floor((now - ms) / 1000);
-  if (s < 10) return "just now";
-  if (s < 60) return `${s}s ago`;
+  if (s < 10) return t("signoff.ago.now");
+  if (s < 60) return t("signoff.ago.seconds", { n: s });
   const m = Math.floor(s / 60);
-  if (m < 60) return `${m}m ago`;
+  if (m < 60) return t("signoff.ago.minutes", { n: m });
   const h = Math.floor(m / 60);
-  if (h < 48) return `${h}h ago`;
-  return `${Math.floor(h / 24)}d ago`;
+  if (h < 48) return t("signoff.ago.hours", { n: h });
+  return t("signoff.ago.days", { n: Math.floor(h / 24) });
 }
 
 /** The session works directly on the base branch (e.g. the main checkout): ahead/behind say nothing. */
@@ -49,35 +52,44 @@ export function isOnBase(s: Pick<BranchSummary, "branch" | "base">): boolean {
 export function summaryParts(s: BranchSummary | null | undefined, now: number): SummaryPart[] {
   if (!s || !s.isRepo) return [];
   const parts: SummaryPart[] = [];
-  const base = s.base ?? "base";
+  const base = s.base ?? t("signoff.ev.base");
   const onBase = isOnBase(s);
   parts.push(
     s.branch
-      ? { kind: "branch", text: `⎇ ${s.branch}`, title: onBase ? `Working directly on ${s.branch}` : s.base ? `Branch ${s.branch}, compared with ${s.base}` : `Branch ${s.branch}` }
-      : { kind: "branch", text: "⎇ detached HEAD", title: "No branch checked out (detached HEAD)" },
+      ? {
+          kind: "branch",
+          text: `⎇ ${s.branch}`,
+          title: onBase
+            ? t("signoff.ev.onBase", { branch: s.branch })
+            : s.base
+              ? t("signoff.ev.branchVs", { branch: s.branch, base: s.base })
+              : t("signoff.ev.branch", { branch: s.branch }),
+        }
+      : // "⎇ " stays first: ListView strips the branch token by it.
+        { kind: "branch", text: `⎇ ${t("signoff.ev.detached")}`, title: t("signoff.ev.detachedTitle") },
   );
   if (!onBase) {
     if (s.ahead > 0) {
-      parts.push({ kind: "commits", text: `+${plural(s.ahead, "commit")}`, title: `${plural(s.ahead, "commit")} not on ${base}` });
+      parts.push({ kind: "commits", text: t("signoff.ev.commits", { count: s.ahead }), title: t("signoff.ev.commitsTitle", { count: s.ahead, base }) });
       parts.push({
         kind: "diff",
-        text: `${plural(s.filesChanged, "file")} +${s.insertions} −${s.deletions}`,
-        title: `Committed changes vs ${base}: ${plural(s.filesChanged, "file")}, ${s.insertions} insertions, ${s.deletions} deletions`,
+        text: t("signoff.ev.diff", { files: s.filesChanged, insertions: s.insertions, deletions: s.deletions }),
+        title: t("signoff.ev.diffTitle", { base, files: s.filesChanged, insertions: s.insertions, deletions: s.deletions }),
       });
     } else {
-      parts.push({ kind: "none", text: "0 commits", title: `No commits yet on this branch that are not on ${base}` });
+      parts.push({ kind: "none", text: t("signoff.ev.noCommits"), title: t("signoff.ev.noCommitsTitle", { base }) });
     }
-    if (s.behind > 0) parts.push({ kind: "behind", text: `↓${s.behind} behind ${base}`, title: `${plural(s.behind, "commit")} on ${base} that this branch does not have` });
+    if (s.behind > 0) parts.push({ kind: "behind", text: t("signoff.ev.behind", { count: s.behind, base }), title: t("signoff.ev.behindTitle", { count: s.behind, base }) });
   }
   parts.push(
     s.uncommitted > 0
-      ? { kind: "dirty", text: `${s.uncommitted} uncommitted`, title: `${plural(s.uncommitted, "file")} changed but not committed (incl. untracked)` }
-      : { kind: "clean", text: "clean", title: "No uncommitted changes" },
+      ? { kind: "dirty", text: t("signoff.ev.dirty", { count: s.uncommitted }), title: t("signoff.ev.dirtyTitle", { count: s.uncommitted }) }
+      : { kind: "clean", text: t("signoff.ev.clean"), title: t("signoff.ev.cleanTitle") },
   );
   // The last commit is evidence of THIS work only when the branch has its own commits (or works on base).
   if ((s.ahead > 0 || onBase || !s.base) && s.lastCommitSubject) {
     parts.push({ kind: "subject", text: `“${truncate(s.lastCommitSubject, SUBJECT_MAX)}”`, title: s.lastCommitSubject });
-    if (s.lastCommitMs) parts.push({ kind: "age", text: formatAgo(s.lastCommitMs, now), title: new Date(s.lastCommitMs).toLocaleString() });
+    if (s.lastCommitMs) parts.push({ kind: "age", text: formatAgo(s.lastCommitMs, now), title: new Date(s.lastCommitMs).toLocaleString(intlLocale()) });
   }
   return parts;
 }
@@ -129,6 +141,7 @@ export interface HandoffTextInput {
 /**
  * One line handed to another agent (typed into its terminal only when the user presses Send).
  * ASCII punctuation only, so it types the same into any shell or agent CLI.
+ * Agent-facing: stays English (typed into agents / written to files).
  */
 export function buildHandoffText({ fromName, path, summary: s }: HandoffTextInput): string {
   const from = oneLine(fromName) || "An agent";

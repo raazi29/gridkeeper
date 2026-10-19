@@ -4,6 +4,7 @@
 // Rust masks secrets again on write.
 
 import { useState } from "react";
+import { useT } from "../../i18n";
 import { BRAIN_KINDS, KIND_LABEL, parseTags, type BrainKind } from "../../lib/brain";
 import { addMemory, closeCompose, openBrain, useBrain, type ComposeRequest } from "../../store/brain";
 import { confirmDialog } from "../../store/uiStore";
@@ -17,6 +18,7 @@ export function ComposeDialog() {
 }
 
 function Compose({ req }: { req: ComposeRequest }) {
+  const t = useT();
   const [title, setTitle] = useState(req.title);
   const [kind, setKind] = useState<BrainKind>(req.kind);
   const [tags, setTags] = useState(req.tags.join(", "));
@@ -28,7 +30,7 @@ function Compose({ req }: { req: ComposeRequest }) {
   const empty = !title.trim() && !body.trim();
 
   const requestClose = async () => {
-    if (dirty && !empty && !(await confirmDialog({ title: "Discard this memory?", message: "Nothing has been written yet.", confirmLabel: "Discard", danger: true }))) return;
+    if (dirty && !empty && !(await confirmDialog({ title: t("brain.compose.discardTitle"), message: t("brain.compose.discardMessage"), confirmLabel: t("brain.confirmDiscard"), danger: true }))) return;
     closeCompose();
   };
   const save = async () => {
@@ -47,19 +49,19 @@ function Compose({ req }: { req: ComposeRequest }) {
 
   return (
     <Modal
-      title={req.supersedes ? `Supersede “${req.supersedes}”` : "Add memory"}
-      ariaLabel="Add memory to the brain"
+      title={req.supersedes ? t("brain.compose.supersedeTitle", { slug: req.supersedes }) : t("brain.compose.title")}
+      ariaLabel={t("brain.compose.aria")}
       onClose={() => void requestClose()}
       width={620}
       className="br-compose"
       footer={
         <>
-          <label className="br-check br-push" title="Write it to inbox/ as a suggestion instead of a confirmed note">
-            <input type="checkbox" checked={inbox} onChange={(e) => setInbox(e.target.checked)} /> suggest only (inbox)
+          <label className="br-check br-push" title={t("brain.compose.suggestOnlyTitle")}>
+            <input type="checkbox" checked={inbox} onChange={(e) => setInbox(e.target.checked)} /> {t("brain.compose.suggestOnly")}
           </label>
-          <Button onClick={() => void requestClose()}>Cancel</Button>
+          <Button onClick={() => void requestClose()}>{t("common.cancel")}</Button>
           <Button variant="primary" onClick={() => void save()} disabled={busy || empty}>
-            {busy ? "Saving…" : inbox ? "Suggest" : "Remember"}
+            {t(busy ? "brain.compose.saving" : inbox ? "brain.compose.suggest" : "brain.compose.remember")}
           </Button>
         </>
       }
@@ -71,39 +73,39 @@ function Compose({ req }: { req: ComposeRequest }) {
         }
       }}>
         <label className="br-field br-field-wide">
-          <span className="br-label">title</span>
-          <input className="br-input" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="One line the next agent can scan" maxLength={120} data-autofocus spellCheck={false} />
+          <span className="br-label">{t("brain.field.title")}</span>
+          <input className="br-input" value={title} onChange={(e) => setTitle(e.target.value)} placeholder={t("brain.compose.titlePlaceholder")} maxLength={120} data-autofocus spellCheck={false} />
         </label>
         <label className="br-field">
-          <span className="br-label">kind</span>
+          <span className="br-label">{t("brain.field.kind")}</span>
           <select className="br-input" value={kind} onChange={(e) => setKind(e.target.value as BrainKind)}>
             {BRAIN_KINDS.map((k) => (
               <option key={k} value={k}>
-                {KIND_LABEL[k]}
+                {t(KIND_LABEL[k])}
               </option>
             ))}
           </select>
         </label>
         <label className="br-field">
-          <span className="br-label">tags</span>
+          <span className="br-label">{t("brain.field.tags")}</span>
           <input className="br-input" value={tags} onChange={(e) => setTags(e.target.value)} placeholder="auth, ci" spellCheck={false} />
         </label>
         <label className="br-field br-field-wide">
-          <span className="br-label">source</span>
-          <input className="br-input" value={source} onChange={(e) => setSource(e.target.value)} placeholder="user, mission goal or task" spellCheck={false} />
+          <span className="br-label">{t("brain.field.source")}</span>
+          <input className="br-input" value={source} onChange={(e) => setSource(e.target.value)} placeholder={t("brain.compose.sourcePlaceholder")} spellCheck={false} />
         </label>
         <label className="br-field br-field-wide">
-          <span className="br-label">memory</span>
+          <span className="br-label">{t("brain.field.memory")}</span>
           <textarea
             className="br-input br-body"
             value={body}
             onChange={(e) => setBody(e.target.value)}
             rows={7}
             spellCheck={false}
-            placeholder="A few concrete lines: what, why, and when it applies. No secrets, tokens, e-mail addresses or personal data."
+            placeholder={t("brain.compose.bodyPlaceholder")}
           />
         </label>
-        <div className="br-hint">Ctrl+Enter saves · stored as a Markdown file in .gridkeeper/brain/{inbox ? "inbox" : "notes"}/ that every agent can read</div>
+        <div className="br-hint">{t("brain.compose.hint", { folder: `.gridkeeper/brain/${inbox ? "inbox" : "notes"}/` })}</div>
       </div>
     </Modal>
   );

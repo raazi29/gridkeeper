@@ -8,6 +8,7 @@
 
 import { create } from "zustand";
 import { notify } from "../actions/notify";
+import { t } from "../i18n";
 import { newNoteText, slugForTitle, type BrainKind } from "../lib/brain";
 import { errorMessage, ipc, onMissionChanged } from "../lib/ipc";
 import type { BrainHit, BrainIndex, BrainNoteFile } from "../lib/types";
@@ -274,15 +275,15 @@ export async function saveNote(dir: string, slug: string, inbox: boolean, text: 
     const file = await ipc.brainWrite(dir, slug, text, inbox, expected);
     void reloadBrain(dir);
     const redacted = file.text !== text;
-    if (redacted) notify("warn", "Secret-looking values were masked before saving");
+    if (redacted) notify("warn", t("brain.toast.masked"));
     return { ok: true, file, redacted };
   } catch (e) {
     if (isConflict(e)) {
-      notify("warn", "The note changed on disk (an agent may have edited it) — reload it, then save again");
+      notify("warn", t("brain.toast.conflict"));
       void reloadBrain(dir);
       return { ok: false, conflict: true };
     }
-    notify("error", `Could not save the note: ${errorMessage(e)}`);
+    notify("error", t("brain.toast.saveFailed", { error: errorMessage(e) }));
     return { ok: false, conflict: false };
   }
 }
@@ -293,7 +294,7 @@ async function restore(dir: string, slug: string, inbox: boolean, text: string):
     await ipc.brainWrite(dir, slug, text, inbox, null);
   } catch (e) {
     if (!isConflict(e)) {
-      notify("error", `Could not restore the note: ${errorMessage(e)}`);
+      notify("error", t("brain.toast.restoreFailed", { error: errorMessage(e) }));
       return;
     }
     const idx = useBrain.getState().byDir[dir]?.index;
@@ -302,37 +303,37 @@ async function restore(dir: string, slug: string, inbox: boolean, text: string):
     try {
       await ipc.brainWrite(dir, other, text, inbox, null);
     } catch (e2) {
-      notify("error", `Could not restore the note: ${errorMessage(e2)}`);
+      notify("error", t("brain.toast.restoreFailed", { error: errorMessage(e2) }));
       return;
     }
   }
   void reloadBrain(dir);
 }
 
-async function remove(dir: string, slug: string, inbox: boolean, verb: string, title: string): Promise<boolean> {
+async function remove(dir: string, slug: string, inbox: boolean, title: string): Promise<boolean> {
   let text: string;
   try {
     text = await ipc.brainDelete(dir, slug, inbox);
   } catch (e) {
     if (isNotFound(e)) void reloadBrain(dir);
-    else notify("error", `Could not ${verb.toLowerCase()} the note: ${errorMessage(e)}`);
+    else notify("error", t(inbox ? "brain.toast.discardFailed" : "brain.toast.forgetFailed", { error: errorMessage(e) }));
     return false;
   }
   const sel = useBrain.getState().selected;
   if (sel && sel.slug === slug && sel.inbox === inbox) useBrain.setState({ selected: null });
   void reloadBrain(dir);
-  actionToast({ kind: "info", message: `${verb} “${title}”`, action: { label: "Undo", run: () => void restore(dir, slug, inbox, text) } });
+  actionToast({ kind: "info", message: t(inbox ? "brain.toast.discarded" : "brain.toast.forgot", { title }), action: { label: t("brain.toast.undo"), run: () => void restore(dir, slug, inbox, text) } });
   return true;
 }
 
 /** Forget a confirmed note (toast with Undo). */
 export function forgetNote(dir: string, slug: string, title: string): Promise<boolean> {
-  return remove(dir, slug, false, "Forgot", title);
+  return remove(dir, slug, false, title);
 }
 
 /** Discard a suggestion from the inbox (toast with Undo). */
 export function discardSuggestion(dir: string, slug: string, title: string): Promise<boolean> {
-  return remove(dir, slug, true, "Discarded", title);
+  return remove(dir, slug, true, title);
 }
 
 /** Approve a suggestion: inbox/ → notes/ as confirmed. Selects the approved note. */
@@ -345,7 +346,7 @@ export async function approveSuggestion(dir: string, slug: string): Promise<stri
     return target;
   } catch (e) {
     if (isNotFound(e)) void reloadBrain(dir);
-    else notify("error", `Could not approve the suggestion: ${errorMessage(e)}`);
+    else notify("error", t("brain.toast.approveFailed", { error: errorMessage(e) }));
     return null;
   }
 }
@@ -354,19 +355,18 @@ export async function approveSuggestion(dir: string, slug: string): Promise<stri
 export async function setBrainShared(dir: string, share: boolean): Promise<void> {
   if (share) {
     const ok = await confirmDialog({
-      title: "Share the brain through git?",
-      message:
-        "Confirmed notes (.gridkeeper/brain/notes/*.md) and INDEX.md become part of the repository: teammates and fresh clones get the same memories, and notes show up in code review. Anything in them is published with the repo. The inbox, mission board, team file and outbox stay local. INDEX.md can conflict on merges; Gridkeeper regenerates it.",
-      detail: ".gridkeeper/.gitignore gets a marked block: !.gitignore  !brain/notes/*.md  !brain/INDEX.md",
-      confirmLabel: "Share",
+      title: t("brain.share.confirmTitle"),
+      message: t("brain.share.confirmMessage"),
+      detail: t("brain.share.confirmDetail"),
+      confirmLabel: t("brain.share.confirmLabel"),
     });
     if (!ok) return;
   }
   try {
     await ipc.brainShare(dir, share);
-    notify("info", share ? "The brain can now be committed (git add .gridkeeper)" : "The brain is local again (already committed files stay tracked)");
+    notify("info", t(share ? "brain.share.shared" : "brain.share.local"));
   } catch (e) {
-    notify("error", `Could not change .gridkeeper/.gitignore: ${errorMessage(e)}`);
+    notify("error", t("brain.share.failed", { error: errorMessage(e) }));
   }
   void reloadBrain(dir);
 }
@@ -376,7 +376,7 @@ export async function setBrainShared(dir: string, share: boolean): Promise<void>
 export function openCompose(p: Partial<ComposeRequest> & { dir?: string | null } = {}): void {
   const dir = p.dir ?? useBrain.getState().dir ?? activeProjectDir();
   if (!dir) {
-    notify("warn", "The brain lives in the project folder: choose one for this workspace first");
+    notify("warn", t("brain.toast.noProject"));
     return;
   }
   useBrain.setState({
@@ -404,6 +404,7 @@ export async function addMemory(req: ComposeRequest): Promise<string | null> {
   if (!idx) idx = await ipc.brainList(req.dir).catch(() => null);
   const taken = [...(idx?.notes ?? []), ...(idx?.inbox ?? [])].map((n) => n.slug);
   const slug = slugForTitle(req.title || req.body, taken);
+  // Agent-facing: stays English (typed into agents / written to files): the note file's text.
   const text = newNoteText({
     title: req.title || req.body.split(/\r?\n/)[0] || "Untitled",
     kind: req.kind,

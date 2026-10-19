@@ -134,7 +134,7 @@
 .browser-start {
   justify-content: flex-start;
   overflow: auto;
-  text-align: left;
+  text-align: start;
 }
 .browser-start-inner {
   display: flex;
@@ -175,7 +175,7 @@
   background: var(--bg-2);
   color: var(--text-1);
   font-size: var(--fs-s);
-  text-align: left;
+  text-align: start;
   cursor: pointer;
 }
 .ports-row:hover {
@@ -194,7 +194,7 @@
   white-space: nowrap;
 }
 .ports-open {
-  margin-left: auto;
+  margin-inline-start: auto;
   color: var(--accent-fg);
   font-size: var(--fs-2xs);
 }
@@ -221,7 +221,7 @@
   display: flex;
   flex-direction: column;
   min-height: 0;
-  border-left: 1px solid var(--border);
+  border-inline-start: 1px solid var(--border);
   background: var(--bg-1);
 }
 .changes-ro {
@@ -254,7 +254,7 @@
   background: transparent;
   color: var(--text-0);
   font-size: var(--fs-s);
-  text-align: left;
+  text-align: start;
   cursor: pointer;
 }
 .changes-repo-head:hover {
@@ -283,7 +283,7 @@
   font-size: var(--fs-xs);
 }
 .changes-count {
-  margin-left: auto;
+  margin-inline-start: auto;
   color: var(--text-2);
   font-size: var(--fs-xs);
 }
@@ -307,7 +307,7 @@
   border: 0;
   background: transparent;
   color: var(--text-1);
-  text-align: left;
+  text-align: start;
   cursor: pointer;
 }
 .changes-file:hover {
@@ -343,7 +343,7 @@
   text-overflow: ellipsis;
   white-space: nowrap;
   direction: rtl; /* keep the file name visible when the path is long */
-  text-align: left;
+  text-align: start;
   font-size: var(--fs-xs);
 }
 .changes-staged {

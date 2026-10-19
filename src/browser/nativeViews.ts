@@ -16,6 +16,7 @@
 import { applyViewState, navigate, openBrowserPane } from "../actions/browser";
 import { notify, useToasts } from "../actions/notify";
 import { revealPath } from "../components/util/pick";
+import { t } from "../i18n";
 import { boundCombos, runBoundCombo } from "../keybindings";
 import { isBrowserMeta } from "../lib/browserPanes";
 import { errorMessage, ipc, onBrowserViewEvents } from "../lib/ipc";
@@ -292,17 +293,17 @@ function registerShortcuts() {
 
 function onDownload(d: BrowserViewDownload) {
   const name = d.path ? d.path.split(/[\\/]/).pop() || d.path : d.url;
-  if (d.state === "started") notify("info", `Downloading ${name}…`);
-  else if (d.state === "failed") notify("error", `Download failed: ${name}`);
+  if (d.state === "started") notify("info", t("browser.download.started", { name }));
+  else if (d.state === "failed") notify("error", t("browser.download.failed", { name }));
   else {
     const path = d.path;
     actionToast({
       kind: "info",
-      message: `Downloaded ${name}`,
+      message: t("browser.download.done", { name }),
       detail: path ?? undefined,
       action: path
         ? {
-            label: "Show in folder",
+            label: t("browser.download.showInFolder"),
             run: () => void revealPath(path),
           }
         : undefined,

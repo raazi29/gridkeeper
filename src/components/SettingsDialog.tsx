@@ -360,7 +360,7 @@ function CostMeterSetting() {
           if (v) useApp.getState().updateSettings({ costMeterHintDismissed: true });
         }}
         label={t("settings.agents.costMeterLabel")}
-        hint={t.rich("settings.agents.costMeterHint", { code: (c) => <code>{c}</code> })}
+        hint={t.rich("settings.agents.costMeterDisclosure", { code: (c) => <code>{c}</code> })}
       />
     </div>
   );

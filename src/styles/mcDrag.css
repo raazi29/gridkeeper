@@ -116,10 +116,10 @@
   pointer-events: none;
 }
 .mc-card[data-drop="before"]::after {
-  left: -5px;
+  inset-inline-start: -5px;
 }
 .mc-card[data-drop="after"]::after {
-  right: -5px;
+  inset-inline-end: -5px;
 }
 .mc-node.is-drop-target {
   border: 1px solid var(--accent);
@@ -176,7 +176,7 @@
 .mc-card.is-assign-target::after {
   content: attr(data-assign-label);
   position: absolute;
-  left: 8px;
+  inset-inline-start: 8px;
   bottom: -7px;
   max-width: calc(100% - 16px);
   overflow: hidden;

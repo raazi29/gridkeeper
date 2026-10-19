@@ -2,12 +2,27 @@
 // edit (lib/missionDoc.ts) through the conflict-checked write path (store/missionDoc.ts editMission), with the
 // line + text the UI saw as the expectation (a task that moved meanwhile is refused, never mis-edited).
 
+import { t as translate } from "../../i18n";
 import { addTaskOwner, changeTaskState, nextState, ownerMatches, setTaskOwners, slugify, teamSlugs, type Task, type TaskState, type TeamMember } from "../../lib/missionDoc";
 import { editMission } from "../../store/missionDoc";
 import type { MenuItem } from "../ui/Menu";
 
 export const BOX: Record<TaskState, string> = { todo: "[ ]", doing: "[~]", done: "[x]", blocked: "[!]" };
-export const STATE_WORD: Record<TaskState, string> = { todo: "todo", doing: "doing", done: "done", blocked: "blocked" };
+/** A task state as a word in the current UI language (getters: never frozen at import time). */
+export const STATE_WORD: Readonly<Record<TaskState, string>> = {
+  get todo() {
+    return translate("mcNode.state.todo");
+  },
+  get doing() {
+    return translate("mcNode.state.doing");
+  },
+  get done() {
+    return translate("mcNode.state.done");
+  },
+  get blocked() {
+    return translate("mcNode.state.blocked");
+  },
+};
 
 const short = (s: string) => (s.length > 48 ? `${s.slice(0, 47)}…` : s);
 const expect = (t: Task) => ({ expect: { line: t.line, text: t.text } });
@@ -28,7 +43,7 @@ export function reassignTask(dir: string, t: Task, slug: string | null, who?: st
   if (owners.length === t.owners.length && owners.every((o, i) => o === t.owners[i])) return Promise.resolve(true);
   return editMission(dir, (text) => setTaskOwners(text, t.line, owners), {
     ...expect(t),
-    undo: slug ? `Reassigned “${short(t.text)}” to ${who ?? `@${slug}`}` : `Unassigned “${short(t.text)}”`,
+    undo: slug ? translate("mcNode.toast.reassigned", { task: short(t.text), who: who ?? `@${slug}` }) : translate("mcNode.toast.unassigned", { task: short(t.text) }),
   });
 }
 
@@ -53,12 +68,12 @@ export function taskMenuItems(dir: string, t: Task, team: readonly TeamMember[])
   const owners: MenuItem[] = slugs.map((s) => {
     const who = team.filter((m) => ownerMatches(s, m));
     const named = who.find((m) => slugify(m.name) === s);
-    return { label: `@${s}`, hint: named ? undefined : `every ${s} (${who.length})`, checked: t.owners.length === 1 && t.owners[0] === s, onSelect: () => void reassignTask(dir, t, s, named?.name) };
+    return { label: `@${s}`, hint: named ? undefined : translate("mcNode.menu.every", { role: s, count: who.length }), checked: t.owners.length === 1 && t.owners[0] === s, onSelect: () => void reassignTask(dir, t, s, named?.name) };
   });
   return [
     ...(["todo", "doing", "done", "blocked"] as const).map((s) => ({ label: `${BOX[s]} ${STATE_WORD[s]}`, checked: t.state === s, onSelect: () => void setTaskStateOp(dir, t, s) })),
     "separator",
-    { label: "assign to", children: owners.length ? owners : [{ label: "no teammates in this workspace", disabled: true }] },
-    { label: "unassign", disabled: t.owners.length === 0, onSelect: () => void reassignTask(dir, t, null) },
+    { label: translate("mcNode.menu.assignTo"), children: owners.length ? owners : [{ label: translate("mcNode.menu.noTeammates"), disabled: true }] },
+    { label: translate("mcNode.menu.unassign"), disabled: t.owners.length === 0, onSelect: () => void reassignTask(dir, t, null) },
   ];
 }

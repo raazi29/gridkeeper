@@ -8,6 +8,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { pathKey, refreshBranchSummary, evidencePath } from "../../actions/handoff";
 import { notify } from "../../actions/notify";
+import { useT } from "../../i18n";
 import { errorMessage, ipc } from "../../lib/ipc";
 import type { MergeOutcome, MergePlan, MergePreview, MergeStrategy, WorktreeCleanupOutcome } from "../../lib/types";
 import { recordActivity, sessionLabelOf } from "../../store/activity";
@@ -34,6 +35,7 @@ import {
 } from "./mergeModel";
 import "../../styles/testrun.css";
 
+// Activity log: stays English (activity entries are event data, like store/activity.ts).
 const STRATEGY_TEXT: Record<MergeStrategy, string> = { fastForward: "fast-forward", mergeCommit: "merge commit", squash: "squash" };
 
 export function MergeHost() {
@@ -53,7 +55,8 @@ function missionTaskOf(sessionId: string): string | null {
 }
 
 function MergeDialog({ req }: { req: MergeDialogRequest }) {
-  const name = useApp((s) => s.persisted.sessions.find((m) => m.id === req.sessionId)?.name ?? "session");
+  const t = useT();
+  const name = useApp((s) => s.persisted.sessions.find((m) => m.id === req.sessionId)?.name) ?? t("merge.sessionFallback");
   const [preview, setPreview] = useState<MergePreview | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -86,9 +89,9 @@ function MergeDialog({ req }: { req: MergeDialogRequest }) {
 
   useEffect(() => {
     void load();
-    const t = sessionTarget(req.sessionId);
-    if (t)
-      void commandFor(t).then((c) => {
+    const target = sessionTarget(req.sessionId);
+    if (target)
+      void commandFor(target).then((c) => {
         setHasCommand(!!c);
         if (!touchedGate.current) setRequireTests(!!c);
       });
@@ -106,7 +109,7 @@ function MergeDialog({ req }: { req: MergeDialogRequest }) {
       return;
     }
     let alive = true;
-    const t = window.setTimeout(() => {
+    const timer = window.setTimeout(() => {
       ipc
         .mergePlan(request)
         .then((p) => alive && setPlan(p))
@@ -114,7 +117,7 @@ function MergeDialog({ req }: { req: MergeDialogRequest }) {
     }, 120);
     return () => {
       alive = false;
-      window.clearTimeout(t);
+      window.clearTimeout(timer);
     };
   }, [request]);
 
@@ -128,10 +131,10 @@ function MergeDialog({ req }: { req: MergeDialogRequest }) {
       setOutcome(out);
       const sha = out.newSha ? out.newSha.slice(0, 10) : "?";
       if (out.ok) {
-        notify("info", `Merged ${request.branch} into ${request.base} (${STRATEGY_TEXT[request.strategy]})`);
+        notify("info", t("merge.toast.merged", { branch: request.branch, base: request.base, strategy: request.strategy }));
         recordActivity({ sessionId: req.sessionId, sessionName: who.name, role: who.role, agent: who.agent, kind: "merge", level: "ok", message: `merged ${request.branch} into ${request.base} (${STRATEGY_TEXT[request.strategy]}) → ${sha}`, result: "merged" });
       } else {
-        notify("error", `Merge failed${out.rolledBack ? " and was rolled back" : ""}: ${out.error ?? "git failed"}`);
+        notify("error", t(out.rolledBack ? "merge.toast.failedRolledBack" : "merge.toast.failed", { error: out.error ?? t("merge.toast.gitFailed") }));
         recordActivity({ sessionId: req.sessionId, sessionName: who.name, role: who.role, agent: who.agent, kind: "merge", level: "error", message: `merge of ${request.branch} into ${request.base} failed${out.conflicts.length ? ` (${out.conflicts.length} conflicts)` : ""}${out.rolledBack ? ", rolled back" : ""}`, result: "failed" });
       }
       void refreshBranchSummary(req.path);
@@ -145,12 +148,12 @@ function MergeDialog({ req }: { req: MergeDialogRequest }) {
 
   const handToAgent = (conflicts: MergePreview["conflicts"]) => {
     if (!preview?.branch || !preview.base) return;
-    openAskAgent({ sessionId: req.sessionId, title: `Hand the conflicts to ${name}`, text: conflictMessage(preview.branch, preview.base, conflicts), kind: "merge" });
+    openAskAgent({ sessionId: req.sessionId, title: t("merge.handTitle", { name }), text: conflictMessage(preview.branch, preview.base, conflicts), kind: "merge" });
   };
 
   return (
     <Modal
-      title={preview?.branch && preview.base ? `Merge ${preview.branch} → ${preview.base}` : `Merge · ${name}`}
+      title={preview?.branch && preview.base ? t("merge.title", { branch: preview.branch, base: preview.base }) : t("merge.titleSession", { name })}
       onClose={closeMergeDialog}
       width={760}
       className="mg-dialog"
@@ -160,18 +163,18 @@ function MergeDialog({ req }: { req: MergeDialogRequest }) {
         ) : (
           <>
             <span className="mg-foot-note" title={reasons.join("\n") || undefined}>
-              {reasons.length ? reasons[0] : `Runs ${plan?.commands.length ?? "…"} command${plan?.commands.length === 1 ? "" : "s"} in the main checkout.`}
+              {reasons.length ? reasons[0] : plan ? t("merge.footRuns", { count: plan.commands.length }) : t("merge.footRunsPending")}
             </span>
-            <Button onClick={closeMergeDialog}>Cancel</Button>
+            <Button onClick={closeMergeDialog}>{t("common.cancel")}</Button>
             <Button variant="primary" disabled={reasons.length > 0 || !plan} onClick={() => void merge()}>
-              {busy ? "Merging…" : `Merge into ${preview?.base ?? "base"}`}
+              {busy ? t("merge.merging") : t("merge.mergeInto", { base: preview?.base ?? t("merge.baseFallback") })}
             </Button>
           </>
         )
       }
     >
       {loading && !preview ? (
-        <div className="tr-dim">Reading git (nothing is written)…</div>
+        <div className="tr-dim">{t("merge.reading")}</div>
       ) : loadError ? (
         <div className="callout is-error">{loadError}</div>
       ) : preview ? (
@@ -182,10 +185,10 @@ function MergeDialog({ req }: { req: MergeDialogRequest }) {
             <PreviewSummary p={preview} loading={loading} onRefresh={() => void load()} />
             {preview.conflicts.length > 0 && (
               <div className="mg-section">
-                <div className="mg-h">Conflicts ({preview.conflicts.length})</div>
+                <div className="mg-h">{t("merge.conflicts", { count: preview.conflicts.length })}</div>
                 <ConflictList conflicts={preview.conflicts} />
                 <Button size="sm" onClick={() => handToAgent(preview.conflicts)} disabled={!preview.branch}>
-                  Hand to {name}…
+                  {t("merge.handTo", { name })}
                 </Button>
               </div>
             )}
@@ -212,19 +215,19 @@ function MergeDialog({ req }: { req: MergeDialogRequest }) {
                     setRequireTests(e.currentTarget.checked);
                   }}
                 />
-                Require green tests on this commit first
+                {t("merge.requireTests")}
               </label>
               {requireTests && (
                 <div className={`mg-gate is-${gate.state}`}>
                   <span>{gateText(gate)}</span>
                   {run && (
-                    <button type="button" className={`tr-badge is-${badgeTone(run.status)}`} onClick={() => openTestLog(run.id)} title="Open the test log">
+                    <button type="button" className={`tr-badge is-${badgeTone(run.status)}`} onClick={() => openTestLog(run.id)} title={t("merge.openLog")}>
                       {badgeText(run, now)}
                     </button>
                   )}
                   {gate.state !== "ok" && gate.state !== "running" && (
                     <Button size="sm" onClick={() => void runTestsForSession(req.sessionId)}>
-                      Run tests
+                      {t("merge.runTests")}
                     </Button>
                   )}
                 </div>
@@ -232,8 +235,8 @@ function MergeDialog({ req }: { req: MergeDialogRequest }) {
             </div>
 
             <div className="mg-section">
-              <div className="mg-h">Strategy</div>
-              <div className="mg-strategies" role="radiogroup" aria-label="Merge strategy">
+              <div className="mg-h">{t("merge.strategyTitle")}</div>
+              <div className="mg-strategies" role="radiogroup" aria-label={t("merge.strategyAria")}>
                 {strategyOptions(preview).map((o) => (
                   <label key={o.value} className={`mg-strategy${o.disabled ? " is-disabled" : ""}`} title={o.hint}>
                     <input type="radio" name="mg-strategy" value={o.value} checked={strategy === o.value} disabled={o.disabled} onChange={() => setStrategy(o.value)} />
@@ -243,21 +246,19 @@ function MergeDialog({ req }: { req: MergeDialogRequest }) {
                 ))}
               </div>
               {strategy !== "fastForward" && (
-                <input className="input mono mg-message" value={message} spellCheck={false} aria-label="Commit message" maxLength={500} onChange={(e) => setMessage(e.target.value)} />
+                <input className="input mono mg-message" value={message} spellCheck={false} aria-label={t("merge.messageAria")} maxLength={500} onChange={(e) => setMessage(e.target.value)} />
               )}
             </div>
 
             <div className="mg-section">
-              <div className="mg-h">Commands (exactly what runs)</div>
+              <div className="mg-h">{t("merge.commands")}</div>
               <pre className="code-block mg-commands">{plan ? plan.commands.join("\n") : "…"}</pre>
               {plan && plan.onFailure.length > 0 && (
-                <div className="tr-dim mg-onfail">
-                  If a step fails: <span className="mono">{plan.onFailure.join("; ")}</span> — the checkout is put back, never left mid-merge.
-                </div>
+                <div className="tr-dim mg-onfail">{t.rich("merge.onFailure", { commands: <span className="mono">{plan.onFailure.join("; ")}</span> })}</div>
               )}
-              <div className="tr-dim">Never forced, no checkout / reset / stash, no history rewrite, branches are not deleted.</div>
+              <div className="tr-dim">{t("merge.safety")}</div>
             </div>
-            {execError && <div className="callout is-error">Refused, nothing was written: {execError}</div>}
+            {execError && <div className="callout is-error">{t("merge.refused", { error: execError })}</div>}
           </div>
         )
       ) : null}
@@ -266,55 +267,54 @@ function MergeDialog({ req }: { req: MergeDialogRequest }) {
 }
 
 function PreviewSummary({ p, loading, onRefresh }: { p: MergePreview; loading: boolean; onRefresh: () => void }) {
+  const t = useT();
   return (
     <div className="mg-section">
       <div className="mg-route mono">
-        <span title={p.path}>{p.branch ?? "(no branch)"}</span>
+        <span title={p.path}>{p.branch ?? t("merge.noBranch")}</span>
         <span className="tr-dim"> {p.branchSha?.slice(0, 10)}</span>
         <span className="mg-arrow">→</span>
-        <span title={p.mainPath ?? undefined}>{p.base ?? "(no base)"}</span>
-        <span className="tr-dim"> in {p.mainPath ?? "?"}</span>
+        <span title={p.mainPath ?? undefined}>{p.base ?? t("merge.noBase")}</span>
+        <span className="tr-dim"> {t("merge.inPath", { path: p.mainPath ?? "?" })}</span>
         <span className="mc-spacer" />
         <Button size="sm" onClick={onRefresh} disabled={loading}>
-          {loading ? "Checking…" : "Check again"}
+          {loading ? t("merge.checking") : t("merge.checkAgain")}
         </Button>
       </div>
       <div className="mg-stats">
+        <span>{t("merge.commitsToMerge", { count: p.ahead })}</span>
+        {p.behind > 0 && <span className="tr-dim">· {t("merge.baseAhead", { base: p.base ?? "", count: p.behind })}</span>}
         <span>
-          {p.ahead} commit{p.ahead === 1 ? "" : "s"} to merge
-        </span>
-        {p.behind > 0 && <span className="tr-dim">· {p.base} is {p.behind} ahead</span>}
-        <span>
-          · {p.filesChanged} file{p.filesChanged === 1 ? "" : "s"} <span className="is-add">+{p.insertions}</span> <span className="is-del">−{p.deletions}</span>
+          · {t("merge.filesChanged", { count: p.filesChanged })} <span className="is-add">+{p.insertions}</span> <span className="is-del">−{p.deletions}</span>
         </span>
         <span className={p.clean === false ? "is-del" : p.clean ? "is-add" : "tr-dim"}>
-          · {p.clean === null ? "conflict check unavailable" : p.clean ? (p.canFastForward ? "fast-forward possible" : "merges cleanly") : `${p.conflicts.length} conflicting file${p.conflicts.length === 1 ? "" : "s"}`}
+          · {p.clean === null ? t("merge.checkUnavailable") : p.clean ? (p.canFastForward ? t("merge.fastForwardPossible") : t("merge.mergesCleanly")) : t("merge.conflictingFiles", { count: p.conflicts.length })}
         </span>
         {p.checkMethod && <span className="tr-dim">({p.checkMethod})</span>}
       </div>
       {p.commits.length > 0 && (
         <details className="mg-details" open={p.commits.length <= 6}>
-          <summary>Commits</summary>
+          <summary>{t("merge.commits")}</summary>
           <ul className="mg-commits mono">
             {p.commits.map((c) => (
               <li key={c.sha}>
                 <span className="tr-dim">{c.sha.slice(0, 8)}</span> {c.subject} <span className="tr-dim">— {c.author}</span>
               </li>
             ))}
-            {p.commitsTruncated && <li className="tr-dim">… more</li>}
+            {p.commitsTruncated && <li className="tr-dim">{t("merge.more")}</li>}
           </ul>
         </details>
       )}
       {p.files.length > 0 && (
         <details className="mg-details">
-          <summary>Files ({p.files.length}{p.filesTruncated ? "+" : ""})</summary>
+          <summary>{t(p.filesTruncated ? "merge.filesTruncated" : "merge.files", { count: p.files.length })}</summary>
           <ul className="mg-files mono">
             {p.files.map((f) => (
               <li key={f.path}>
                 <span className="mg-letter">{f.status}</span> {f.origPath ? `${f.origPath} → ` : ""}
                 {f.path}{" "}
                 {f.binary ? (
-                  <span className="tr-dim">binary</span>
+                  <span className="tr-dim">{t("merge.binary")}</span>
                 ) : (
                   <>
                     <span className="is-add">+{f.insertions}</span> <span className="is-del">−{f.deletions}</span>
@@ -342,34 +342,38 @@ function ConflictList({ conflicts }: { conflicts: MergePreview["conflicts"] }) {
 }
 
 function OutcomeView({ preview, outcome, cleanup }: { preview: MergePreview; outcome: MergeOutcome; cleanup: WorktreeCleanupOutcome | null }) {
+  const t = useT();
   return (
     <div className="mg-body">
       {outcome.ok ? (
         <div className="callout mg-ok">
-          Merged <span className="mono">{preview.branch}</span> into <span className="mono">{preview.base}</span> ({STRATEGY_TEXT[outcome.strategy]}).{" "}
-          <span className="mono">{preview.base}</span> is now at <span className="mono">{outcome.newSha?.slice(0, 10) ?? "?"}</span>.
+          {t.rich("merge.outcome.merged", {
+            branch: <span className="mono">{preview.branch}</span>,
+            base: <span className="mono">{preview.base}</span>,
+            strategy: outcome.strategy,
+            sha: <span className="mono">{outcome.newSha?.slice(0, 10) ?? "?"}</span>,
+          })}
         </div>
       ) : (
         <div className="callout is-error">
-          <div>
-            The merge stopped{outcome.rolledBack ? " and the main checkout was put back (same HEAD, clean)." : "."}
-          </div>
+          <div>{outcome.rolledBack ? t("merge.outcome.stoppedRolledBack") : t("merge.outcome.stopped")}</div>
           {outcome.error && <pre className="mg-error mono">{outcome.error}</pre>}
         </div>
       )}
       {outcome.conflicts.length > 0 && (
         <div className="mg-section">
-          <div className="mg-h">Conflicting files</div>
+          <div className="mg-h">{t("merge.conflictingFilesTitle")}</div>
           <ConflictList conflicts={outcome.conflicts} />
         </div>
       )}
       <StepLog steps={outcome.steps} />
       {cleanup && (
         <div className={`callout ${cleanup.error ? "is-error" : "mg-ok"}`}>
-          {cleanup.worktreeRemoved ? "Worktree removed" : "Worktree kept"}
-          {cleanup.linksRemoved > 0 ? ` (${cleanup.linksRemoved} link${cleanup.linksRemoved === 1 ? "" : "s"} unlinked first, targets untouched)` : ""}
+          {cleanup.linksRemoved > 0
+            ? t(cleanup.worktreeRemoved ? "merge.cleanup.removedLinks" : "merge.cleanup.keptLinks", { count: cleanup.linksRemoved })
+            : t(cleanup.worktreeRemoved ? "merge.cleanup.removed" : "merge.cleanup.kept")}
           {" · "}
-          {cleanup.branchDeleted ? "branch deleted" : "branch kept"}
+          {cleanup.branchDeleted ? t("merge.cleanup.branchDeleted") : t("merge.cleanup.branchKept")}
           {cleanup.error && <pre className="mg-error mono">{cleanup.error}</pre>}
           <StepLog steps={cleanup.steps} />
         </div>
@@ -379,10 +383,11 @@ function OutcomeView({ preview, outcome, cleanup }: { preview: MergePreview; out
 }
 
 function StepLog({ steps }: { steps: MergeOutcome["steps"] }) {
+  const t = useT();
   if (!steps.length) return null;
   return (
     <details className="mg-details">
-      <summary>What ran ({steps.length})</summary>
+      <summary>{t("merge.whatRan", { count: steps.length })}</summary>
       <div className="mg-steps">
         {steps.map((s, i) => (
           <div key={i} className={`mg-step${s.ok ? "" : " is-failed"}`}>
@@ -412,6 +417,7 @@ function DoneFooter({
   setCleanup: (c: WorktreeCleanupOutcome) => void;
   onHand: (c: MergePreview["conflicts"]) => void;
 }) {
+  const t = useT();
   const [busy, setBusy] = useState(false);
   const users = useApp((s) =>
     liveUsersOf(
@@ -421,7 +427,7 @@ function DoneFooter({
     ).join(", "),
   );
   const canCleanup = outcome.ok && !cleanup?.worktreeRemoved;
-  const cleanupBlocked = users ? `Stop ${users} first: ${users.includes(",") ? "they use" : "it uses"} the worktree.` : null;
+  const cleanupBlocked = users ? t("merge.cleanup.blocked", { users, count: users.split(", ").length }) : null;
 
   const removeWorktree = async () => {
     if (!preview?.base) return;
@@ -434,16 +440,16 @@ function DoneFooter({
         return;
       }
       const detail = [
-        ...plan.links.map((l) => `• unlink ${l} (junction / symlink; the target is not touched)`),
+        ...plan.links.map((l) => t("merge.cleanup.unlinkLine", { path: l })),
         ...plan.commands.map((c) => `• ${c}`),
       ].join("\n");
       const ok = await confirmDialog({
-        title: plan.branchMerged ? "Remove the worktree and the branch?" : "Remove the worktree?",
+        title: plan.branchMerged ? t("merge.cleanup.titleWithBranch") : t("merge.cleanup.title"),
         message: plan.branchMerged
-          ? `Deletes the worktree folder (${plan.path}) and the branch “${plan.branch}”, which is merged into ${preview.base}. Never forced: git refuses if anything is uncommitted.`
-          : `Deletes the worktree folder (${plan.path}). The branch “${plan.branch}” is kept: it is not contained in ${preview.base} (a squash merge keeps the branch's own commits).`,
+          ? t("merge.cleanup.messageWithBranch", { path: plan.path, branch: plan.branch, base: preview.base })
+          : t("merge.cleanup.message", { path: plan.path, branch: plan.branch, base: preview.base }),
         detail,
-        confirmLabel: "Remove",
+        confirmLabel: t("common.remove"),
         danger: true,
       });
       if (!ok) {
@@ -453,6 +459,7 @@ function DoneFooter({
       const out = await ipc.mergeCleanup(plan.path, plan.branch, preview.base);
       setCleanup(out);
       const who = sessionLabelOf(req.sessionId);
+      // Activity log entry: stays English (event data, like store/activity.ts).
       recordActivity({
         sessionId: req.sessionId,
         sessionName: who.name,
@@ -463,24 +470,24 @@ function DoneFooter({
         message: `${out.worktreeRemoved ? "worktree removed" : "worktree not removed"}${out.branchDeleted ? `, branch ${plan.branch} deleted` : ""}${out.error ? `: ${out.error}` : ""}`,
         result: out.worktreeRemoved ? "removed" : "failed",
       });
-      notify(out.error ? "error" : "info", out.error ? `Clean-up stopped: ${out.error}` : "Worktree removed");
+      notify(out.error ? "error" : "info", out.error ? t("merge.cleanup.stopped", { error: out.error }) : t("merge.cleanup.removed"));
     } catch (e) {
-      notify("error", `Clean-up refused: ${errorMessage(e)}`);
+      notify("error", t("merge.cleanup.refused", { error: errorMessage(e) }));
     }
     setBusy(false);
   };
 
   return (
     <>
-      <span className="mg-foot-note">{outcome.ok ? "Done. Clean-up is a separate step." : "Nothing was merged."}</span>
-      {!outcome.ok && outcome.conflicts.length > 0 && <Button onClick={() => onHand(outcome.conflicts)}>Hand to the agent…</Button>}
+      <span className="mg-foot-note">{outcome.ok ? t("merge.done") : t("merge.nothingMerged")}</span>
+      {!outcome.ok && outcome.conflicts.length > 0 && <Button onClick={() => onHand(outcome.conflicts)}>{t("merge.handToAgent")}</Button>}
       {canCleanup && (
-        <Button disabled={busy || !!cleanupBlocked} title={cleanupBlocked ?? "Shows the exact commands and asks before anything is removed"} onClick={() => void removeWorktree()}>
-          {busy ? "Working…" : "Remove worktree + branch…"}
+        <Button disabled={busy || !!cleanupBlocked} title={cleanupBlocked ?? t("merge.cleanup.buttonTitle")} onClick={() => void removeWorktree()}>
+          {busy ? t("merge.working") : t("merge.cleanup.button")}
         </Button>
       )}
       <Button variant="primary" onClick={closeMergeDialog}>
-        Close
+        {t("common.close")}
       </Button>
     </>
   );

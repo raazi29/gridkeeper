@@ -3,6 +3,7 @@
 // without taking the focus out of the field; the list under the field jumps on click.
 
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
+import { useT } from "../../i18n";
 import { useDeck } from "../../store/missionDeck";
 import { stepHit, type FindHit } from "./find";
 import { IcSearch } from "./mcIcons";
@@ -11,6 +12,7 @@ import { T } from "./mcText";
 const SHOWN = 8;
 
 export function FindBar({ hits, onGo }: { hits: FindHit[]; onGo: (hit: FindHit) => void }) {
+  useT(); // re-render on a language change (T reads the catalog)
   const query = useDeck((s) => s.findQuery);
   const current = useDeck((s) => s.findCurrent);
   const set = useDeck((s) => s.set);

@@ -3,7 +3,8 @@
 // reader / editor (NoteDetail), the inbox's Approve / Edit / Discard, supersede, Forget with Undo, counts, and the
 // project's brain settings (capture, auto-approve, briefs, share through git). Terminal / box-drawing look.
 
-import { useEffect, useMemo, useRef, type KeyboardEvent } from "react";
+import { useEffect, useMemo, useRef, type KeyboardEvent, type ReactNode } from "react";
+import { useT, type Translator } from "../../i18n";
 import { BRAIN_KINDS, KIND_LABEL, KIND_MARK, normalizeKind, type BrainKind } from "../../lib/brain";
 import type { BrainIndex, BrainNoteMeta } from "../../lib/types";
 import {
@@ -38,20 +39,24 @@ interface Row {
 
 const sameSel = (a: Selection | null, r: Pick<Row, "slug" | "inbox">) => !!a && a.slug === r.slug && a.inbox === r.inbox;
 
-function rowOf(n: BrainNoteMeta): Row {
+function rowOf(n: BrainNoteMeta, t: Translator): Row {
   return {
     slug: n.slug,
     inbox: n.inbox,
     title: n.title,
     kind: normalizeKind(n.kind),
     tags: n.tags,
-    meta: [n.updated ?? "", n.supersededBy ? `superseded by ${n.supersededBy}` : ""].filter(Boolean).join(" · "),
+    meta: [n.updated ?? "", n.supersededBy ? t("brain.panel.supersededBy", { slug: n.supersededBy }) : ""].filter(Boolean).join(" · "),
     snippet: n.excerpt,
     superseded: !!n.supersededBy,
   };
 }
 
+const mono = (c: ReactNode) => <span className="mono">{c}</span>;
+const bold = (c: ReactNode) => <b>{c}</b>;
+
 export function BrainPanel() {
+  const t = useT();
   const dir = useBrain((s) => s.dir);
   useEffect(() => (dir ? acquireBrain(dir) : undefined), [dir]);
   return (
@@ -61,11 +66,14 @@ export function BrainPanel() {
           <span className="br-glyph" aria-hidden="true">
             ◆
           </span>
-          <span className="br-title-text">brain</span>
-          <span className="br-title-sub">long-term project memory{dir ? ` · ${shortPath(dir)}` : ""}</span>
+          <span className="br-title-text">{t("brain.panel.title")}</span>
+          <span className="br-title-sub">
+            {t("brain.panel.subtitle")}
+            {dir ? ` · ${shortPath(dir)}` : ""}
+          </span>
         </span>
       }
-      ariaLabel="Brain: long-term project memory"
+      ariaLabel={t("brain.panel.aria")}
       onClose={closeBrain}
       width={1120}
       className="br-modal"
@@ -76,15 +84,17 @@ export function BrainPanel() {
 }
 
 function NoProject() {
+  const t = useT();
   return (
     <div className="br-empty-panel">
-      <p>The brain lives in the project folder (<span className="mono">&lt;folder&gt;/.gridkeeper/brain/</span>), next to the mission board.</p>
-      <p>Choose a project folder for this workspace (workspace settings or Mission Control), then open the brain again.</p>
+      <p>{t.rich("brain.panel.noProjectWhere", { path: "<folder>/.gridkeeper/brain/", mono })}</p>
+      <p>{t("brain.panel.noProjectChoose")}</p>
     </div>
   );
 }
 
 function Body({ dir }: { dir: string }) {
+  const t = useT();
   const entry = useBrain((s) => s.byDir[dir]) ?? EMPTY_BRAIN;
   const query = useBrain((s) => s.query);
   const hits = useBrain((s) => s.hits);
@@ -97,8 +107,8 @@ function Body({ dir }: { dir: string }) {
 
   // Instant search: Rust ranks on every keystroke (debounced a little to coalesce fast typing).
   useEffect(() => {
-    const t = setTimeout(() => void runSearch(dir, query), query.trim() ? 90 : 0);
-    return () => clearTimeout(t);
+    const timer = setTimeout(() => void runSearch(dir, query), query.trim() ? 90 : 0);
+    return () => clearTimeout(timer);
   }, [dir, query]);
 
   const searching = query.trim().length > 0;
@@ -109,11 +119,11 @@ function Body({ dir }: { dir: string }) {
       const meta = new Map([...index.notes, ...index.inbox].map((n) => [`${n.inbox ? "i" : "n"}|${n.slug}`, n]));
       list = (hits ?? []).map((h) => {
         const n = meta.get(`${h.inbox ? "i" : "n"}|${h.slug}`);
-        return { ...(n ? rowOf(n) : { meta: "", superseded: h.superseded }), slug: h.slug, inbox: h.inbox, title: h.title, kind: normalizeKind(h.kind), tags: h.tags, snippet: h.snippet } as Row;
+        return { ...(n ? rowOf(n, t) : { meta: "", superseded: h.superseded }), slug: h.slug, inbox: h.inbox, title: h.title, kind: normalizeKind(h.kind), tags: h.tags, snippet: h.snippet } as Row;
       });
-    } else list = (tab === "inbox" ? index.inbox : index.notes).map(rowOf);
+    } else list = (tab === "inbox" ? index.inbox : index.notes).map((n) => rowOf(n, t));
     return list.filter((r) => (kind === "all" || r.kind === kind) && (!tag || r.tags.includes(tag)));
-  }, [index, hits, searching, tab, kind, tag]);
+  }, [index, hits, searching, tab, kind, tag, t]);
 
   const counts = useMemo(() => {
     const c: Record<string, number> = {};
@@ -122,8 +132,8 @@ function Body({ dir }: { dir: string }) {
   }, [index]);
   const tags = useMemo(() => {
     const m = new Map<string, number>();
-    for (const n of [...(index?.notes ?? []), ...(index?.inbox ?? [])]) for (const t of n.tags) m.set(t, (m.get(t) ?? 0) + 1);
-    return [...m].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).map(([t]) => t);
+    for (const n of [...(index?.notes ?? []), ...(index?.inbox ?? [])]) for (const tg of n.tags) m.set(tg, (m.get(tg) ?? 0) + 1);
+    return [...m].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).map(([tg]) => tg);
   }, [index]);
 
   const listRef = useRef<HTMLDivElement>(null);
@@ -161,15 +171,15 @@ function Body({ dir }: { dir: string }) {
                 first?.click();
               }
             }}
-            placeholder="search memories (title, tags, text)…"
-            aria-label="Search the brain"
+            placeholder={t("brain.panel.searchPlaceholder")}
+            aria-label={t("brain.panel.searchAria")}
             spellCheck={false}
             data-autofocus
           />
         </label>
-        <div className="br-kinds" role="group" aria-label="Filter by kind">
+        <div className="br-kinds" role="group" aria-label={t("brain.panel.kindFilterAria")}>
           <button type="button" className={`br-chip${kind === "all" ? " is-on" : ""}`} aria-pressed={kind === "all"} onClick={() => patchBrain({ kind: "all" })}>
-            all
+            {t("brain.panel.kindAll")}
           </button>
           {BRAIN_KINDS.map((k) => (
             <button
@@ -177,44 +187,44 @@ function Body({ dir }: { dir: string }) {
               type="button"
               className={`br-chip is-${k}${kind === k ? " is-on" : ""}`}
               aria-pressed={kind === k}
-              title={`Only ${KIND_LABEL[k]} memories`}
+              title={t("brain.panel.kindOnlyTitle", { kind: t(KIND_LABEL[k]) })}
               onClick={() => patchBrain({ kind: kind === k ? "all" : k })}
             >
               <span className="br-mark" aria-hidden="true">
                 {KIND_MARK[k]}
               </span>
-              {KIND_LABEL[k]}
+              {t(KIND_LABEL[k])}
               {counts[k] ? <span className="br-chip-n">{counts[k]}</span> : null}
             </button>
           ))}
         </div>
         {tags.length > 0 && (
-          <select className="br-tag-select" value={tag ?? ""} onChange={(e) => patchBrain({ tag: e.target.value || null })} aria-label="Filter by tag">
-            <option value="">#any tag</option>
-            {tags.map((t) => (
-              <option key={t} value={t}>
-                #{t}
+          <select className="br-tag-select" value={tag ?? ""} onChange={(e) => patchBrain({ tag: e.target.value || null })} aria-label={t("brain.panel.tagFilterAria")}>
+            <option value="">{t("brain.panel.anyTag")}</option>
+            {tags.map((tg) => (
+              <option key={tg} value={tg}>
+                #{tg}
               </option>
             ))}
           </select>
         )}
         <span className="br-spacer" />
-        <button type="button" className="br-btn is-primary" onClick={() => openCompose({ dir })} title="Write a memory yourself (saved as confirmed)">
-          + new memory
+        <button type="button" className="br-btn is-primary" onClick={() => openCompose({ dir })} title={t("brain.panel.newMemoryTitle")}>
+          {t("brain.panel.newMemory")}
         </button>
       </div>
 
       <div className="br-cols">
         <div className="br-left">
-          <div className="br-tabs" role="tablist" aria-label="Brain folders">
+          <div className="br-tabs" role="tablist" aria-label={t("brain.panel.foldersAria")}>
             {searching ? (
               <span className="br-tab is-selected" role="tab" aria-selected>
-                results [ <b>{rows.length}</b> ]
+                {t.rich("brain.panel.results", { count: rows.length, b: bold })}
               </span>
             ) : (
               <>
                 <button type="button" role="tab" aria-selected={tab === "notes"} className={`br-tab${tab === "notes" ? " is-selected" : ""}`} onClick={() => patchBrain({ tab: "notes" })}>
-                  notes [ <b>{index?.notes.length ?? 0}</b> ]
+                  {t.rich("brain.panel.notesCount", { count: index?.notes.length ?? 0, b: bold })}
                 </button>
                 <button
                   type="button"
@@ -222,16 +232,16 @@ function Body({ dir }: { dir: string }) {
                   aria-selected={tab === "inbox"}
                   className={`br-tab${tab === "inbox" ? " is-selected" : ""}${index?.inbox.length ? " has-items" : ""}`}
                   onClick={() => patchBrain({ tab: "inbox" })}
-                  title="Suggested memories (from agents and Gridkeeper) waiting for your approval"
+                  title={t("brain.panel.inboxTitle")}
                 >
-                  inbox [ <b>{index?.inbox.length ?? 0}</b> ]
+                  {t.rich("brain.panel.inboxCount", { count: index?.inbox.length ?? 0, b: bold })}
                 </button>
               </>
             )}
           </div>
-          <div className="br-list" ref={listRef} onKeyDown={onListKey} role="listbox" aria-label="Memories">
-            {entry.error && <div className="br-error">could not read the brain: {entry.error}</div>}
-            {!index && !entry.error && <div className="br-muted br-pad">reading…</div>}
+          <div className="br-list" ref={listRef} onKeyDown={onListKey} role="listbox" aria-label={t("brain.panel.listAria")}>
+            {entry.error && <div className="br-error">{t("brain.panel.readError", { error: entry.error })}</div>}
+            {!index && !entry.error && <div className="br-muted br-pad">{t("brain.reading")}</div>}
             {index && rows.length === 0 && <EmptyList index={index} searching={searching} tab={tab} filtered={kind !== "all" || !!tag} />}
             {rows.map((r) => (
               <button
@@ -248,11 +258,11 @@ function Body({ dir }: { dir: string }) {
                     {KIND_MARK[r.kind]}
                   </span>
                   <span className="br-row-title">{r.title}</span>
-                  {r.inbox && <span className="br-badge">inbox</span>}
+                  {r.inbox && <span className="br-badge">{t("brain.panel.inboxBadge")}</span>}
                 </span>
                 <span className="br-row-meta">
-                  {KIND_LABEL[r.kind]}
-                  {r.tags.length > 0 && <> · {r.tags.map((t) => `#${t}`).join(" ")}</>}
+                  {t(KIND_LABEL[r.kind])}
+                  {r.tags.length > 0 && <> · {r.tags.map((tg) => `#${tg}`).join(" ")}</>}
                   {r.meta && <> · {r.meta}</>}
                 </span>
                 {searching && r.snippet && <span className="br-row-snippet">{r.snippet}</span>}
@@ -270,81 +280,65 @@ function Body({ dir }: { dir: string }) {
 }
 
 function EmptyList({ index, searching, tab, filtered }: { index: BrainIndex; searching: boolean; tab: "notes" | "inbox"; filtered: boolean }) {
-  if (searching) return <div className="br-muted br-pad">no memory matches{filtered ? " (with these filters)" : ""}</div>;
-  if (filtered) return <div className="br-muted br-pad">nothing with these filters</div>;
-  if (tab === "inbox") return <div className="br-muted br-pad">no suggestions waiting — agents and Gridkeeper put them here for you to approve</div>;
-  return <div className="br-muted br-pad">{index.exists ? "no memories yet" : "no brain yet — the first memory creates it"}</div>;
+  const t = useT();
+  if (searching) return <div className="br-muted br-pad">{t(filtered ? "brain.panel.noMatchesFiltered" : "brain.panel.noMatches")}</div>;
+  if (filtered) return <div className="br-muted br-pad">{t("brain.panel.nothingFiltered")}</div>;
+  if (tab === "inbox") return <div className="br-muted br-pad">{t("brain.panel.inboxEmpty")}</div>;
+  return <div className="br-muted br-pad">{t(index.exists ? "brain.panel.notesEmpty" : "brain.panel.noBrainYet")}</div>;
 }
 
 function Intro({ dir, index }: { dir: string; index: BrainIndex | null }) {
+  const t = useT();
   const shown = index?.dir ?? `${dir}/.gridkeeper/brain`;
   return (
     <div className="br-intro">
-      <div className="br-box-label"><span>how it works</span></div>
-      <p>
-        Agents forget everything between sessions. The brain is the team's memory for this project: decisions, conventions, gotchas, how-tos, facts and
-        context, one small Markdown file per memory that every agent can read.
-      </p>
+      <div className="br-box-label"><span>{t("brain.intro.label")}</span></div>
+      <p>{t("brain.intro.text")}</p>
       <ul className="br-steps">
-        <li>
-          <b>read</b> — briefs tell agents to read <span className="mono">INDEX.md</span> first and open the notes relevant to their task.
-        </li>
-        <li>
-          <b>suggest</b> — agents write new memories to <span className="mono">inbox/</span>; Gridkeeper also suggests some from finished tasks with notes,
-          resolved blockers, review outcomes and the lead's decisions.
-        </li>
-        <li>
-          <b>approve</b> — you approve, edit or discard suggestions here; approved ones move to <span className="mono">notes/</span>.
-        </li>
-        <li>
-          <b>correct</b> — supersede a note with a newer one instead of rewriting history; forget what is wrong.
-        </li>
+        <li>{t.rich("brain.intro.read", { b: bold, mono })}</li>
+        <li>{t.rich("brain.intro.suggest", { b: bold, mono })}</li>
+        <li>{t.rich("brain.intro.approve", { b: bold, mono })}</li>
+        <li>{t.rich("brain.intro.correct", { b: bold })}</li>
       </ul>
       <p className="br-muted">
-        Plain files, local only, no cloud: <button type="button" className="link-btn mono" onClick={() => void revealPath(shown)}>{shown}</button>
+        {t.rich("brain.intro.plainFiles", {
+          path: shown,
+          link: (c) => (
+            <button type="button" className="link-btn mono" onClick={() => void revealPath(shown)}>
+              {c}
+            </button>
+          ),
+        })}
       </p>
       {index && index.ignored.length > 0 && (
-        <p className="br-warn">
-          {index.ignored.length === 1 ? "1 file is" : `${index.ignored.length} files are`} not read (names must look like <span className="mono">token-storage.md</span>):{" "}
-          <span className="mono">{index.ignored.join(", ")}</span>
-        </p>
+        <p className="br-warn">{t.rich("brain.intro.ignored", { count: index.ignored.length, files: index.ignored.join(", "), mono })}</p>
       )}
     </div>
   );
 }
 
 function StatusLine({ dir, index }: { dir: string; index: BrainIndex | null }) {
+  const t = useT();
   useBrain((s) => s.prefsVersion); // re-render when preferences change
   const prefs = brainPrefs(dir);
   const superseded = index?.notes.filter((n) => n.supersededBy).length ?? 0;
   return (
-    <footer className="br-status" aria-label="Brain status and settings">
-      <span>
-        notes [ <b>{index?.notes.length ?? 0}</b> ]
-      </span>
-      <span className={index?.inbox.length ? "is-attn" : ""}>
-        inbox [ <b>{index?.inbox.length ?? 0}</b> ]
-      </span>
-      {superseded > 0 && (
-        <span>
-          superseded [ <b>{superseded}</b> ]
-        </span>
-      )}
+    <footer className="br-status" aria-label={t("brain.status.aria")}>
+      <span>{t.rich("brain.panel.notesCount", { count: index?.notes.length ?? 0, b: bold })}</span>
+      <span className={index?.inbox.length ? "is-attn" : ""}>{t.rich("brain.panel.inboxCount", { count: index?.inbox.length ?? 0, b: bold })}</span>
+      {superseded > 0 && <span>{t.rich("brain.status.superseded", { count: superseded, b: bold })}</span>}
       <span className="br-spacer" />
-      <label className="br-check" title="Suggest memories from finished tasks with notes, resolved blockers, review outcomes and lead decisions (into the inbox)">
-        <input type="checkbox" checked={prefs.capture} onChange={(e) => setBrainPrefs(dir, { capture: e.target.checked })} /> capture suggestions
+      <label className="br-check" title={t("brain.status.captureTitle")}>
+        <input type="checkbox" checked={prefs.capture} onChange={(e) => setBrainPrefs(dir, { capture: e.target.checked })} /> {t("brain.status.capture")}
       </label>
-      <label className="br-check" title="Gridkeeper's own captured suggestions skip the inbox and become notes right away. Files agents write to inbox/ always wait for you.">
-        <input type="checkbox" checked={prefs.autoApprove} onChange={(e) => setBrainPrefs(dir, { autoApprove: e.target.checked })} /> auto-approve captured
+      <label className="br-check" title={t("brain.status.autoApproveTitle")}>
+        <input type="checkbox" checked={prefs.autoApprove} onChange={(e) => setBrainPrefs(dir, { autoApprove: e.target.checked })} /> {t("brain.status.autoApprove")}
       </label>
-      <label className="br-check" title="“Brief team…” and formation starter prompts tell agents to read INDEX.md and write suggestions to inbox/">
-        <input type="checkbox" checked={prefs.briefs} onChange={(e) => setBrainPrefs(dir, { briefs: e.target.checked })} /> mention in briefs
+      <label className="br-check" title={t("brain.status.briefsTitle")}>
+        <input type="checkbox" checked={prefs.briefs} onChange={(e) => setBrainPrefs(dir, { briefs: e.target.checked })} /> {t("brain.status.briefs")}
       </label>
-      <label
-        className="br-check"
-        title="Local (default): the brain stays in this folder and out of git. Shared: notes/*.md and INDEX.md can be committed so teammates and fresh clones get them; the inbox stays local."
-      >
-        <input type="checkbox" checked={!!index?.shared} disabled={!index} onChange={(e) => void setBrainShared(dir, e.target.checked)} /> share via git
+      <label className="br-check" title={t("brain.status.shareTitle")}>
+        <input type="checkbox" checked={!!index?.shared} disabled={!index} onChange={(e) => void setBrainShared(dir, e.target.checked)} /> {t("brain.status.share")}
       </label>
     </footer>
   );

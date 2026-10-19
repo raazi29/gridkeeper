@@ -7,6 +7,7 @@
 import { memo, useMemo, useRef, useState, type DragEvent, type KeyboardEvent } from "react";
 import { ownersFor, slugify, STATE_ORDER, type Task, type TeamMember } from "../../lib/missionDoc";
 import type { SessionId } from "../../lib/types";
+import { useT } from "../../i18n";
 import { AgentGlyph } from "../../layout/icons";
 import { useApp } from "../../store/appStore";
 import { useDeck } from "../../store/missionDeck";
@@ -55,6 +56,7 @@ interface Col {
 const rank = (t: Task) => STATE_ORDER.indexOf(t.state);
 
 export const BoardView = memo(function BoardView(p: BoardViewProps) {
+  const t = useT();
   const boardBy = useDeck((s) => s.boardBy);
   const filters = useDeck((s) => s.filters);
   const spotlight = useDeck((s) => s.spotlight);
@@ -239,7 +241,7 @@ export const BoardView = memo(function BoardView(p: BoardViewProps) {
       <div
         className={`bv-col-head${p.selected === id ? " is-selected" : ""}${current === `a:${id}` ? " is-hit" : ""}`}
         style={roleStyle(roleOf(id))}
-        title={`${nameOf(id)}: ${LAMP_TEXT[lamp]} — click to select, double-click to jump`}
+        title={t("mcView.board.colTitle", { name: nameOf(id), state: LAMP_TEXT[lamp] })}
         onClick={() => p.onSelect(id)}
         onDoubleClick={() => p.onJump(id)}
       >

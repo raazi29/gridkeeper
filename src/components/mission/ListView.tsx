@@ -9,6 +9,7 @@ import { evidencePath, pathKey, refreshBranchSummary, useBranchSummaries } from 
 import { paneCost } from "../../lib/meter";
 import type { Task } from "../../lib/missionDoc";
 import type { SessionId } from "../../lib/types";
+import { useT } from "../../i18n";
 import { AgentGlyph } from "../../layout/icons";
 import { isLive, useApp } from "../../store/appStore";
 import { useAttention } from "../../store/attention";
@@ -49,6 +50,7 @@ const COLS: SortKey[] = ["name", "role", "lane", "state", "since", "task", "bran
 const NUM: SortKey[] = ["since", "cost", "ctx", "cpu", "ram", "out"];
 
 export const ListView = memo(function ListView(p: ListViewProps) {
+  const t = useT();
   const sessions = useApp((s) => s.persisted.sessions);
   const runtime = useApp((s) => s.runtime);
   const attn = useAttention((s) => s.sessions);
@@ -83,7 +85,7 @@ export const ListView = memo(function ListView(p: ListViewProps) {
       return {
         id: a.id,
         order,
-        name: m?.name ?? "session",
+        name: m?.name ?? t("command.sessionFallbackName"),
         role: m?.role ?? null,
         lane: a.laneName,
         lamp: p.lamps[a.id] ?? "stopped",
@@ -99,7 +101,7 @@ export const ListView = memo(function ListView(p: ListViewProps) {
         out: live ? latestRate(hist[a.id]) : null,
       };
     });
-  }, [p.agents, p.lamps, p.tasks, p.now, sessions, runtime, attn, summaries, diag, meters, hist]);
+  }, [p.agents, p.lamps, p.tasks, p.now, sessions, runtime, attn, summaries, diag, meters, hist, t]);
 
   const visible = rows.filter((r) => inSpotlight(spotlight, r.id, p.agents[r.order]?.lane ?? null) && matchesFilters(filters, r.role, r.lamp));
   const sorted = sortRows(visible, sort.key, sort.dir);

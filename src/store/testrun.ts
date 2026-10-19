@@ -9,11 +9,12 @@
 
 import { create } from "zustand";
 import { notify } from "../actions/notify";
+import { t } from "../i18n";
 import { evidencePath, handoffBlocker, pathKey } from "../actions/handoff";
 import { isTerminalMeta } from "../lib/browserPanes";
 import { errorMessage, ipc, onTestRun } from "../lib/ipc";
 import type { SessionId, TestRunInfo } from "../lib/types";
-import { badgeText, failureMessage, isActiveStatus, resolveTestCommand, resultText } from "../components/testrun/format";
+import { badgeText, badgeTextEn, failureMessage, isActiveStatus, resolveTestCommand, resultText } from "../components/testrun/format";
 import { recordActivity, sessionLabelOf } from "./activity";
 import { useApp } from "./appStore";
 import { actionToast } from "./uiStore";
@@ -90,6 +91,7 @@ function onFinished(info: TestRunInfo) {
   reported.add(info.id);
   const who = info.sessionId ? sessionLabelOf(info.sessionId) : { name: info.label, role: null, agent: null };
   const ok = info.status === "passed";
+  // Activity log entries stay English (event data, like store/activity.ts).
   recordActivity({
     sessionId: info.sessionId,
     sessionName: who.name || info.label,
@@ -97,11 +99,11 @@ function onFinished(info: TestRunInfo) {
     agent: who.agent,
     kind: "tests",
     level: ok ? "ok" : info.status === "cancelled" ? "info" : "error",
-    message: `${badgeText(info, Date.now())} — ${info.command}`,
+    message: `${badgeTextEn(info, Date.now())} — ${info.command}`,
     result: resultText(info),
   });
   if (!ok && info.status !== "cancelled") {
-    actionToast({ kind: "warn", message: `${info.label}: ${badgeText(info, Date.now())}`, detail: info.error ?? info.failures[0] ?? undefined, action: { label: "Log", run: () => openTestLog(info.id) } });
+    actionToast({ kind: "warn", message: t("testrun.toast.finished", { label: info.label, badge: badgeText(info, Date.now()) }), detail: info.error ?? info.failures[0] ?? undefined, action: { label: t("testrun.toast.log"), run: () => openTestLog(info.id) } });
   }
 }
 
@@ -154,14 +156,14 @@ export interface RunTarget {
 }
 
 /** Resolve the command for a target (lane > workspace > detected). Null = none anywhere. */
-export async function commandFor(t: RunTarget): Promise<{ command: string; source: string } | null> {
+export async function commandFor(target: RunTarget): Promise<{ command: string; source: string } | null> {
   const s = useApp.getState();
-  const ws = s.persisted.workspaces.find((w) => w.id === t.workspaceId);
-  const g = ws?.groups.find((x) => x.id === t.groupId);
+  const ws = s.persisted.workspaces.find((w) => w.id === target.workspaceId);
+  const g = ws?.groups.find((x) => x.id === target.groupId);
   const configured = resolveTestCommand(g?.testCommand, ws?.testCommand, null);
   if (configured) return configured;
   try {
-    const det = await ipc.testDetect(t.path);
+    const det = await ipc.testDetect(target.path);
     return resolveTestCommand(null, null, det.command);
   } catch {
     return null;
@@ -169,21 +171,27 @@ export async function commandFor(t: RunTarget): Promise<{ command: string; sourc
 }
 
 /** Start (or join) a run for a folder. Opens the command dialog when no command applies. */
-export async function runTestsAt(t: RunTarget): Promise<TestRunInfo | null> {
+export async function runTestsAt(target: RunTarget): Promise<TestRunInfo | null> {
   await ensureTestRuns();
-  const cmd = await commandFor(t);
+  const cmd = await commandFor(target);
   if (!cmd) {
-    if (t.workspaceId)
-      openTestCommandDialog({ workspaceId: t.workspaceId, groupId: t.groupId, detectDir: t.path, reason: `No test command found in ${t.path}. Set one for the workspace (or this lane).`, then: () => void runTestsAt(t) });
-    else notify("warn", `No test command found in ${t.path}`);
+    if (target.workspaceId)
+      openTestCommandDialog({
+        workspaceId: target.workspaceId,
+        groupId: target.groupId,
+        detectDir: target.path,
+        reason: t("testrun.toast.noCommandReason", { path: target.path }),
+        then: () => void runTestsAt(target),
+      });
+    else notify("warn", t("testrun.toast.noCommand", { path: target.path }));
     return null;
   }
   try {
-    const info = await ipc.testRunStart({ cwd: t.path, command: cmd.command, label: t.label, sessionId: t.sessionId, timeoutSec: null });
+    const info = await ipc.testRunStart({ cwd: target.path, command: cmd.command, label: target.label, sessionId: target.sessionId, timeoutSec: null });
     receive(info);
     return info;
   } catch (e) {
-    notify("error", `Could not start the tests: ${errorMessage(e)}`);
+    notify("error", t("testrun.toast.startFailed", { error: errorMessage(e) }));
     return null;
   }
 }
@@ -199,12 +207,12 @@ export function sessionTarget(id: SessionId, s: AppState = useApp.getState()): R
 }
 
 export function runTestsForSession(id: SessionId): Promise<TestRunInfo | null> {
-  const t = sessionTarget(id);
-  if (!t) {
-    notify("warn", "This pane has no folder to test");
+  const target = sessionTarget(id);
+  if (!target) {
+    notify("warn", t("testrun.toast.noFolder"));
     return Promise.resolve(null);
   }
-  return runTestsAt(t);
+  return runTestsAt(target);
 }
 
 /** One target per distinct folder of the lane's terminal sessions (first session names it). */
@@ -214,10 +222,10 @@ export function laneTargets(groupId: string, s: AppState = useApp.getState()): R
   const seen = new Set<string>();
   const out: RunTarget[] = [];
   for (const id of loc.group.sessionIds) {
-    const t = sessionTarget(id, s);
-    if (!t || seen.has(pathKey(t.path))) continue;
-    seen.add(pathKey(t.path));
-    out.push(t);
+    const target = sessionTarget(id, s);
+    if (!target || seen.has(pathKey(target.path))) continue;
+    seen.add(pathKey(target.path));
+    out.push(target);
   }
   return out;
 }
@@ -225,14 +233,14 @@ export function laneTargets(groupId: string, s: AppState = useApp.getState()): R
 /** "Test lane": each member's worktree (distinct folders); the Rust queue applies the concurrency cap. */
 export async function runTestsForLane(groupId: string): Promise<void> {
   const targets = laneTargets(groupId);
-  const name = locate(useApp.getState(), null, groupId)?.group.name ?? "lane";
+  const name = locate(useApp.getState(), null, groupId)?.group.name ?? t("testrun.laneFallback");
   if (!targets.length) {
-    notify("warn", `“${name}” has no session folders to test`);
+    notify("warn", t("testrun.toast.laneEmpty", { name }));
     return;
   }
-  notify("info", `Testing ${targets.length} folder${targets.length === 1 ? "" : "s"} of “${name}”`);
-  for (const t of targets) {
-    const started = await runTestsAt(t);
+  notify("info", t("testrun.toast.testingLane", { count: targets.length, name }));
+  for (const target of targets) {
+    const started = await runTestsAt(target);
     if (!started) break; // no command: the dialog is open (it re-runs this target after saving)
   }
 }
@@ -241,7 +249,7 @@ export async function cancelTestRun(id: string): Promise<void> {
   try {
     await ipc.testRunCancel(id);
   } catch (e) {
-    notify("error", `Could not cancel: ${errorMessage(e)}`);
+    notify("error", t("testrun.toast.cancelFailed", { error: errorMessage(e) }));
   }
 }
 
@@ -292,7 +300,7 @@ export function saveTestCommands(workspaceId: string, workspaceCommand: string, 
 export function askAgentToFix(runId: string): void {
   const r = useTestRuns.getState().runs[runId];
   if (!r?.sessionId) return;
-  useTestRuns.setState({ ask: { sessionId: r.sessionId, title: `Ask ${r.label} to fix the tests`, text: failureMessage(r), kind: "tests" } });
+  useTestRuns.setState({ ask: { sessionId: r.sessionId, title: t("testrun.ask.fixTitle", { label: r.label }), text: failureMessage(r), kind: "tests" } });
 }
 
 export function openAskAgent(req: AskAgentRequest): void {
@@ -309,10 +317,11 @@ const ENTER_DELAY_MS = 80;
  *  from the dialog's Send button. */
 export async function sendToAgent(req: AskAgentRequest, text: string): Promise<{ ok: true } | { ok: false; reason: string }> {
   const line = text.replace(/[\r\n]+/g, " ").trim();
-  if (!line) return { ok: false, reason: "The message is empty." };
+  if (!line) return { ok: false, reason: t("testrun.ask.empty") };
   const blocker = await handoffBlocker(req.sessionId);
   if (blocker) return { ok: false, reason: blocker };
   const who = sessionLabelOf(req.sessionId);
+  // Activity log entries below stay English (event data; result codes like "sent" are read by Mission Control).
   try {
     await ipc.sessionWrite(req.sessionId, line);
     await new Promise((r) => setTimeout(r, ENTER_DELAY_MS));

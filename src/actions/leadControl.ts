@@ -16,8 +16,11 @@
 //   mission file changes and branch-summary refreshes. Never on a timer: the only timers exist while
 //   something is pending (a team write, or queued items waiting for a rate limit / give-up deadline).
 // Nothing is typed into an agent except by the user's Send or by autopilot the user explicitly enabled.
+// Language: warnings, reasons and target labels are shown in the lead box (UI language, like toasts). Everything
+// typed into agents or written to files (instructions, team.md) and the activity / ipc log lines stay English.
 
 import { tailLines } from "../components/util/fleet";
+import { t } from "../i18n";
 import { isTerminalMeta } from "../lib/browserPanes";
 import { errorMessage, ipc, onMissionChanged } from "../lib/ipc";
 import { currentTaskFor, ownsTask, progress, slugify, type MissionDoc, type Task } from "../lib/missionDoc";
@@ -237,15 +240,14 @@ function isNotFound(e: unknown): boolean {
 export function buildOutboxProposal(dk: string, dir: string, item: OutboxItem, team: readonly Member[], mode: ControlMode, now: number): Proposal | null {
   const parsed = parseOutbox(item.text);
   const warnings = [...parsed.warnings];
-  if (item.truncated) warnings.push("the file is larger than 16 KiB — only its beginning was read");
+  if (item.truncated) warnings.push(t("lead.warn.truncated"));
   const typed = parsed.action === "message" || parsed.action === "review";
   if (typed && !parsed.text && item.modifiedMs > 0 && now - item.modifiedMs < EMPTY_GRACE_MS) return null;
   const { ids, unknown } = resolveTargets(parsed.to, team, parsed.from);
-  for (const u of unknown) warnings.push(`nobody is named or has the role “${u}”`);
+  for (const u of unknown) warnings.push(t("lead.warn.unknownTarget", { name: u }));
   let reason: string | null = null;
-  if (ids.length === 0)
-    reason = parsed.to.length === 0 ? "the file has no “to:” line" : unknown.length ? "no teammate matches its “to:” line" : "it is addressed only to its sender";
-  else if (typed && !parsed.text) reason = "the instruction is empty";
+  if (ids.length === 0) reason = parsed.to.length === 0 ? t("lead.reason.noTo") : unknown.length ? t("lead.reason.noMatch") : t("lead.reason.onlySender");
+  else if (typed && !parsed.text) reason = t("lead.reason.empty");
   const auto = mode === "autopilot" && typed && reason === null;
   const leads = senderLeads(parsed.from, team);
   const names = ids.map((id) => team.find((m) => m.id === id)?.name ?? id);
@@ -260,7 +262,7 @@ export function buildOutboxProposal(dk: string, dir: string, item: OutboxItem, t
     lead: leads.length === 1 ? leads[0].name : null,
     to: parsed.to,
     targets: ids,
-    targetLabel: names.join(", ") || parsed.to.join(", ") || "nobody",
+    targetLabel: names.join(", ") || parsed.to.join(", ") || t("lead.target.nobody"),
     action: parsed.action,
     text: typed && parsed.text ? `${instructionPrefix(parsed.action, parsed.from)}${parsed.text}` : parsed.text,
     edited: false,
@@ -373,7 +375,7 @@ async function sendTargets(key: string, auto: boolean): Promise<string | null> {
   const p0 = getProposal(key);
   if (!p0) return null;
   const text = cleanInstruction(p0.text).text;
-  if (!text) return "The message is empty.";
+  if (!text) return t("lead.reason.messageEmpty");
   const reasons: string[] = [];
   for (const id of pendingTargets(p0)) {
     const name = label(id);
@@ -381,16 +383,16 @@ async function sendTargets(key: string, auto: boolean): Promise<string | null> {
       // Never deliver into a prompt Claude reports through its hooks (permission, question, plan approval).
       const prompt = hookWaitReason(useAttention.getState().sessions[id]);
       if (prompt) {
-        reasons.push(`${name} ${prompt}; sent after it is answered`);
+        reasons.push(t("lead.reason.hookPrompt", { name, prompt }));
         continue;
       }
       const wait = rateLimitWait(history, id, Date.now());
       if (wait > 0) {
-        reasons.push(`rate limit: next automatic delivery to ${name} in ${Math.ceil(wait / 1000)} s`);
+        reasons.push(t("lead.reason.rateLimit", { name, seconds: Math.ceil(wait / 1000) }));
         continue;
       }
       if (useAttention.getState().sessions[id]?.state === "working") {
-        reasons.push(`${name} is working; sent when it goes quiet`);
+        reasons.push(t("lead.reason.working", { name }));
         continue;
       }
     }
@@ -404,7 +406,7 @@ async function sendTargets(key: string, auto: boolean): Promise<string | null> {
     try {
       await typeLine(id, text);
     } catch (e) {
-      reasons.push(`could not type into ${name}: ${errorMessage(e)}`);
+      reasons.push(t("lead.reason.typeFailed", { name, error: errorMessage(e) }));
       log(id, "error", `${senderToken(p0)} → ${slugify(name) || name}: failed: ${errorMessage(e)}`, "failed");
       continue;
     }
@@ -430,12 +432,12 @@ async function finalize(key: string, disposition: "sent" | "dismissed"): Promise
       await ipc.missionOutboxArchive(p.dir, p.file, disposition);
     } catch (e) {
       if (!isNotFound(e)) {
-        const msg = `could not move ${p.file} to outbox/${disposition}/: ${errorMessage(e)}`;
+        const msg = t("lead.reason.moveFailed", { file: p.file, folder: disposition, error: errorMessage(e) });
         if (disposition === "dismissed") {
           archived.delete(key);
           return msg;
         }
-        ipc.log("warn", `lead control: ${msg}`);
+        ipc.log("warn", `lead control: could not move ${p.file} to outbox/${disposition}/: ${errorMessage(e)}`);
         removeProposal(key);
         return msg;
       }
@@ -459,13 +461,14 @@ async function pumpOnce() {
       continue;
     }
     if (p.queuedAt !== null && Date.now() - p.queuedAt >= GIVE_UP_MS) {
-      patchProposal(p.key, { status: "proposal", queuedAt: null, reason: "autopilot found no safe moment within 10 minutes; send it yourself or dismiss it" });
+      patchProposal(p.key, { status: "proposal", queuedAt: null, reason: t("lead.reason.gaveUp") });
       const who = pendingTargets(p)[0];
       if (who) log(who, "needs", `${senderToken(p)} → ${slugify(label(who))}: not delivered within 10 minutes (now waiting for you)`, "gave up");
       continue;
     }
     if (p.source === "review" && !p.targets.some((id) => isLive(useApp.getState().runtime[id]))) {
-      if (p.reason !== "waiting for a lead to run") patchProposal(p.key, { reason: "waiting for a lead to run" });
+      const waitLead = t("lead.reason.waitingForLead");
+      if (p.reason !== waitLead) patchProposal(p.key, { reason: waitLead });
       continue;
     }
     patchProposal(p.key, { busy: true });
@@ -552,9 +555,9 @@ export type SendResult = { ok: true } | { ok: false; reason: string };
  */
 export async function sendProposal(key: string): Promise<SendResult> {
   const p = getProposal(key);
-  if (!p) return { ok: false, reason: "This instruction is gone." };
-  if (p.busy) return { ok: false, reason: "It is being sent right now." };
-  if (pendingTargets(p).length === 0) return { ok: false, reason: p.reason ?? "Nobody to send it to." };
+  if (!p) return { ok: false, reason: t("lead.reason.gone") };
+  if (p.busy) return { ok: false, reason: t("lead.reason.busy") };
+  if (pendingTargets(p).length === 0) return { ok: false, reason: p.reason ?? t("lead.reason.nobody") };
   if (p.action === "stop" || p.action === "restart") return runLifecycle(key);
   patchProposal(key, { busy: true });
   let reason: string | null = null;
@@ -569,14 +572,14 @@ export async function sendProposal(key: string): Promise<SendResult> {
     const err = await finalize(key, "sent");
     return err ? { ok: false, reason: err } : { ok: true };
   }
-  const r = reason ?? "Not sent.";
+  const r = reason ?? t("lead.reason.notSent");
   patchProposal(key, { reason: r });
   return { ok: false, reason: r };
 }
 
 async function runLifecycle(key: string): Promise<SendResult> {
   const p = getProposal(key);
-  if (!p) return { ok: false, reason: "This instruction is gone." };
+  if (!p) return { ok: false, reason: t("lead.reason.gone") };
   const { confirmRestart, confirmStop } = await import("../components/menus/sessionMenu");
   patchProposal(key, { busy: true });
   try {
@@ -608,14 +611,14 @@ async function runLifecycle(key: string): Promise<SendResult> {
     const err = await finalize(key, "sent");
     return err ? { ok: false, reason: err } : { ok: true };
   }
-  return { ok: false, reason: `Nothing was ${p.action === "stop" ? "stopped" : "restarted"} (cancelled).` };
+  return { ok: false, reason: t("lead.reason.cancelled", { action: p.action }) };
 }
 
 /** Dismiss: an outbox file moves to outbox/dismissed/; a review request is forgotten. */
 export async function dismissProposal(key: string): Promise<SendResult> {
   const p = getProposal(key);
   if (!p) return { ok: true };
-  if (p.busy) return { ok: false, reason: "It is being sent right now." };
+  if (p.busy) return { ok: false, reason: t("lead.reason.busy") };
   patchProposal(key, { busy: true });
   const err = await finalize(key, "dismissed");
   if (err) {
@@ -704,7 +707,7 @@ function reviewProposal(dk: string, dir: string, leads: readonly Member[], rk: s
     lead: live.name,
     to: ["lead"],
     targets: leads.map((l) => l.id),
-    targetLabel: leads.length === 1 ? leads[0].name : `first running lead (${leads.map((l) => l.name).join(", ")})`,
+    targetLabel: leads.length === 1 ? leads[0].name : t("lead.target.firstRunning", { names: leads.map((l) => l.name).join(", ") }),
     action: "review",
     text,
     edited: false,

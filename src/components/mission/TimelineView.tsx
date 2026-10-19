@@ -6,7 +6,8 @@
 
 import { memo, useEffect, useMemo, useRef, useState, type KeyboardEvent, type MutableRefObject, type PointerEvent as RPointerEvent } from "react";
 import type { SessionId } from "../../lib/types";
-import { useActivity, type ActivityEvent } from "../../store/activity";
+import { useT } from "../../i18n";
+import { activityText, useActivity, type ActivityEvent } from "../../store/activity";
 import { useApp } from "../../store/appStore";
 import { useDeck } from "../../store/missionDeck";
 import { useStateHistory, type HistoryState } from "../../store/stateHistory";
@@ -45,6 +46,7 @@ function isMessage(e: ActivityEvent): boolean {
 }
 
 export const TimelineView = memo(function TimelineView(p: TimelineViewProps) {
+  const t = useT();
   const history = useStateHistory((s) => s.bySession);
   const marks = useStateHistory((s) => s.marks);
   const events = useActivity((s) => s.events);
@@ -59,12 +61,12 @@ export const TimelineView = memo(function TimelineView(p: TimelineViewProps) {
   const drag = useRef<{ id: number; x: number; r: TimeRange } | null>(null);
 
   const earliest = useMemo(() => {
-    let t = Infinity;
+    let first = Infinity;
     for (const a of p.agents) {
       const h = history[a.id];
-      if (h?.length) t = Math.min(t, h[0].at);
+      if (h?.length) first = Math.min(first, h[0].at);
     }
-    return Number.isFinite(t) ? t : p.now - DEFAULT_SPAN;
+    return Number.isFinite(first) ? first : p.now - DEFAULT_SPAN;
   }, [history, p.agents, p.now]);
 
   const range: TimeRange = fixed ?? liveRange(span, p.now);
@@ -173,7 +175,7 @@ export const TimelineView = memo(function TimelineView(p: TimelineViewProps) {
 
   const tickList = ticks(range, Math.max(2, Math.floor(trackW / 90)));
   const nowF = frac(range, p.now);
-  const pct = (t: number) => `${(frac(range, t) * 100).toFixed(3)}%`;
+  const pct = (at: number) => `${(frac(range, at) * 100).toFixed(3)}%`;
   const msgs = events.filter((e) => e.sessionId && e.at >= range.from && e.at <= range.to && isMessage(e));
   const tasksDone = marks.filter((m) => m.at >= range.from && m.at <= range.to);
   const anyHistory = p.agents.some((a) => (history[a.id]?.length ?? 0) > 0);
@@ -182,7 +184,7 @@ export const TimelineView = memo(function TimelineView(p: TimelineViewProps) {
   return (
     <div className="tl" role="region" aria-label={T.timeline.label}>
       <div className="tl-bar">
-        <div className="mc-seg" role="radiogroup" aria-label="Time range">
+        <div className="mc-seg" role="radiogroup" aria-label={t("mcView.timeline.rangeAria")}>
           {RANGE_PRESETS.map((r) => (
             <button key={r.label} type="button" role="radio" aria-checked={live && Math.abs(span - r.ms) < 1000} onClick={() => (setFixed(null), setSpan(r.ms))}>
               {r.label}
@@ -198,7 +200,7 @@ export const TimelineView = memo(function TimelineView(p: TimelineViewProps) {
         </button>
         <span className="mc-micro tl-span">{formatDuration(range.to - range.from)}</span>
         <span className="mc-spacer" />
-        <span className="tl-legend" aria-label="Colours">
+        <span className="tl-legend" aria-label={t("mcView.timeline.legendAria")}>
           {LEGEND.map((s) => (
             <span key={s} className="tl-legend-item">
               <span className={`tl-legend-sq is-${s}`} />
@@ -206,10 +208,12 @@ export const TimelineView = memo(function TimelineView(p: TimelineViewProps) {
             </span>
           ))}
           <span className="tl-legend-item">
-            <span className="tl-mark-glyph is-task">◆</span>task done
+            <span className="tl-mark-glyph is-task">◆</span>
+            {t("mcView.timeline.legendTask")}
           </span>
           <span className="tl-legend-item">
-            <span className="tl-mark-glyph is-msg">▾</span>message
+            <span className="tl-mark-glyph is-msg">▾</span>
+            {t("mcView.timeline.legendMessage")}
           </span>
         </span>
       </div>
@@ -217,9 +221,9 @@ export const TimelineView = memo(function TimelineView(p: TimelineViewProps) {
         <div className="tl-axis">
           <div className="tl-label tl-axis-label mc-micro">{formatClock(range.from)} → {live ? T.timeline.now : formatClock(range.to)}</div>
           <div className="tl-axis-track">
-            {tickList.map((t) => (
-              <span key={t.t} className="tl-tick" style={{ left: pct(t.t) }}>
-                {tickLabel(t.t, t.step)}
+            {tickList.map((tick) => (
+              <span key={tick.t} className="tl-tick" style={{ left: pct(tick.t) }}>
+                {tickLabel(tick.t, tick.step)}
               </span>
             ))}
             {nowF >= 0 && nowF <= 1.0001 && <span className="tl-now-label" style={{ left: pct(p.now) }}>{T.timeline.now}</span>}
@@ -242,7 +246,7 @@ export const TimelineView = memo(function TimelineView(p: TimelineViewProps) {
             <div key={a.id} className="tl-rowwrap">
               {laneRow}
               <div className={`tl-row${dim ? " is-dim" : ""}${sel ? " is-selected" : ""}${current === `a:${a.id}` ? " is-hit" : ""}`} data-tl={a.id} style={roleStyle(role)}>
-                <button type="button" className="tl-label" onClick={(e) => p.onSelect(a.id, e)} onDoubleClick={() => p.onJump(a.id)} title={`${nameList[i]} — click to select, double-click to jump`}>
+                <button type="button" className="tl-label" onClick={(e) => p.onSelect(a.id, e)} onDoubleClick={() => p.onJump(a.id)} title={t("mcView.selectJumpHint", { name: nameList[i] })}>
                   <span className={`attn-lamp attn-lamp--${lamp}`} />
                   <span className="tl-name">{nameList[i]}</span>
                   <RoleTag role={role} glyphOnly />
@@ -267,7 +271,7 @@ export const TimelineView = memo(function TimelineView(p: TimelineViewProps) {
                   {msgs
                     .filter((m) => m.sessionId === a.id)
                     .map((m) => (
-                      <span key={`m${m.seq}`} className="tl-mark is-msg" style={{ left: pct(m.at) }} title={`${formatClock(m.at)} · ${m.message}`}>
+                      <span key={`m${m.seq}`} className="tl-mark is-msg" style={{ left: pct(m.at) }} title={`${formatClock(m.at)} · ${activityText(m)}`}>
                         ▾
                       </span>
                     ))}

@@ -1,11 +1,13 @@
 // Settings row for browser panes: engine (native view / embedded frame) and where new-window links go.
 
 import { Field, Segmented } from "../components/ui/Field";
+import { useT } from "../i18n";
 import type { BrowserEngineSetting, BrowserNewWindow } from "../lib/types";
 import { useApp } from "../store/appStore";
 import { nativeSupported, useBrowserEngine, useEngineState } from "./engine";
 
 export function BrowserSettings() {
+  const t = useT();
   const setting = useApp((s) => s.persisted.settings.browserEngine);
   const newWindow = useApp((s) => s.persisted.settings.browserNewWindow);
   const failed = useEngineState((s) => s.failed);
@@ -14,34 +16,34 @@ export function BrowserSettings() {
   const update = useApp((s) => s.updateSettings);
   const value: BrowserEngineSetting = setting === "frame" || !supported ? "frame" : "native";
   const hint = !supported
-    ? "Native browser panes are only available on Windows for now; pages use the embedded frame."
+    ? t("browser.settings.hintUnsupported")
     : failed
-      ? `Native views failed this run (${failed}); embedded frames are used until restart.`
+      ? t("browser.settings.hintFailed", { reason: failed })
       : engine === "native"
-        ? "Each pane is a real WebView2 view: every site works (sign-ins, GitHub, Google), with real back / forward and page titles. Menus and dialogs hide it while they are open."
-        : "Pages run in a sandboxed frame inside the app: sites that refuse framing open in a pop-out window, and links that open a new window do nothing.";
+        ? t("browser.settings.hintNative")
+        : t("browser.settings.hintFrame");
   return (
     <>
-      <Field label="Browser engine" hint={hint}>
+      <Field label={t("browser.settings.engine")} hint={hint}>
         <Segmented<BrowserEngineSetting>
-          ariaLabel="Browser engine"
+          ariaLabel={t("browser.settings.engine")}
           value={value}
           onChange={(v) => update({ browserEngine: v })}
           options={[
-            { value: "native", label: "Native (recommended)", disabled: !supported },
-            { value: "frame", label: "Embedded frame (legacy)" },
+            { value: "native", label: t("browser.settings.engineNative"), disabled: !supported },
+            { value: "frame", label: t("browser.settings.engineFrame") },
           ]}
         />
       </Field>
       {engine === "native" && (
-        <Field label="Links that open a new window">
+        <Field label={t("browser.settings.newWindow")}>
           <Segmented<BrowserNewWindow>
-            ariaLabel="Links that open a new window"
+            ariaLabel={t("browser.settings.newWindow")}
             value={newWindow === "same" ? "same" : "pane"}
             onChange={(v) => update({ browserNewWindow: v })}
             options={[
-              { value: "pane", label: "New browser pane" },
-              { value: "same", label: "Same pane" },
+              { value: "pane", label: t("browser.settings.newWindowPane") },
+              { value: "same", label: t("browser.settings.newWindowSame") },
             ]}
           />
         </Field>

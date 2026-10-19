@@ -1,5 +1,6 @@
 // Menu entries for test runs, used by the session menu, the lane / group menu and the workspace menu.
 
+import { t } from "../../i18n";
 import type { SessionId } from "../../lib/types";
 import { useApp } from "../../store/appStore";
 import {
@@ -19,13 +20,13 @@ import { isActiveStatus } from "./format";
 
 /** "Run tests" (+ "Test log" / "Cancel tests" when the folder has a run) for a terminal session. */
 export function testRunMenuItems(id: SessionId): MenuItem[] {
-  const t = sessionTarget(id);
-  if (!t) return [];
-  const run = latestRunFor(useTestRuns.getState(), t.path);
+  const target = sessionTarget(id);
+  if (!target) return [];
+  const run = latestRunFor(useTestRuns.getState(), target.path);
   const items: MenuItem[] = [];
-  if (run && isActiveStatus(run.status)) items.push({ label: "Cancel tests", onSelect: () => void cancelTestRun(run.id) });
-  else items.push({ label: "Run tests", hint: "in its worktree", onSelect: () => void runTestsForSession(id) });
-  if (run) items.push({ label: "Test log", onSelect: () => openTestLog(run.id) });
+  if (run && isActiveStatus(run.status)) items.push({ label: t("testrun.menu.cancel"), onSelect: () => void cancelTestRun(run.id) });
+  else items.push({ label: t("testrun.menu.run"), hint: t("testrun.menu.runHint"), onSelect: () => void runTestsForSession(id) });
+  if (run) items.push({ label: t("testrun.menu.log"), onSelect: () => openTestLog(run.id) });
   return items;
 }
 
@@ -33,10 +34,10 @@ export function testRunMenuItems(id: SessionId): MenuItem[] {
 export function laneTestsSubmenu(groupId: string): MenuItem {
   const n = laneTargets(groupId).length;
   return {
-    label: "Tests",
+    label: t("testrun.menu.tests"),
     children: [
-      { label: n > 1 ? `Test lane (${n} folders)` : "Test lane", disabled: n === 0, onSelect: () => void runTestsForLane(groupId) },
-      { label: "Lane test command…", onSelect: () => openLaneCommandDialog(groupId) },
+      { label: n > 1 ? t("testrun.menu.testLaneCount", { count: n }) : t("testrun.menu.testLane"), disabled: n === 0, onSelect: () => void runTestsForLane(groupId) },
+      { label: t("testrun.menu.laneCommand"), onSelect: () => openLaneCommandDialog(groupId) },
     ],
   };
 }
@@ -45,6 +46,6 @@ export function laneTestsSubmenu(groupId: string): MenuItem {
 export function workspaceTestMenuItem(workspaceId: string): MenuItem {
   const ws = useApp.getState().persisted.workspaces.find((w) => w.id === workspaceId);
   const cmd = ws?.testCommand?.trim();
-  const hint = cmd ? (cmd.length > 24 ? `${cmd.slice(0, 23)}…` : cmd) : "auto-detect";
-  return { label: "Test command…", hint, onSelect: () => openTestCommandDialog({ workspaceId }) };
+  const hint = cmd ? (cmd.length > 24 ? `${cmd.slice(0, 23)}…` : cmd) : t("testrun.cmd.autoDetect");
+  return { label: t("testrun.menu.command"), hint, onSelect: () => openTestCommandDialog({ workspaceId }) };
 }

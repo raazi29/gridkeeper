@@ -3,6 +3,7 @@
 // until Send, refused while the agent is asking something.
 
 import { useState } from "react";
+import { useT } from "../../i18n";
 import { isMac } from "../../lib/platform";
 import { isLive, useApp } from "../../store/appStore";
 import { useAttention } from "../../store/attention";
@@ -13,13 +14,14 @@ import { Modal } from "../ui/Modal";
 import "../../styles/signoff.css";
 
 export function AskAgentDialog({ req }: { req: AskAgentRequest }) {
+  const t = useT();
   const [text, setText] = useState(req.text);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const name = useApp((s) => s.persisted.sessions.find((m) => m.id === req.sessionId)?.name ?? "the session");
+  const name = useApp((s) => s.persisted.sessions.find((m) => m.id === req.sessionId)?.name) ?? t("testrun.ask.sessionFallback");
   const live = useApp((s) => isLive(s.runtime[req.sessionId]));
   const waiting = useAttention((s) => s.sessions[req.sessionId]?.state === "waiting");
-  const blocked = !live ? `${name} is not running.` : waiting ? `${name} is waiting for an answer. Sending would press Enter on its prompt; answer it in its pane first.` : null;
+  const blocked = !live ? t("testrun.ask.notRunning", { name }) : waiting ? t("testrun.ask.waiting", { name }) : null;
 
   const send = async () => {
     if (busy || blocked || !text.trim()) return;
@@ -28,7 +30,7 @@ export function AskAgentDialog({ req }: { req: AskAgentRequest }) {
     const r = await sendToAgent(req, text);
     setBusy(false);
     if (r.ok) {
-      notify("info", `Sent to ${name}`);
+      notify("info", t("testrun.ask.sent", { name }));
       closeAskAgent();
     } else setError(r.reason);
   };
@@ -41,10 +43,10 @@ export function AskAgentDialog({ req }: { req: AskAgentRequest }) {
       className="so-handoff"
       footer={
         <>
-          <span className="so-handoff-note">Typed into {name} and submitted with Enter.</span>
-          <Button onClick={closeAskAgent}>Cancel</Button>
+          <span className="so-handoff-note">{t("testrun.ask.note", { name })}</span>
+          <Button onClick={closeAskAgent}>{t("common.cancel")}</Button>
           <Button variant="primary" disabled={busy || !!blocked || !text.trim()} onClick={() => void send()}>
-            {busy ? "Sending…" : "Send"}
+            {busy ? t("testrun.ask.sending") : t("testrun.ask.send")}
           </Button>
         </>
       }
@@ -56,7 +58,7 @@ export function AskAgentDialog({ req }: { req: AskAgentRequest }) {
           rows={5}
           spellCheck={false}
           value={text}
-          aria-label="Message"
+          aria-label={t("testrun.ask.messageAria")}
           onChange={(e) => setText(e.target.value)}
           onKeyDown={(e) => {
             if (e.key === "Enter" && (isMac ? e.metaKey : e.ctrlKey) && !e.nativeEvent.isComposing) {
@@ -65,7 +67,7 @@ export function AskAgentDialog({ req }: { req: AskAgentRequest }) {
             }
           }}
         />
-        <div className="so-handoff-hint">One line: line breaks are sent as spaces. Nothing is sent until you press Send (or {isMac ? "⌘↩" : "Ctrl+Enter"}).</div>
+        <div className="so-handoff-hint">{t("testrun.ask.hint", { keys: isMac ? "⌘↩" : "Ctrl+Enter" })}</div>
         {blocked && <div className="callout so-callout-warn">{blocked}</div>}
         {error && <div className="callout is-error">{error}</div>}
       </div>

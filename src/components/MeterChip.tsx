@@ -58,7 +58,9 @@ export function WorkspaceCost({ ids }: { ids: readonly SessionId[] }) {
 
 export function enableCostMeter(): void {
   useApp.getState().updateSettings({ costMeter: true, costMeterHintDismissed: true });
-  notify("info", t("meter.enabledToast"), 6000);
+  // "Exact status for Claude panes (hooks)" (on by default) rides on the same --settings file: say so.
+  const hooks = useApp.getState().persisted.settings.claudeHooks ?? true;
+  notify("info", t(hooks ? "meter.enabledToastHooks" : "meter.enabledToast"), 6000);
 }
 
 /** One-time hint while the meter is off and Claude panes are around. */
@@ -71,7 +73,7 @@ export function CostMeterHint({ ids, variant }: { ids: readonly SessionId[]; var
   });
   if (!show) return null;
   return (
-    <span className={`meter-hint meter-hint--${variant}`} title={t("meter.hintTitle")}>
+    <span className={`meter-hint meter-hint--${variant}`} title={t("meter.hintDisclosure")}>
       {t("meter.hintOff")}{" "}
       <button type="button" className="meter-hint-btn" onClick={enableCostMeter}>
         {t("meter.hintTurnOn")}

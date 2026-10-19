@@ -1,8 +1,12 @@
 // Built-in team templates (the "Templates" tab gallery). Plain data in the same schema as an exported
 // `.gridkeeper-team.json` file (docs/team-templates.md); every entry must pass sanitizeTeamTemplate unchanged
 // (unit-tested). Prompts use {mission}, {teammates} and {role}; keep them short and concrete.
+//
+// The templates themselves stay English (they are written to files and typed into agents); only the name and
+// description shown in the gallery are translated, at render time, through GALLERY_TEXT.
 
 import { TEAM_FORMAT, TEAM_MIN_APP_VERSION, TEAM_SCHEMA_VERSION, type TeamTemplate } from "../actions/teamTemplatePlan";
+import type { MessageKey } from "../i18n";
 
 const base = { format: TEAM_FORMAT, version: TEAM_SCHEMA_VERSION } as const;
 const meta = (name: string, description: string, tags: string[]) => ({ name, description, author: null, tags, minVersion: TEAM_MIN_APP_VERSION });
@@ -244,3 +248,13 @@ export const TEAM_GALLERY: readonly TeamTemplate[] = [
 
 /** Stable key of a gallery entry. */
 export const galleryKey = (t: TeamTemplate) => `gallery:${t.meta.name.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`;
+
+/** UI name and description of each built-in entry, by galleryKey (translate at render time; English = meta). */
+export const GALLERY_TEXT: Readonly<Record<string, { name: MessageKey; description: MessageKey }>> = {
+  "gallery:feature-squad": { name: "teams.gallery.featureSquad.name", description: "teams.gallery.featureSquad.description" },
+  "gallery:bug-bash": { name: "teams.gallery.bugBash.name", description: "teams.gallery.bugBash.description" },
+  "gallery:refactor-with-safety-net": { name: "teams.gallery.refactor.name", description: "teams.gallery.refactor.description" },
+  "gallery:docs-sprint": { name: "teams.gallery.docsSprint.name", description: "teams.gallery.docsSprint.description" },
+  "gallery:security-review": { name: "teams.gallery.securityReview.name", description: "teams.gallery.securityReview.description" },
+  "gallery:solo-reviewer-pair": { name: "teams.gallery.soloPair.name", description: "teams.gallery.soloPair.description" },
+};

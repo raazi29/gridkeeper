@@ -7,6 +7,7 @@
 // resume with a fresh counter) books the new value. The day boundary is local midnight. Numbers only: nothing
 // from transcripts. Cost is Claude Code's estimate at list price (on a subscription: API-equivalent value).
 
+import { t } from "../i18n";
 import type { SessionMeter, SpendAction, SpendGuard } from "./types";
 
 export const LEDGER_VERSION = 1;
@@ -20,7 +21,8 @@ const EPS = 1e-9;
 
 export const SPEND_ACTIONS: readonly SpendAction[] = ["warn", "pause", "pauseNotify"];
 export const DEFAULT_GUARD: SpendGuard = { budgetUsd: 10, warnPct: 80, action: "warn" };
-export const SPEND_NOTE = "Claude Code's own estimate at list price; on a subscription this is API-equivalent value, not a bill.";
+/** What the numbers are (a function, not a constant, so it follows the UI language). */
+export const spendNote = (): string => t("spend.note");
 
 /** A one-time guard step, remembered with the budget it fired for (raising the budget arms it again). */
 export interface GuardMark {
@@ -251,5 +253,5 @@ export function formatBudget(usd: number): string {
 
 /** `today ~$4.20 / $10` (no guard: `today ~$4.20`). */
 export function todayLabel(spent: number, g: SpendGuard | null): string {
-  return g ? `today ~${formatUsd(spent)} / ${formatBudget(g.budgetUsd)}` : `today ~${formatUsd(spent)}`;
+  return g ? t("spend.todayLabelBudget", { spent: formatUsd(spent), budget: formatBudget(g.budgetUsd) }) : t("spend.todayLabel", { spent: formatUsd(spent) });
 }

@@ -204,7 +204,7 @@ describe("runtime", () => {
   });
 
   it("renders rich text with tag renderers", () => {
-    const html = renderToStaticMarkup(createElement("p", null, rich("settings.agents.costMeterHint", { code: (c) => createElement("code", null, c) })));
+    const html = renderToStaticMarkup(createElement("p", null, rich("settings.agents.costMeterDisclosure", { code: (c) => createElement("code", null, c) })));
     expect(html).toContain("<code>--settings</code>");
     expect(html).toContain("<code>statusLine</code>");
     expect(html).not.toContain("&lt;code");

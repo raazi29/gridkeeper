@@ -11,7 +11,10 @@
 // The first read of a board is the baseline (nothing is suggested for what was already there). Suggestions are
 // scrubbed (no paths, e-mails, secret-looking tokens), deduplicated against the brain and within the session,
 // at most 5 per change, announced with one toast.
+// Agent-facing: stays English (typed into agents / written to files): the suggestion files' text; only the toast
+// is translated.
 
+import { t } from "../i18n";
 import { isDuplicate, newNoteText, slugForTitle, suggestFromBoard, suggestFromOutbox, type BoardSnapshot, type Comparable, type Suggestion } from "../lib/brain";
 import { errorMessage, ipc } from "../lib/ipc";
 import { brainPrefs, openBrain, reloadBrain, useBrain } from "../store/brain";
@@ -79,11 +82,10 @@ export function submitSuggestions(dir: string, list: readonly Suggestion[]): Pro
     }
     if (written === 0) return;
     if (useBrain.getState().byDir[dir]) void reloadBrain(dir);
-    const what = written === 1 ? "memory" : "memories";
     actionToast({
       kind: "info",
-      message: auto ? `Brain: remembered ${written} ${what}` : `Brain: ${written} suggested ${what} in the inbox`,
-      action: { label: auto ? "Open" : "Review", run: () => openBrain({ dir, tab: auto ? "notes" : "inbox", select: null }) },
+      message: t(auto ? "brain.capture.remembered" : "brain.capture.suggested", { count: written }),
+      action: { label: t(auto ? "common.open" : "brain.capture.review"), run: () => openBrain({ dir, tab: auto ? "notes" : "inbox", select: null }) },
     });
   }).then(() => written);
 }

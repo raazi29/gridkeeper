@@ -6,6 +6,7 @@
 // a closed Mission Control is unmounted.
 
 import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent } from "react";
+import { t as translate, useT } from "../../i18n";
 import type { MissionDoc } from "../../lib/missionDoc";
 import { useApp } from "../../store/appStore";
 import { useEffectPrefs } from "../../theme/effectPrefs";
@@ -121,20 +122,17 @@ function crawlBlocks(doc: MissionDoc, title: string): CrawlBlock[] {
   const open = doc.tasks.filter((t) => t.state !== "done");
   const shown = open.slice(0, CRAWL_TASKS);
   const out: CrawlBlock[] = [
-    { kind: "ep", text: `${title} · ${doc.tasks.length - open.length}/${doc.tasks.length} done` },
-    { kind: "title", text: doc.goal ?? "The mission" },
+    { kind: "ep", text: translate("mcNode.crawl.episode", { title, done: doc.tasks.length - open.length, total: doc.tasks.length }) },
+    { kind: "title", text: doc.goal ?? translate("mcNode.crawl.defaultTitle") },
   ];
   if (doc.context) out.push({ kind: "body", text: doc.context });
   out.push({
     kind: "body",
-    text:
-      open.length === 0
-        ? "Every task on the board is done. The team stands ready for sign-off."
-        : `${open.length === 1 ? "One task remains" : `${open.length} tasks remain`} before the mission is complete:`,
+    text: open.length === 0 ? translate("mcNode.crawl.allDone") : translate("mcNode.crawl.remaining", { count: open.length }),
   });
   for (const t of shown) out.push({ kind: "task", text: `${t.state === "blocked" ? "!" : "◆"} ${t.text}${t.owners.length ? ` — ${t.owners.map((o) => `@${o}`).join(" ")}` : ""}` });
-  if (open.length > shown.length) out.push({ kind: "body", text: `…and ${open.length - shown.length} more.` });
-  out.push({ kind: "end", text: "May the build be green." });
+  if (open.length > shown.length) out.push({ kind: "body", text: translate("mcNode.crawl.more", { count: open.length - shown.length }) });
+  out.push({ kind: "end", text: translate("mcNode.crawl.end") });
   return out;
 }
 
@@ -223,6 +221,7 @@ function runCrawl(c: HTMLCanvasElement, blocks: CrawlBlock[], fonts: { mono: str
  * the end. A real dialog: the briefing is also in the DOM as text for screen readers (the canvas is decor).
  */
 export function Briefing({ doc, title, onClose }: { doc: MissionDoc; title: string; onClose: () => void }) {
+  const t = useT();
   const root = useRef<HTMLDivElement>(null);
   const stars = useRef<HTMLCanvasElement>(null);
   const text = useRef<HTMLCanvasElement>(null);
@@ -254,11 +253,11 @@ export function Briefing({ doc, title, onClose }: { doc: MissionDoc; title: stri
     let dispose = () => {};
     const cs = getComputedStyle(document.documentElement);
     const fonts = { mono: cs.getPropertyValue("--font-mono").trim() || "monospace", display: cs.getPropertyValue("--font-display").trim() || "sans-serif" };
-    const t = setTimeout(() => {
+    const timer = setTimeout(() => {
       if (text.current) dispose = runCrawl(text.current, blocks, fonts, () => done.current());
     }, CRAWL_START_MS);
     return () => {
-      clearTimeout(t);
+      clearTimeout(timer);
       dispose();
     };
   }, [blocks]);
@@ -272,10 +271,10 @@ export function Briefing({ doc, title, onClose }: { doc: MissionDoc; title: stri
   };
 
   return (
-    <div ref={root} className="mc-crawl" role="dialog" aria-modal="true" aria-label="Mission briefing" tabIndex={-1} onKeyDown={onKey} onClick={onClose}>
+    <div ref={root} className="mc-crawl" role="dialog" aria-modal="true" aria-label={t("mcNode.crawl.aria")} tabIndex={-1} onKeyDown={onKey} onClick={onClose}>
       <canvas ref={stars} className="mc-crawl-stars" aria-hidden="true" />
       <p className="mc-crawl-intro" aria-hidden="true">
-        A short time ago, in a terminal not so far away….
+        {t("mcNode.crawl.intro")}
       </p>
       <div className="mc-crawl-logo" aria-hidden="true">
         <span>mission</span>
@@ -288,7 +287,7 @@ export function Briefing({ doc, title, onClose }: { doc: MissionDoc; title: stri
         ))}
       </div>
       <div className="mc-crawl-skip" aria-hidden="true">
-        click or esc to skip
+        {t("mcNode.crawl.skip")}
       </div>
     </div>
   );

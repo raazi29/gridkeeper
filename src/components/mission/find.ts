@@ -1,6 +1,7 @@
 // Mission Control find (Ctrl/⌘+F), pure (unit-tested): agents by name, role, lane and branch; mission tasks by
 // text and @owner. Every word of the query must match (case-insensitive); "@x" matches an owner / name slug.
 
+import { t as tr } from "../../i18n";
 import { slugify, type TaskState } from "../../lib/missionDoc";
 import type { SessionId } from "../../lib/types";
 
@@ -56,7 +57,7 @@ export function findHits(query: string, agents: readonly FindAgent[], tasks: rea
     );
   for (const t of tasks)
     if (ok(taskText(t)))
-      found.push({ kind: "task", key: `t:${t.line}`, line: t.line, label: t.text, state: t.state, detail: [t.state, ...t.owners.map((o) => `@${o}`)].join(" · ") });
+      found.push({ kind: "task", key: `t:${t.line}`, line: t.line, label: t.text, state: t.state, detail: [tr("mc.find.taskState", { state: t.state }), ...t.owners.map((o) => `@${o}`)].join(" · ") });
   return found;
 }
 

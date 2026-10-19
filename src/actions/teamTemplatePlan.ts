@@ -9,7 +9,11 @@
 // run). Nothing in a template is ever executed; prompts are only typed into agents after the user has seen
 // them in the preview and confirmed. Account / profile ids, args, env and paths are never exported.
 // Schema reference: docs/team-templates.md.
+//
+// Check errors / warnings are UI text (translated when produced); template content (names, prompts, mission
+// text, defaults written into a template) stays English: it is written to files and typed into agents.
 
+import { t } from "../i18n";
 import type { LayoutPreset } from "../lib/types";
 import { addTask, newMissionText, parseMission, slugify } from "../lib/missionDoc";
 import { normalizeRole } from "../lib/roles";
@@ -166,14 +170,14 @@ export function cleanText(v: unknown, max: number, multiline = false): string {
   return clip(redactText(s).trim(), max);
 }
 
-function cleanTags(v: unknown, max: number, warn: (w: string) => void, what: string): string[] {
+function cleanTags(v: unknown, max: number, warn: (w: string) => void, what: "tags" | "noteTags"): string[] {
   if (!Array.isArray(v)) return [];
   const out: string[] = [];
-  for (const t of v) {
-    const s = slugify(typeof t === "string" ? t : "").slice(0, TEAM_LIMITS.tag);
+  for (const tag of v) {
+    const s = slugify(typeof tag === "string" ? tag : "").slice(0, TEAM_LIMITS.tag);
     if (s && !out.includes(s)) out.push(s);
   }
-  if (out.length > max) warn(`Only the first ${max} ${what} were kept.`);
+  if (out.length > max) warn(t(what === "tags" ? "teams.check.tagsKept" : "teams.check.noteTagsKept", { max }));
   return out.slice(0, max);
 }
 
@@ -206,16 +210,16 @@ export function compareVersions(a: string, b: string): number {
 
 /** Accept a built-in kind or a known catalog preset; refuse commands and anything unknown. Pure. */
 export function checkAgentKey(raw: unknown, known: ReadonlySet<string>): { key: string } | { reason: string } {
-  if (typeof raw !== "string" || !raw.trim()) return { reason: "no agent kind" };
+  if (typeof raw !== "string" || !raw.trim()) return { reason: t("teams.check.noAgentKind") };
   const k = raw.trim();
   if (k === "claude" || k === "codex" || k === "powershell") return { key: k };
-  if (k.startsWith("command:")) return { reason: "runs a named program, which templates may not do" };
+  if (k.startsWith("command:")) return { reason: t("teams.check.agentCommand") };
   if (k.startsWith("preset:")) {
     const id = k.slice(7).toLowerCase();
     if (/^[a-z0-9-]{1,32}$/.test(id) && known.has(id)) return { key: `preset:${id}` };
-    return { reason: `unknown agent tool “${clean1(id)}”` };
+    return { reason: t("teams.check.agentUnknownTool", { name: clean1(id) }) };
   }
-  return { reason: `unknown agent kind “${clean1(k)}”` };
+  return { reason: t("teams.check.agentUnknownKind", { name: clean1(k) }) };
 }
 
 const clean1 = (s: string) => cleanText(s, 32);
@@ -242,14 +246,13 @@ const NOTE_KEYS = ["title", "kind", "tags", "body"];
 
 /** Parse + sanitize the text of a template file. Never throws. */
 export function parseTeamTemplate(text: unknown, opts: CheckOptions = {}): TemplateCheck {
-  if (typeof text !== "string" || !text.trim()) return { template: null, errors: ["The file is empty."], warnings: [] };
-  if (text.length > TEAM_LIMITS.fileChars)
-    return { template: null, errors: [`The file is larger than ${TEAM_LIMITS.fileChars >> 10} KB; team templates are small text files.`], warnings: [] };
+  if (typeof text !== "string" || !text.trim()) return { template: null, errors: [t("teams.check.empty")], warnings: [] };
+  if (text.length > TEAM_LIMITS.fileChars) return { template: null, errors: [t("teams.check.tooLarge", { kb: TEAM_LIMITS.fileChars >> 10 })], warnings: [] };
   let raw: unknown;
   try {
     raw = JSON.parse(text.replace(/^﻿/, ""));
   } catch (e) {
-    return { template: null, errors: [`Not valid JSON: ${cleanText(e instanceof Error ? e.message : String(e), 160)}`], warnings: [] };
+    return { template: null, errors: [t("teams.check.invalidJson", { error: cleanText(e instanceof Error ? e.message : String(e), 160) })], warnings: [] };
   }
   return sanitizeTeamTemplate(raw, opts);
 }
@@ -262,11 +265,11 @@ export function sanitizeTeamTemplate(raw: unknown, opts: CheckOptions = {}): Tem
     if (!warnings.includes(w)) warnings.push(w);
   };
   const fail = (e: string): TemplateCheck => ({ template: null, errors: [...errors, e], warnings });
-  if (!isObj(raw)) return fail("A team template is a JSON object.");
-  if (raw.format !== TEAM_FORMAT) return fail(`Not a Gridkeeper team template (expected "format": "${TEAM_FORMAT}").`);
+  if (!isObj(raw)) return fail(t("teams.check.notObject"));
+  if (raw.format !== TEAM_FORMAT) return fail(t("teams.check.wrongFormat", { expected: TEAM_FORMAT }));
   const version = raw.version;
-  if (typeof version !== "number" || !Number.isInteger(version) || version < 1) return fail("The template has no valid schema version.");
-  if (version > TEAM_SCHEMA_VERSION) return fail(`This template uses schema version ${version}; this Gridkeeper reads version ${TEAM_SCHEMA_VERSION}. Update Gridkeeper to import it.`);
+  if (typeof version !== "number" || !Number.isInteger(version) || version < 1) return fail(t("teams.check.noVersion"));
+  if (version > TEAM_SCHEMA_VERSION) return fail(t("teams.check.newerVersion", { version, supported: TEAM_SCHEMA_VERSION }));
 
   const dropped = new Set<string>();
   const noteDropped = (keys: string[]) => keys.forEach((k) => dropped.add(k));
@@ -276,14 +279,14 @@ export function sanitizeTeamTemplate(raw: unknown, opts: CheckOptions = {}): Tem
   const m = isObj(raw.meta) ? raw.meta : {};
   noteDropped(extraKeys(m, META_KEYS));
   const name = cleanText(m.name, TEAM_LIMITS.name);
-  if (!name) return fail("The template has no name (meta.name).");
+  if (!name) return fail(t("teams.check.noName"));
   const authorRaw = typeof m.author === "string" ? m.author.trim().replace(/^@/, "") : "";
   const author = /^[A-Za-z0-9_.-]{1,39}$/.test(authorRaw) ? authorRaw : null;
-  if (authorRaw && !author) warn("The author handle was not a plain handle and was left out.");
+  if (authorRaw && !author) warn(t("teams.check.badAuthor"));
   let minVersion = typeof m.minVersion === "string" && VERSION_RE.test(m.minVersion.trim()) ? m.minVersion.trim() : TEAM_MIN_APP_VERSION;
   if (compareVersions(minVersion, TEAM_MIN_APP_VERSION) < 0) minVersion = TEAM_MIN_APP_VERSION;
   if (opts.appVersion && compareVersions(opts.appVersion, minVersion) < 0)
-    warn(`Made for Gridkeeper ${minVersion} or newer; this is ${cleanText(opts.appVersion, 20)}. Some parts may not work.`);
+    warn(t("teams.check.minVersion", { min: minVersion, version: cleanText(opts.appVersion, 20) }));
   const meta: TeamMeta = {
     name,
     description: cleanText(m.description, TEAM_LIMITS.description),
@@ -295,7 +298,7 @@ export function sanitizeTeamTemplate(raw: unknown, opts: CheckOptions = {}): Tem
   // formation
   const known = new Set<string>([...KNOWN_PRESETS, ...(opts.knownPresets ?? []).map((p) => p.toLowerCase())]);
   const f = isObj(raw.formation) ? raw.formation : null;
-  if (!f || !Array.isArray(f.groups)) return fail("The template has no formation (formation.groups).");
+  if (!f || !Array.isArray(f.groups)) return fail(t("teams.check.noFormation"));
   noteDropped(extraKeys(f, ["groups"]));
   const groups: TeamGroup[] = [];
   let total = 0;
@@ -311,7 +314,7 @@ export function sanitizeTeamTemplate(raw: unknown, opts: CheckOptions = {}): Tem
       const role = normalizeRole(typeof s.role === "string" ? s.role : null) ?? "";
       const agent = checkAgentKey(s.agent, known);
       if ("reason" in agent) {
-        warn(`Skipped a ${role || "session"} slot: ${agent.reason}.`);
+        warn(role ? t("teams.check.skippedSlot", { role, reason: agent.reason }) : t("teams.check.skippedSessionSlot", { reason: agent.reason }));
         continue;
       }
       if (total >= TEAM_LIMITS.slots) {
@@ -328,11 +331,12 @@ export function sanitizeTeamTemplate(raw: unknown, opts: CheckOptions = {}): Tem
     }
     if (!slots.length) continue;
     const layout = LAYOUTS.includes(g.layout as LayoutPreset) ? (g.layout as LayoutPreset) : "grid";
+    // Template content (becomes the group's name): stays English.
     groups.push({ name: cleanText(g.name, TEAM_LIMITS.groupName) || `Group ${groups.length + 1}`, layout, slots });
   }
   if (f.groups.length > TEAM_LIMITS.groups) capped = true;
-  if (capped) warn(`Teams are capped at ${TEAM_LIMITS.groups} groups, ${TEAM_LIMITS.slotsPerGroup} sessions per group and ${TEAM_LIMITS.slots} sessions in all; the rest was left out.`);
-  if (!groups.length) return fail("The template has no sessions Gridkeeper can start.");
+  if (capped) warn(t("teams.check.capped", { groups: TEAM_LIMITS.groups, perGroup: TEAM_LIMITS.slotsPerGroup, slots: TEAM_LIMITS.slots }));
+  if (!groups.length) return fail(t("teams.check.noSessions"));
 
   const roleKeys = new Set(groups.flatMap((g) => g.slots.map((s) => roleKeyOf(s.role))));
   const ownerTokens = new Set<string>([...roleKeys, "all"]);
@@ -345,7 +349,7 @@ export function sanitizeTeamTemplate(raw: unknown, opts: CheckOptions = {}): Tem
     for (const [k, v] of Object.entries(raw.prompts)) {
       const key = normalizeRole(k);
       if (!key || !roleKeys.has(key)) {
-        warn(`Ignored a starter prompt for “${clean1(k)}”, which is not a role in this team.`);
+        warn(t("teams.check.promptIgnored", { role: clean1(k) }));
         continue;
       }
       const text = cleanText(v, TEAM_LIMITS.prompt, true);
@@ -360,11 +364,11 @@ export function sanitizeTeamTemplate(raw: unknown, opts: CheckOptions = {}): Tem
   noteDropped(extraKeys(mr, MISSION_KEYS));
   const tasks: TeamTask[] = [];
   if (Array.isArray(mr.tasks)) {
-    if (mr.tasks.length > TEAM_LIMITS.tasks) warn(`Only the first ${TEAM_LIMITS.tasks} tasks were kept.`);
-    for (const t of mr.tasks.slice(0, TEAM_LIMITS.tasks)) {
-      const tt = typeof t === "string" ? { text: t, owners: [] } : isObj(t) ? t : null;
+    if (mr.tasks.length > TEAM_LIMITS.tasks) warn(t("teams.check.tasksKept", { max: TEAM_LIMITS.tasks }));
+    for (const task of mr.tasks.slice(0, TEAM_LIMITS.tasks)) {
+      const tt = typeof task === "string" ? { text: task, owners: [] } : isObj(task) ? task : null;
       if (!tt) continue;
-      if (isObj(t)) noteDropped(extraKeys(t, TASK_KEYS));
+      if (isObj(task)) noteDropped(extraKeys(task, TASK_KEYS));
       // Owner tokens typed into the text are moved into `owners`; boxes / bullets are stripped.
       const inline: string[] = [];
       const text = cleanText(tt.text, TEAM_LIMITS.taskText)
@@ -382,7 +386,7 @@ export function sanitizeTeamTemplate(raw: unknown, opts: CheckOptions = {}): Tem
         const slug = slugify(typeof o === "string" ? o.replace(/^@/, "") : "");
         if (!slug || owners.includes(slug)) continue;
         if (!ownerTokens.has(slug) && !ownerTokens.has(slug.replace(/s$/, ""))) {
-          warn(`Dropped task owner “@${clean1(slug)}”: no such role or session in this team.`);
+          warn(t("teams.check.ownerDropped", { owner: clean1(slug) }));
           continue;
         }
         owners.push(slug);
@@ -399,23 +403,23 @@ export function sanitizeTeamTemplate(raw: unknown, opts: CheckOptions = {}): Tem
   // brain notes
   const brain: BrainNote[] = [];
   if (Array.isArray(raw.brain)) {
-    if (raw.brain.length > TEAM_LIMITS.notes) warn(`Only the first ${TEAM_LIMITS.notes} brain notes were kept.`);
+    if (raw.brain.length > TEAM_LIMITS.notes) warn(t("teams.check.notesKept", { max: TEAM_LIMITS.notes }));
     for (const b of raw.brain.slice(0, TEAM_LIMITS.notes)) {
       if (!isObj(b)) continue;
       noteDropped(extraKeys(b, NOTE_KEYS));
       const title = cleanText(b.title, TEAM_LIMITS.noteTitle);
       const body = cleanText(b.body, TEAM_LIMITS.noteBody, true);
       if (!title || !body) continue;
-      brain.push({ title, kind: slugify(typeof b.kind === "string" ? b.kind : "").slice(0, TEAM_LIMITS.noteKind) || "convention", tags: cleanTags(b.tags, TEAM_LIMITS.tags, warn, "note tags"), body });
+      brain.push({ title, kind: slugify(typeof b.kind === "string" ? b.kind : "").slice(0, TEAM_LIMITS.noteKind) || "convention", tags: cleanTags(b.tags, TEAM_LIMITS.tags, warn, "noteTags"), body });
     }
   }
 
   const leadControl: LeadMode = LEAD_MODES.includes(raw.leadControl as LeadMode) ? (raw.leadControl as LeadMode) : "off";
-  if (raw.leadControl !== undefined && raw.leadControl !== leadControl) warn("Unknown lead control mode; using off.");
+  if (raw.leadControl !== undefined && raw.leadControl !== leadControl) warn(t("teams.check.unknownLead"));
 
   if (dropped.size) {
     const list = [...dropped];
-    warn(`Ignored fields that are not part of a team template: ${list.slice(0, 10).join(", ")}${list.length > 10 ? ", …" : ""}.`);
+    warn(t("teams.check.ignoredFields", { fields: `${list.slice(0, 10).join(", ")}${list.length > 10 ? ", …" : ""}` }));
   }
   return {
     template: { format: TEAM_FORMAT, version: TEAM_SCHEMA_VERSION, meta, formation: { groups }, prompts, mission, brain, leadControl },
@@ -437,6 +441,7 @@ export function teamTemplateFileName(name: string): string {
 // ---- export -------------------------------------------------------------------------------------------
 
 /** Default starter prompt per role (placeholders filled at import). Short and concrete. */
+// Agent-facing: stays English (typed into agents / written to files).
 export function defaultRolePrompt(role: string): string {
   switch (normalizeRole(role)) {
     case "lead":
@@ -521,6 +526,7 @@ export function teamTemplateFrom(src: ExportSource): TemplateCheck {
     formation: { groups },
     prompts,
     mission: {
+      // Template content (written to the file): stays English.
       goalHint: src.goalHint ?? "Describe the goal in one line",
       context: src.context ?? "",
       tasks: src.missionText ? tasksFromMission(src.missionText, src.team ?? []) : [],
@@ -562,6 +568,7 @@ export interface PromptContext {
 }
 
 /** "@lead, @builder-1 (builder), @builder-2 (builder)" — everyone but the role's single member (itself). */
+// Agent-facing: stays English (typed into agents / written to files).
 export function teammatesText(role: string, team: readonly { name: string; role: string | null }[]): string {
   const key = roleKeyOf(role);
   const same = team.filter((m) => roleKeyOf(m.role) === key).length;

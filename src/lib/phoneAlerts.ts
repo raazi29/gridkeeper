@@ -8,6 +8,9 @@
 // lead-control proposals that start waiting for the user, and a mission board whose last task gets checked off.
 // The last two are watched here (installPhoneAlerts); a mission board is only known while something holds it
 // (Mission Control open, or lead control on for that folder).
+//
+// The alert title and message are translated into the UI language: they are shown to the user only, as a push
+// notification on their own phone (never typed into an agent or written to a project file).
 
 import { getNotif } from "../actions/notifyPrefs";
 import { inQuietHours } from "../actions/notifyRules";
@@ -15,6 +18,7 @@ import { useApp } from "../store/appStore";
 import { useLeadControl } from "../store/leadControl";
 import { dirKey, useMissionDocs, type MissionEntry } from "../store/missionDoc";
 import { actionToast } from "../store/uiStore";
+import { t } from "../i18n";
 import { errorMessage, ipc } from "./ipc";
 import type { MissionDoc } from "./missionDoc";
 import type { NotificationSettings, PhoneAlert, PhoneConfig, PhoneEventKind, SessionId } from "./types";
@@ -72,31 +76,33 @@ export function phoneSkipReason(cfg: PhoneConfig, ev: PhoneEvent, ctx: PhoneCont
 /** Generic text only: the event carries names, never output, and the names are used only when allowed. */
 export function buildPhoneAlert(cfg: PhoneConfig, ev: PhoneEvent): PhoneAlert {
   const who = cfg.includeNames && ev.paneName ? ev.paneName : null;
-  const where = cfg.includeNames && ev.workspaceName ? ` · ${ev.workspaceName}` : "";
+  const workspace = cfg.includeNames && ev.workspaceName ? ev.workspaceName : null;
+  const where = workspace ? ` · ${workspace}` : "";
   let title: string;
   let message: string;
   switch (ev.kind) {
     case "needsInput":
-      title = `${who ?? "An agent"} needs you${where}`;
-      message = "Waiting for your input or a permission answer.";
+      title = (who ? t("phone.alert.needsInputTitle", { who }) : t("phone.alert.needsInputTitleAnon")) + where;
+      message = t("phone.alert.needsInputMessage");
       break;
     case "error":
-      title = `${who ?? "An agent"} stopped with an error${where}`;
-      message = "Open Gridkeeper to see what happened.";
+      title = (who ? t("phone.alert.errorTitle", { who }) : t("phone.alert.errorTitleAnon")) + where;
+      message = t("phone.alert.errorMessage");
       break;
     case "done":
-      title = `${who ?? "An agent"} finished${where}`;
-      message = "It went quiet after working.";
+      title = (who ? t("phone.alert.doneTitle", { who }) : t("phone.alert.doneTitleAnon")) + where;
+      message = t("phone.alert.doneMessage");
       break;
     case "proposal":
-      title = `Lead proposal waiting${where}`;
-      message = who ? `From ${who}. Approve or dismiss it in Mission Control.` : "Approve or dismiss it in Mission Control.";
+      title = t("phone.alert.proposalTitle") + where;
+      message = who ? t("phone.alert.proposalMessageFrom", { who }) : t("phone.alert.proposalMessage");
       break;
     case "missionDone": {
-      const count = ev.total ? ` (${ev.done ?? ev.total}/${ev.total})` : "";
-      const goal = cfg.includeTaskNames && ev.goal ? `: ${ev.goal}` : "";
-      title = `Mission done${goal}${count}`;
-      message = `Every task on the board is checked off${where ? ` in ${ev.workspaceName}` : ""}.`;
+      const goal = cfg.includeTaskNames && ev.goal ? ev.goal : null;
+      const done = ev.done ?? ev.total;
+      if (ev.total) title = goal ? t("phone.alert.missionDoneGoalCount", { goal, done, total: ev.total }) : t("phone.alert.missionDoneCount", { done, total: ev.total });
+      else title = goal ? t("phone.alert.missionDoneGoal", { goal }) : t("phone.alert.missionDone");
+      message = workspace ? t("phone.alert.missionDoneMessageIn", { workspace }) : t("phone.alert.missionDoneMessage");
       break;
     }
   }
@@ -108,10 +114,10 @@ export function buildPhoneAlert(cfg: PhoneConfig, ev: PhoneEvent): PhoneAlert {
 /** Mirrors phone.rs validate_server for inline hints; Rust has the final word. Null = fine. */
 export function serverProblem(raw: string): string | null {
   const s = raw.trim().replace(/\/+$/, "");
-  if (!s) return "Enter the ntfy server address, e.g. https://ntfy.sh";
+  if (!s) return t("phone.serverEmpty");
   const m = /^(https?):\/\/([^/?#@\s]+)(\/[A-Za-z0-9\-._~/%]*)?$/.exec(s);
-  if (!m) return "Use https://host[:port][/path], with no spaces, ?, # or user names";
-  if (m[1] === "http" && !isPrivateHost(m[2].replace(/:\d+$/, ""))) return "Plain http:// is only allowed on your local network; use https://";
+  if (!m) return t("phone.serverInvalid");
+  if (m[1] === "http" && !isPrivateHost(m[2].replace(/:\d+$/, ""))) return t("phone.serverPlainHttp");
   return null;
 }
 
@@ -173,7 +179,7 @@ export async function notifyPhone(ev: PhoneEvent): Promise<void> {
     if (phoneSkipReason(cfg, ev, { windowActive: windowActive(), minutesOfDay: d.getHours() * 60 + d.getMinutes(), notif: getNotif() })) return;
     const r = await ipc.phoneAlertSend(buildPhoneAlert(cfg, ev));
     if (r.outcome === "failed" && r.firstFailure) {
-      actionToast({ kind: "warn", message: "Phone alert not delivered", detail: `${r.detail ?? "Unknown error"}. Details in Diagnostics; alerts pause for a while.` });
+      actionToast({ kind: "warn", message: t("phone.toast.notDelivered"), detail: t("phone.toast.notDeliveredDetail", { error: r.detail ?? t("phone.toast.unknownError") }) });
     }
   } catch (e) {
     ipc.log("warn", `phone alert failed: ${errorMessage(e)}`);
