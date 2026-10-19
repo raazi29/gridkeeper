@@ -7,6 +7,7 @@
 
 import { useLayoutEffect, useRef, useState } from "react";
 import type { Pulse } from "./derive";
+import { layoutRect } from "./layout";
 
 export interface LinkSpec {
   key: string;
@@ -45,8 +46,13 @@ export function Links({ links, version, pulses = [], onPulseEnd }: { links: Link
     let frame = 0;
     const measure = () => {
       frame = 0;
-      const base = root.getBoundingClientRect();
-      const rect = (id: string) => root.querySelector<HTMLElement>(`[data-node="${CSS.escape(id)}"]`)?.getBoundingClientRect();
+      // Layout coordinates inside the canvas: the same at every zoom, and unaffected by running transforms
+      // (FLIP, the entry assembly).
+      const rect = (id: string) => {
+        const el = root.querySelector<HTMLElement>(`[data-node="${CSS.escape(id)}"]`);
+        const r = el ? layoutRect(el, root) : null;
+        return r ? { left: r.x, top: r.y, right: r.x + r.w, bottom: r.y + r.h, width: r.w } : null;
+      };
       const next: Path[] = [];
       for (const l of links) {
         const a = rect(l.from);
@@ -58,8 +64,8 @@ export function Links({ links, version, pulses = [], onPulseEnd }: { links: Link
           key: l.key,
           cls: l.cls,
           d: beside
-            ? linkPathH({ x: a.right - base.left, y: Math.max(a.top, b.top) + 24 - base.top }, { x: b.left - base.left, y: Math.max(a.top, b.top) + 24 - base.top })
-            : linkPath({ x: a.left + a.width / 2 - base.left, y: a.bottom - base.top }, { x: b.left + b.width / 2 - base.left, y: b.top - base.top }),
+            ? linkPathH({ x: a.right, y: Math.max(a.top, b.top) + 24 }, { x: b.left, y: Math.max(a.top, b.top) + 24 })
+            : linkPath({ x: a.left + a.width / 2, y: a.bottom }, { x: b.left + b.width / 2, y: b.top }),
         });
       }
       setPaths((prev) => (prev.length === next.length && prev.every((p, i) => p.d === next[i].d && p.cls === next[i].cls && p.key === next[i].key) ? prev : next));

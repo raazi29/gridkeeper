@@ -3,7 +3,8 @@
 // task (from .gridkeeper/mission.md), last output line, real output-rate sparkline and CPU/RAM (shared
 // diagnostics poll). Rows are the same for every card of a workspace (placeholders where a value is missing),
 // so cards line up.
-// Hover / selection shows a toolbar (jump, restart, stop/start, mute, close) in place of the role tag; right-click
+// A click selects (Ctrl/⌘ toggles, Shift ranges: Mission Control's onPick), a double-click jumps to the pane.
+// Hover / selection shows a toolbar (jump, restart, stop/start, mute, pin, close) in place of the role tag; right-click
 // opens the shared session menu; a session that needs you gets an "Answer →" call to action.
 
 import { memo, useEffect, useRef, useState, type DragEvent, type MouseEvent } from "react";
@@ -33,6 +34,8 @@ import { LAMP_TEXT, sessionStatus, type DropSide } from "./derive";
 import { beginSessionDrag, currentTaskDrag, dragHas, endSessionDrag, endTaskDrag, SESSION_MIME, TASK_MIME, useMcDragKind } from "./mcDrag";
 import { RoleTag, roleStyle } from "./RoleTag";
 import { Sparkline } from "./Sparkline";
+import { IcPin } from "./mcIcons";
+import { T } from "./mcText";
 import { useMissionTails } from "./useOutputTails";
 
 export const SessionCard = memo(function SessionCard({
@@ -47,6 +50,12 @@ export const SessionCard = memo(function SessionCard({
   board = false,
   diag = false,
   dropSide,
+  onPick,
+  multi = false,
+  dim = false,
+  hit = false,
+  pinned = false,
+  onPin,
 }: {
   id: SessionId;
   selected: boolean;
@@ -64,6 +73,17 @@ export const SessionCard = memo(function SessionCard({
   diag?: boolean;
   /** A dragged card would land on this side of this card (insertion bar). */
   dropSide?: DropSide | null;
+  /** Click (selection with Ctrl/⌘ / Shift); without it a click jumps. Double-click always jumps. */
+  onPick?: (id: SessionId, e: MouseEvent) => void;
+  /** Part of a multi-selection. */
+  multi?: boolean;
+  /** Outside the spotlight / not matching the filter chips. */
+  dim?: boolean;
+  /** The current find hit. */
+  hit?: boolean;
+  /** Pinned to the top of its lane. */
+  pinned?: boolean;
+  onPin?: (id: SessionId) => void;
 }) {
   const meta = useApp(
     useShallow((s) => {
@@ -144,6 +164,9 @@ export const SessionCard = memo(function SessionCard({
     dragging ? "is-dragging" : "",
     taskDragging ? "is-assignable" : "",
     assignHover ? "is-assign-target" : "",
+    multi ? "is-multi" : "",
+    dim ? "is-dim" : "",
+    hit ? "is-hit" : "",
   ]
     .filter(Boolean)
     .join(" ");
@@ -213,7 +236,16 @@ export const SessionCard = memo(function SessionCard({
       onDragOver={onDragOver}
       onDragLeave={onDragLeave}
       onDrop={onDrop}
-      onClick={() => !editing && onJump(id)}
+      data-pinned={pinned || undefined}
+      onClick={(e) => {
+        if (editing) return;
+        if (onPick) onPick(id, e);
+        else onJump(id);
+      }}
+      onDoubleClick={(e) => {
+        if (editing || !onPick || (e.target as HTMLElement).closest("button, input")) return;
+        onJump(id);
+      }}
       onFocus={() => onSelect(id)}
       onContextMenu={(e) => {
         if ((e.target as HTMLElement).closest("input")) return;
@@ -250,6 +282,11 @@ export const SessionCard = memo(function SessionCard({
           />
         ) : (
           <span className="mc-card-name">{meta.name}</span>
+        )}
+        {pinned && (
+          <span className="mc-card-pin" title={T.card.pinned}>
+            <IcPin size={10} />
+          </span>
         )}
         {muted && (
           <span className="mc-card-muted" title="Notifications muted">
@@ -319,7 +356,7 @@ export const SessionCard = memo(function SessionCard({
       )}
       {/* mousedown keeps focus on the card, so arrow / letter keys keep working after a toolbar click */}
       <div className="mc-card-tools" role="toolbar" aria-label={`${meta.name} actions`} onMouseDown={(e) => e.preventDefault()}>
-        <button type="button" tabIndex={-1} title="Jump to pane (Enter)" aria-label="Jump to pane" onClick={act(() => onJump(id))}>
+        <button type="button" tabIndex={-1} title="Jump to pane (Enter, double-click)" aria-label="Jump to pane" onClick={act(() => onJump(id))}>
           <IconExternal size={11} />
         </button>
         <button
@@ -351,6 +388,11 @@ export const SessionCard = memo(function SessionCard({
         >
           {muted ? <IconBellOff size={11} /> : <IconBell size={11} />}
         </button>
+        {onPin && (
+          <button type="button" tabIndex={-1} title={pinned ? T.card.unpin : T.card.pin} aria-label={pinned ? T.card.unpin : T.card.pin} aria-pressed={pinned} onClick={act(() => onPin(id))}>
+            <IcPin size={11} />
+          </button>
+        )}
         <button type="button" tabIndex={-1} className="is-danger" title={st.live ? "Close (stops the process)" : "Close"} aria-label="Close session" onClick={act(() => void confirmCloseSession(id))}>
           <IconClose size={11} />
         </button>
