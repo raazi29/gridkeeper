@@ -43,6 +43,7 @@ import { buildSessionMenu, confirmRestart, confirmStop } from "../menus/sessionM
 import { QuickLaunchButton } from "../QuickLaunch";
 import { ReplayHeaderControls } from "../replay/ReplayControls";
 import { CostMeterHint, WorkspaceCost } from "../MeterChip";
+import { SpendToday } from "../spend/SpendToday";
 import { FlightLogChip } from "../flightlog/FlightLogChip";
 import { anchorOf, useContextMenu, type MenuItem, type MenuOpenEvent } from "../ui/Menu";
 import { copyText, revealPath } from "../util/pick";
@@ -871,6 +872,7 @@ export function MissionControl() {
             out [ <b>{formatRate(outTotal)}</b> ]
           </span>
           <WorkspaceCost ids={allIds} />
+          {wsId && <SpendToday workspaceId={wsId} variant="mc" />}
           <CostMeterHint ids={allIds} variant="mc" />
           <span className="mc-spacer" />
           <span

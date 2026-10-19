@@ -23,6 +23,7 @@ import { withSaber } from "../theme/saber";
 import { THEMES, getTheme } from "../theme/themes";
 import { HyperspaceToggle, MissionFxToggle, SaberSettings, ThemeEffects } from "./AppearanceExtras";
 import { ThemeCard } from "./ThemeCard";
+import { ClaudeHooksSetting, SpendGuardSettings } from "./spend/SpendGuardSettings";
 
 type Section = "appearance" | "terminal" | "agents" | "keys" | "interface" | "notifications";
 const SECTIONS: { id: Section; label: string }[] = [
@@ -331,6 +332,8 @@ function AgentsSection() {
         );
       })}
       <CostMeterSetting />
+      <ClaudeHooksSetting />
+      <SpendGuardSettings />
     </div>
   );
 }
