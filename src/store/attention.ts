@@ -4,6 +4,7 @@
 // event wiring lives in actions/attentionNotify.ts.
 
 import { create } from "zustand";
+import { t, type MessageKey } from "../i18n";
 import type { SessionAttention, SessionId } from "../lib/types";
 
 export type AttnState = "working" | "waiting" | "done" | "error" | "idle";
@@ -13,6 +14,11 @@ export interface SessionAttn {
   /** Something happened the user has not looked at yet. */
   unread: boolean;
   lastMessage?: string;
+  /**
+   * `lastMessage` was produced by the process lifecycle (exit / failed to start / stopped), not by the program.
+   * Lets the activity log skip the echo without matching (translated) text.
+   */
+  lifecycle?: boolean;
   /** ms epoch of the last change. */
   at: number;
 }
@@ -46,11 +52,18 @@ const DONE = new Set(["done", "complete", "completed", "finished", "success"]);
 const ERROR = new Set(["error", "failed", "failure"]);
 const QUIET = new Set(["idle", "clear", "ready"]);
 
-const REASON_TEXT: Record<string, string> = {
-  permission: "Waiting for permission",
-  question: "Has a question for you",
-  auth: "Needs you to sign in",
+// Generated messages are in the UI language (shown in Fleet, Comms, notifications); program-supplied titles /
+// bodies are shown as the program sent them.
+const REASON_TEXT: Record<string, MessageKey> = {
+  permission: "attention.reason.permission",
+  question: "attention.reason.question",
+  auth: "attention.reason.auth",
 };
+
+function reasonText(reason: string | undefined): string | undefined {
+  const key = reason ? REASON_TEXT[reason] : undefined;
+  return key ? t(key) : undefined;
+}
 
 export function formatDuration(ms: number): string {
   const s = Math.max(0, Math.round(ms / 1000));
@@ -72,23 +85,26 @@ function joinText(title?: string, body?: string): string | undefined {
 export function reduceAttention(prev: SessionAttn | undefined, input: AttnInput, seen: boolean, now: number): Reduction {
   const base: SessionAttn = prev ?? { state: "idle", unread: false, at: now };
   const flag = (unread: boolean) => (seen ? false : unread || base.unread);
-  const alertState = (state: AttnState, kind: Alert["kind"], category: Alert["category"], message: string, title?: string): Reduction => ({
-    next: { state, unread: flag(true), lastMessage: message, at: now },
+  const alertState = (state: AttnState, kind: Alert["kind"], category: Alert["category"], message: string, title?: string, lifecycle?: boolean): Reduction => ({
+    next: lifecycle ? { state, unread: flag(true), lastMessage: message, lifecycle: true, at: now } : { state, unread: flag(true), lastMessage: message, at: now },
     alert: { category, kind, message, title, source: input.type === "attention" ? input.ev.kind : input.type === "start" ? undefined : input.type },
   });
   const quiet = (state: AttnState, lastMessage = base.lastMessage): Reduction => ({
-    next: state === base.state && lastMessage === base.lastMessage ? base : { ...base, state, lastMessage, at: now },
+    next:
+      state === base.state && lastMessage === base.lastMessage
+        ? base
+        : { ...base, state, lastMessage, lifecycle: lastMessage === base.lastMessage ? base.lifecycle : undefined, at: now },
   });
 
   switch (input.type) {
     case "start":
       return { next: { state: "idle", unread: false, at: now } };
     case "failed":
-      return alertState("error", "error", "error", `Failed to start: ${input.message}`);
+      return alertState("error", "error", "error", t("attention.msg.failedToStart", { error: input.message }), undefined, true);
     case "exit": {
-      if (input.userStopped) return { next: { state: "idle", unread: base.unread, lastMessage: "Stopped", at: now } };
-      if (input.code !== null && input.code !== 0) return alertState("error", "error", "error", `Exited with code ${input.code}`);
-      return alertState("done", "done", "idle", input.code === 0 ? "Exited (code 0)" : "Exited");
+      if (input.userStopped) return { next: { state: "idle", unread: base.unread, lastMessage: t("attention.msg.stopped"), lifecycle: true, at: now } };
+      if (input.code !== null && input.code !== 0) return alertState("error", "error", "error", t("attention.msg.exitedCode", { code: input.code }), undefined, true);
+      return alertState("done", "done", "idle", input.code === 0 ? t("attention.msg.exitedZero") : t("attention.msg.exited"), undefined, true);
     }
     case "attention": {
       const ev = input.ev;
@@ -98,23 +114,23 @@ export function reduceAttention(prev: SessionAttn | undefined, input: AttnInput,
         case "idle":
           // A late idle never overwrites "needs input".
           if (base.state === "waiting") return { next: base };
-          if (ev.status === "done") return alertState("done", "done", "idle", `Finished after ${formatDuration(ev.activeMs ?? 0)}`);
+          if (ev.status === "done") return alertState("done", "done", "idle", t("attention.msg.finishedAfter", { duration: formatDuration(ev.activeMs ?? 0) }));
           return base.state === "working" ? quiet("idle") : { next: base };
         case "bell":
-          return alertState("waiting", "waiting", "bell", "Needs your attention");
+          return alertState("waiting", "waiting", "bell", t("attention.msg.bell"));
         case "notify":
-          return alertState("waiting", "waiting", "bell", joinText(ev.title, ev.body) ?? "Notification", ev.title);
+          return alertState("waiting", "waiting", "bell", joinText(ev.title, ev.body) ?? t("attention.msg.notification"), ev.title);
         case "status": {
           const st = (ev.status ?? "").toLowerCase();
           const text = joinText(ev.title, ev.body);
           if (WORKING.has(st)) return quiet("working", text ?? base.lastMessage);
           if (WAITING.has(st))
-            return alertState("waiting", "waiting", "bell", text ?? REASON_TEXT[ev.reason ?? ""] ?? "Waiting for you", ev.title);
-          if (DONE.has(st)) return alertState("done", "done", "idle", text ?? "Done", ev.title);
-          if (ERROR.has(st)) return alertState("error", "error", "error", text ?? "Reported an error", ev.title);
+            return alertState("waiting", "waiting", "bell", text ?? reasonText(ev.reason) ?? t("attention.msg.waiting"), ev.title);
+          if (DONE.has(st)) return alertState("done", "done", "idle", text ?? t("attention.msg.done"), ev.title);
+          if (ERROR.has(st)) return alertState("error", "error", "error", text ?? t("attention.msg.reportedError"), ev.title);
           // done / error persist until the user has seen them.
           if (QUIET.has(st)) return quiet(base.unread ? base.state : "idle");
-          return quiet(base.state, text ?? (st ? `Status: ${st}` : base.lastMessage));
+          return quiet(base.state, text ?? (st ? t("attention.msg.status", { status: st }) : base.lastMessage));
         }
       }
     }

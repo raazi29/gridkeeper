@@ -7,6 +7,7 @@ import { useApp } from "../../store/appStore";
 import { isTopModal, popModal, pushModal } from "../../store/uiStore";
 import { focusTerminal } from "../../terminal/registry";
 import { IconClose } from "../icons";
+import { useT } from "../../i18n";
 
 const FOCUSABLE =
   'a[href], button:not([disabled]), input:not([disabled]):not([type="hidden"]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
@@ -32,6 +33,7 @@ export interface ModalProps {
 }
 
 export function Modal({ title, onClose, children, footer, width = 520, placement = "center", className, bare, headerExtra, ariaLabel }: ModalProps) {
+  const t = useT();
   const panel = useRef<HTMLDivElement>(null);
   const idRef = useRef(0);
   const onCloseRef = useRef(onClose);
@@ -119,7 +121,7 @@ export function Modal({ title, onClose, children, footer, width = 520, placement
           <div className="modal-header">
             <div className="modal-title">{title}</div>
             {headerExtra}
-            <button type="button" className="icon-btn icon-btn-sm" aria-label="Close" title="Close (Esc)" onClick={() => onCloseRef.current()}>
+            <button type="button" className="icon-btn icon-btn-sm" aria-label={t("common.close")} title={t("ui.closeEsc")} onClick={() => onCloseRef.current()}>
               <IconClose size={14} />
             </button>
           </div>

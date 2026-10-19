@@ -6,6 +6,7 @@
 //   ArrowRight           open the submenu of a parent item (focus its first item)
 //   Enter / Space        open a parent item's submenu, else activate the item
 //   ArrowLeft            close this submenu level (root: nothing)
+//   (right-to-left documents: ArrowLeft opens and ArrowRight closes, since submenus open to the left)
 //   Escape               close this submenu level (root: close the whole menu)
 //   Tab                  close the whole menu
 //   a printable letter   move to the next enabled item whose label starts with it (type-ahead)
@@ -55,8 +56,9 @@ export function typeaheadIndex(items: readonly NavItem[], from: number, ch: stri
   return -1;
 }
 
-export function menuKey(key: string, items: readonly NavItem[], index: number, depth: number): MenuKeyResult {
+export function menuKey(key: string, items: readonly NavItem[], index: number, depth: number, rtl = false): MenuKeyResult {
   const cur = items[index];
+  if (rtl && (key === "ArrowLeft" || key === "ArrowRight")) key = key === "ArrowLeft" ? "ArrowRight" : "ArrowLeft";
   switch (key) {
     case "ArrowDown":
     case "ArrowUp": {
@@ -109,13 +111,16 @@ export function placeMenu(
   anchor: { x: number; y: number; rect?: { top: number; bottom: number; left: number; right: number } },
   size: { width: number; height: number },
   view: { width: number; height: number },
+  rtl = false,
 ): { left: number; top: number } {
   const maxLeft = Math.max(EDGE, view.width - size.width - EDGE);
   const maxTop = Math.max(EDGE, view.height - size.height - EDGE);
   const clampTop = (t: number) => Math.min(Math.max(EDGE, t), maxTop);
+  const clampLeft = (l: number) => Math.min(Math.max(EDGE, l), maxLeft);
   const r = anchor.rect;
   if (r) {
-    const left = Math.min(Math.max(EDGE, r.left), maxLeft);
+    // Right-to-left: the panel lines up with the button's right edge instead of its left edge.
+    const left = clampLeft(rtl ? r.right - size.width : r.left);
     const below = r.bottom + 2;
     const above = r.top - 2 - size.height;
     if (below + size.height <= view.height - EDGE) return { left, top: below };
@@ -123,7 +128,8 @@ export function placeMenu(
     // Neither side has room for the whole panel: take the roomier side and let the panel scroll.
     return { left, top: clampTop(view.height - r.bottom > r.top ? below : above) };
   }
-  const left = Math.min(Math.max(EDGE, anchor.x), maxLeft);
+  // Right-to-left: a context menu opens to the left of the pointer.
+  const left = clampLeft(rtl ? anchor.x - size.width : anchor.x);
   const top = anchor.y + size.height > view.height - EDGE ? anchor.y - size.height : anchor.y;
   return { left, top: clampTop(top) };
 }

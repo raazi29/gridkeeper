@@ -15,6 +15,7 @@
 // PRIVACY: stored as counts and 8-hex FNV hashes only (project folder, task text, goal, session id):
 // no paths, task text, names or anything else readable. No network, no telemetry.
 
+import { t, type MessageKey } from "../i18n";
 import { normalizeRole } from "./roles";
 import { slugify, type MissionDoc, type Task, type TeamMember } from "./missionDoc";
 
@@ -95,21 +96,30 @@ export function weekday(key: string): number {
 
 export interface Rank {
   id: string;
-  name: string;
+  /** Display name in the UI language (a getter over the catalog). */
+  readonly name: string;
   /** Total completed tasks needed. */
   min: number;
 }
 
+const rank = (id: string, key: MessageKey, min: number): Rank => ({
+  id,
+  min,
+  get name() {
+    return t(key);
+  },
+});
+
 /** Ranks by total completed mission tasks. */
 export const RANKS: readonly Rank[] = [
-  { id: "cadet", name: "Cadet", min: 0 },
-  { id: "pilot", name: "Pilot", min: 5 },
-  { id: "flight-lead", name: "Flight Lead", min: 15 },
-  { id: "wing-commander", name: "Wing Commander", min: 40 },
-  { id: "captain", name: "Captain", min: 100 },
-  { id: "commodore", name: "Commodore", min: 250 },
-  { id: "admiral", name: "Admiral", min: 500 },
-  { id: "fleet-admiral", name: "Fleet Admiral", min: 1000 },
+  rank("cadet", "flightLog.rank.cadet", 0),
+  rank("pilot", "flightLog.rank.pilot", 5),
+  rank("flight-lead", "flightLog.rank.flightLead", 15),
+  rank("wing-commander", "flightLog.rank.wingCommander", 40),
+  rank("captain", "flightLog.rank.captain", 100),
+  rank("commodore", "flightLog.rank.commodore", 250),
+  rank("admiral", "flightLog.rank.admiral", 500),
+  rank("fleet-admiral", "flightLog.rank.fleetAdmiral", 1000),
 ];
 
 export function rankIndex(tasks: number): number {
@@ -156,21 +166,32 @@ export type MedalId =
 
 export interface MedalDef {
   id: MedalId;
-  name: string;
-  criterion: string;
+  /** Name and criterion in the UI language (getters over the catalog). */
+  readonly name: string;
+  readonly criterion: string;
 }
 
+const medal = (id: MedalId, nameKey: MessageKey, criterionKey: MessageKey): MedalDef => ({
+  id,
+  get name() {
+    return t(nameKey);
+  },
+  get criterion() {
+    return t(criterionKey);
+  },
+});
+
 export const MEDALS: readonly MedalDef[] = [
-  { id: "first-jump", name: "First jump", criterion: "Finish a mission: every task on the board done." },
-  { id: "full-squadron", name: "Full squadron", criterion: "5 or more agents complete tasks on one mission." },
-  { id: "clean-landing", name: "Clean landing", criterion: "Finish a recorded mission where every agent that committed also handed off its branch." },
-  { id: "night-shift", name: "Night shift", criterion: "Complete a task between 00:00 and 05:00." },
-  { id: "seven-suns", name: "Seven suns", criterion: "Reach a 7-day streak." },
-  { id: "hyperspace", name: "Hyperspace", criterion: "Complete 10 tasks in one day." },
-  { id: "long-patrol", name: "Long patrol", criterion: "Reach a 30-day streak." },
-  { id: "outer-rim", name: "Outer rim", criterion: "Complete tasks in 5 different projects." },
-  { id: "ten-campaigns", name: "Ten campaigns", criterion: "Finish 10 missions." },
-  { id: "supply-line", name: "Supply line", criterion: "50 commits during missions." },
+  medal("first-jump", "flightLog.medal.firstJump.name", "flightLog.medal.firstJump.criterion"),
+  medal("full-squadron", "flightLog.medal.fullSquadron.name", "flightLog.medal.fullSquadron.criterion"),
+  medal("clean-landing", "flightLog.medal.cleanLanding.name", "flightLog.medal.cleanLanding.criterion"),
+  medal("night-shift", "flightLog.medal.nightShift.name", "flightLog.medal.nightShift.criterion"),
+  medal("seven-suns", "flightLog.medal.sevenSuns.name", "flightLog.medal.sevenSuns.criterion"),
+  medal("hyperspace", "flightLog.medal.hyperspace.name", "flightLog.medal.hyperspace.criterion"),
+  medal("long-patrol", "flightLog.medal.longPatrol.name", "flightLog.medal.longPatrol.criterion"),
+  medal("outer-rim", "flightLog.medal.outerRim.name", "flightLog.medal.outerRim.criterion"),
+  medal("ten-campaigns", "flightLog.medal.tenCampaigns.name", "flightLog.medal.tenCampaigns.criterion"),
+  medal("supply-line", "flightLog.medal.supplyLine.name", "flightLog.medal.supplyLine.criterion"),
 ];
 
 const MEDAL_IDS: ReadonlySet<string> = new Set(MEDALS.map((m) => m.id));
@@ -618,19 +639,19 @@ export function statusOn(data: FlightLogData, day: string): { streak: number; ra
 export function statusLine(data: FlightLogData, day: string): string | null {
   const s = statusOn(data, day);
   if (!s) return null;
-  return s.streak > 0 ? `Day ${s.streak} streak · ${s.rank.name}` : s.rank.name;
+  return s.streak > 0 ? t("flightLog.statusLine", { streak: s.streak, rank: s.rank.name }) : s.rank.name;
 }
 
 /** Header chip text: "6-day streak · Wing Commander" (just the rank without a streak). */
 export function chipText(streak: number, rank: Rank): string {
-  return streak > 0 ? `${streak}-day streak · ${rank.name}` : rank.name;
+  return streak > 0 ? t("flightLog.chipStreak", { streak, rank: rank.name }) : rank.name;
 }
 
 /** One line in the app's voice for a promotion and / or medals. */
 export function announcement(promoted: Rank | null, medals: readonly MedalDef[]): string | null {
   const parts: string[] = [];
-  if (promoted) parts.push(`Promoted to ${promoted.name}.`);
-  if (medals.length === 1) parts.push(`Medal earned: ${medals[0].name}.`);
-  else if (medals.length > 1) parts.push(`Medals earned: ${medals.map((m) => m.name).join(", ")}.`);
+  if (promoted) parts.push(t("flightLog.promoted", { rank: promoted.name }));
+  if (medals.length === 1) parts.push(t("flightLog.medalEarned", { name: medals[0].name }));
+  else if (medals.length > 1) parts.push(t("flightLog.medalsEarned", { names: medals.map((m) => m.name).join(", ") }));
   return parts.length ? parts.join(" ") : null;
 }

@@ -2,6 +2,7 @@
 // attentionNotify.ts gathers the context (window focus, on-screen, clock, rate limit) and calls
 // shouldNotify(); the feed always records the alert, marked muted when a user rule silenced it.
 
+import { t, type MessageKey } from "../i18n";
 import { DEFAULT_SETTINGS, type AgentKind, type NotificationSettings, type SessionId } from "../lib/types";
 import type { Alert } from "../store/attention";
 
@@ -41,15 +42,20 @@ export interface NotifyDecision {
 
 export const PER_SESSION_GAP_MS = 5000;
 
-/** Feed label for muted entries. */
-export const MUTED_REASON_TEXT: Partial<Record<SuppressReason, string>> = {
-  event: "Event type off",
-  agent: "Agent type off",
-  session: "Session muted",
-  workspace: "Workspace muted",
-  dnd: "Do not disturb",
-  quiet: "Quiet hours",
+const MUTED_REASON_KEY: Partial<Record<SuppressReason, MessageKey>> = {
+  event: "notifications.mutedReason.event",
+  agent: "notifications.mutedReason.agent",
+  session: "notifications.mutedReason.session",
+  workspace: "notifications.mutedReason.workspace",
+  dnd: "notifications.mutedReason.dnd",
+  quiet: "notifications.mutedReason.quiet",
 };
+
+/** Feed label for muted entries, in the current UI language (undefined for reasons that don't mute). */
+export function mutedReasonText(reason: SuppressReason): string | undefined {
+  const key = MUTED_REASON_KEY[reason];
+  return key ? t(key) : undefined;
+}
 
 const MUTING: ReadonlySet<SuppressReason> = new Set(["event", "agent", "session", "workspace", "dnd", "quiet"]);
 

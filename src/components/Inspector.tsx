@@ -3,6 +3,7 @@
 import { confirmCloseSession, confirmForceStop, focusSession } from "../actions/commands";
 import { clearSession, copyOutput, hideView, restartSession, showView, startSession, stopSession } from "../actions/sessions";
 import { isLive, useApp } from "../store/appStore";
+import { useT } from "../i18n";
 import { isWindows } from "../lib/platform";
 import { useUi } from "../store/uiStore";
 import { useDiagnosticsPoll } from "./hooks";
@@ -18,6 +19,7 @@ import { goHome, openExternal, popOut, reload } from "../actions/browser";
 import { useBrowserNav } from "../browser/nav";
 
 function BrowserDetails({ id }: { id: string }) {
+  const t = useT();
   const meta = useApp((s) => s.persisted.sessions.find((m) => m.id === id));
   const probe = useBrowserNav((s) => s.panes[id]?.probe ?? null);
   const popout = useBrowserNav((s) => !!s.panes[id]?.popout);
@@ -28,55 +30,52 @@ function BrowserDetails({ id }: { id: string }) {
     <div className="inspector-body">
       <div className="inspector-title">
         <span className="dot is-ok" />
-        <button type="button" className="inspector-name" title="Focus this pane" onClick={() => focusSession(id)}>
+        <button type="button" className="inspector-name" title={t("inspector.focusPane")} onClick={() => focusSession(id)}>
           {meta.name}
         </button>
-        <span className="chip">Browser</span>
+        <span className="chip">{t("inspector.browserChip")}</span>
       </div>
       <div className="inspector-actions">
         <Button size="sm" onClick={() => reload(id)} disabled={!url}>
-          Reload
+          {t("inspector.reload")}
         </Button>
-        <Button size="sm" onClick={() => void popOut(id)} disabled={!url} title="Open in a separate Gridkeeper window (any site, file: pages)">
-          Pop out
+        <Button size="sm" onClick={() => void popOut(id)} disabled={!url} title={t("inspector.popOutTitle")}>
+          {t("inspector.popOut")}
         </Button>
         <Button size="sm" variant="ghost" onClick={() => openExternal(url)} disabled={!url?.startsWith("http")}>
-          Open in browser
+          {t("inspector.openInBrowser")}
         </Button>
         <Button size="sm" variant="ghost" onClick={() => goHome(id)} disabled={!url}>
-          Start page
+          {t("inspector.startPage")}
         </Button>
         <Button size="sm" variant="ghost" className="is-danger-text" onClick={() => void confirmCloseSession(id)}>
-          Close
+          {t("common.close")}
         </Button>
       </div>
       <div className="inspector-section">
         <div className="kv">
-          <span className="kv-k">Address</span>
+          <span className="kv-k">{t("inspector.address")}</span>
           <span className="kv-v mono kv-path" title={url ?? ""}>
-            {url ?? "Start page"}
+            {url ?? t("inspector.startPage")}
           </span>
           {url && (
-            <IconButton size="sm" label="Copy address" onClick={() => void copyText(url, "Address copied")}>
+            <IconButton size="sm" label={t("inspector.copyAddress")} onClick={() => void copyText(url, t("inspector.addressCopied"))}>
               <IconCopy size={12} />
             </IconButton>
           )}
         </div>
         {probe && (
-          <Row k="Server" mono>
-            {probe.reachable ? `HTTP ${probe.status ?? "?"}` : (probe.error ?? "No response")}
+          <Row k={t("inspector.server")} mono>
+            {probe.reachable ? `HTTP ${probe.status ?? "?"}` : (probe.error ?? t("inspector.noResponse"))}
           </Row>
         )}
-        {probe?.frameable === false && <Row k="Embedding">Refused ({probe.reason})</Row>}
-        <Row k="Pop-out">{popout ? "Open" : "—"}</Row>
-        <Toggle checked={!!meta.titleAsName} onChange={(v) => update(id, { titleAsName: v })} label="Name follows page title" />
-        <p className="explain">
-          Browser panes have no process. Pages run in a sandboxed frame without access to Gridkeeper; back / forward cover the addresses opened here, not
-          link clicks inside the page. Sites that refuse embedding open in a pop-out window.
-        </p>
+        {probe?.frameable === false && <Row k={t("inspector.embedding")}>{t("inspector.embeddingRefused", { reason: probe.reason })}</Row>}
+        <Row k={t("inspector.popOutRow")}>{popout ? t("inspector.popOutOpen") : "—"}</Row>
+        <Toggle checked={!!meta.titleAsName} onChange={(v) => update(id, { titleAsName: v })} label={t("inspector.titleAsName")} />
+        <p className="explain">{t("inspector.browserExplain")}</p>
       </div>
       <div className="inspector-section">
-        <div className="section-label">Dev-server ports</div>
+        <div className="section-label">{t("inspector.devServerPorts")}</div>
         <PortsList compact />
       </div>
     </div>
@@ -84,20 +83,21 @@ function BrowserDetails({ id }: { id: string }) {
 }
 
 export function Inspector() {
+  const t = useT();
   const id = useApp((s) => s.focusedSessionId);
   const close = () => useApp.getState().updateSettings({ inspectorOpen: false });
   const diagOn = useApp((s) => s.persisted.settings.statusBarDiagnostics);
   // Shares the status-bar poll; never polls when the user turned resource usage off.
   useDiagnosticsPoll(!!id && diagOn);
   return (
-    <aside className="inspector" aria-label="Session inspector">
+    <aside className="inspector" aria-label={t("inspector.aria")}>
       <div className="inspector-head">
-        <span className="panel-title">Inspector</span>
-        <IconButton size="sm" label="Close inspector" onClick={close}>
+        <span className="panel-title">{t("inspector.title")}</span>
+        <IconButton size="sm" label={t("inspector.close")} onClick={close}>
           <IconClose size={13} />
         </IconButton>
       </div>
-      {id ? <SessionDetails id={id} key={id} /> : <div className="inspector-empty">Focus a session to see its details.</div>}
+      {id ? <SessionDetails id={id} key={id} /> : <div className="inspector-empty">{t("inspector.empty")}</div>}
     </aside>
   );
 }
@@ -114,6 +114,7 @@ function Row({ k, children, mono, title }: { k: string; children: React.ReactNod
 }
 
 function SessionDetails({ id }: { id: string }) {
+  const t = useT();
   const meta = useApp((s) => s.persisted.sessions.find((m) => m.id === id));
   const info = useApp((s) => s.runtime[id]);
   const hidden = useApp((s) => !!s.hiddenViews[id]);
@@ -121,7 +122,7 @@ function SessionDetails({ id }: { id: string }) {
   const stats = useUi((s) => s.diag?.sessions.find((x) => x.id === id)?.stats);
   const cores = useUi((s) => s.diag?.logicalCores ?? 1);
 
-  if (!meta) return <div className="inspector-empty">Session not found.</div>;
+  if (!meta) return <div className="inspector-empty">{t("inspector.notFound")}</div>;
   if (meta.kind === "browser") return <BrowserDetails id={id} />;
   const live = isLive(info);
   const st = stateLabel(info?.state);
@@ -133,7 +134,7 @@ function SessionDetails({ id }: { id: string }) {
     <div className="inspector-body">
       <div className="inspector-title">
         <span className={`dot is-${st.tone}`} />
-        <button type="button" className="inspector-name" title="Focus this session" onClick={() => focusSession(id)}>
+        <button type="button" className="inspector-name" title={t("inspector.focusSession")} onClick={() => focusSession(id)}>
           {meta.name}
         </button>
         <span className={`chip tone-${st.tone}`}>{st.label}</span>
@@ -142,87 +143,87 @@ function SessionDetails({ id }: { id: string }) {
 
       <div className="inspector-actions">
         {live ? (
-          <Button size="sm" onClick={() => void stopSession(id, false)} disabled={info?.state.state === "stopping"} title="Ask the process to exit gracefully">
-            Stop
+          <Button size="sm" onClick={() => void stopSession(id, false)} disabled={info?.state.state === "stopping"} title={t("inspector.stopTitle")}>
+            {t("common.stop")}
           </Button>
         ) : (
-          <Button size="sm" variant="primary" onClick={() => void startSession(id, meta.resumeOnRestore)} title="Start the process (uses the restore setting below)">
-            Start
+          <Button size="sm" variant="primary" onClick={() => void startSession(id, meta.resumeOnRestore)} title={t("inspector.startTitle")}>
+            {t("common.start")}
           </Button>
         )}
-        <Button size="sm" onClick={() => void restartSession(id, { mode: "continue" })} title="Restart and resume the conversation where supported">
-          Restart
+        <Button size="sm" onClick={() => void restartSession(id, { mode: "continue" })} title={t("inspector.restartTitle")}>
+          {t("common.restart")}
         </Button>
-        <Button size="sm" onClick={() => void restartSession(id, { mode: "none" })} title="Restart with a new, empty conversation">
-          Restart fresh
+        <Button size="sm" onClick={() => void restartSession(id, { mode: "none" })} title={t("inspector.restartFreshTitle")}>
+          {t("inspector.restartFresh")}
         </Button>
-        <Button size="sm" variant="ghost" onClick={() => void copyOutput(id)} title="Copy the buffered output as text">
-          Copy output
+        <Button size="sm" variant="ghost" onClick={() => void copyOutput(id)} title={t("inspector.copyOutputTitle")}>
+          {t("inspector.copyOutput")}
         </Button>
         <Button size="sm" variant="ghost" onClick={() => void clearSession(id)}>
-          Clear
+          {t("inspector.clear")}
         </Button>
-        <Button size="sm" variant="ghost" onClick={() => (hidden ? showView(id) : hideView(id))} title={hidden ? "Show the terminal view" : "Hide the view; the process keeps running"}>
-          {hidden ? "Show view" : "Hide view"}
+        <Button size="sm" variant="ghost" onClick={() => (hidden ? showView(id) : hideView(id))} title={hidden ? t("inspector.showViewTitle") : t("inspector.hideViewTitle")}>
+          {hidden ? t("inspector.showView") : t("inspector.hideView")}
         </Button>
-        <Button size="sm" variant="ghost" className="is-danger-text" onClick={() => void confirmForceStop(id)} disabled={!live} title="Kill the whole process tree">
-          Force stop
+        <Button size="sm" variant="ghost" className="is-danger-text" onClick={() => void confirmForceStop(id)} disabled={!live} title={t("inspector.forceStopTitle")}>
+          {t("inspector.forceStop")}
         </Button>
-        <Button size="sm" variant="ghost" className="is-danger-text" onClick={() => void confirmCloseSession(id)} title="Stop the process and remove the session">
-          Close
+        <Button size="sm" variant="ghost" className="is-danger-text" onClick={() => void confirmCloseSession(id)} title={t("inspector.closeSessionTitle")}>
+          {t("common.close")}
         </Button>
       </div>
 
       <div className="inspector-section">
-        <Row k="Agent">{AGENT_LABEL[meta.agent]}</Row>
+        <Row k={t("inspector.agent")}>{AGENT_LABEL[meta.agent]}</Row>
         <div className="kv">
-          <span className="kv-k">Role</span>
+          <span className="kv-k">{t("inspector.role")}</span>
           <span className="kv-v">
             <RolePicker value={meta.role ?? null} onChange={(role) => update(id, { role })} />
           </span>
         </div>
         {meta.agent === "claude" && (
-          <Row k="Account">
+          <Row k={t("inspector.account")}>
             {profile ? (
               <>
                 <span className="dot" style={{ background: profile.color }} /> {profile.name}
               </>
             ) : (
-              "Default (~/.claude)"
+              t("inspector.accountDefault")
             )}
           </Row>
         )}
         <div className="kv">
-          <span className="kv-k">Directory</span>
+          <span className="kv-k">{t("inspector.directory")}</span>
           <span className="kv-v mono kv-path" title={meta.cwd}>
             {meta.cwd}
           </span>
-          <IconButton size="sm" label="Copy path" onClick={() => void copyText(meta.cwd, "Path copied")}>
+          <IconButton size="sm" label={t("inspector.copyPath")} onClick={() => void copyText(meta.cwd, t("inspector.pathCopied"))}>
             <IconCopy size={12} />
           </IconButton>
         </div>
         {meta.worktree && (
-          <Row k="Worktree" mono title={meta.worktree.path}>
-            {meta.worktree.branch ?? "detached"}
+          <Row k={t("inspector.worktree")} mono title={meta.worktree.path}>
+            {meta.worktree.branch ?? t("inspector.detached")}
           </Row>
         )}
-        <Row k="PID" mono>
+        <Row k={t("inspector.pid")} mono>
           {info?.pid ?? "—"}
         </Row>
-        <Row k="Exit code" mono>
+        <Row k={t("inspector.exitCode")} mono>
           {exitCode ?? "—"}
         </Row>
-        <Row k="Started">{formatTime(info?.startedAt)}</Row>
-        <Row k="Ended">{formatTime(info?.endedAt)}</Row>
-        <Row k="Output" mono>
+        <Row k={t("inspector.started")}>{formatTime(info?.startedAt)}</Row>
+        <Row k={t("inspector.ended")}>{formatTime(info?.endedAt)}</Row>
+        <Row k={t("inspector.output")} mono>
           {info ? formatBytes(info.bytesOut) : "—"}
         </Row>
-        <Row k="CPU / RAM" mono title={isWindows ? "Process tree of this session (Task Manager style CPU)" : "Process tree of this session (share of all logical cores)"}>
-          {stats ? `${formatCpu(taskManagerCpu(stats.cpuPercent, cores))} · ${formatMb(stats.memoryBytes)} · ${stats.processCount} proc` : "—"}
+        <Row k={t("inspector.cpuRam")} mono title={isWindows ? t("inspector.cpuRamTitleWindows") : t("inspector.cpuRamTitle")}>
+          {stats ? t("inspector.cpuRamValue", { cpu: formatCpu(taskManagerCpu(stats.cpuPercent, cores)), ram: formatMb(stats.memoryBytes), count: stats.processCount }) : "—"}
         </Row>
         {info?.commandDisplay && (
           <div className="kv kv-block">
-            <span className="kv-k">Command</span>
+            <span className="kv-k">{t("inspector.command")}</span>
             <code className="code-inline" title={info.commandDisplay}>
               {info.commandDisplay}
             </code>
@@ -231,32 +232,32 @@ function SessionDetails({ id }: { id: string }) {
       </div>
 
       <div className="inspector-section">
-        <div className="section-label">Ports</div>
-        {live ? <PortsList sessionId={id} compact emptyText="Not listening on any TCP port." /> : <p className="explain">Not running.</p>}
+        <div className="section-label">{t("inspector.ports")}</div>
+        {live ? <PortsList sessionId={id} compact emptyText={t("inspector.portsEmpty")} /> : <p className="explain">{t("inspector.notRunning")}</p>}
       </div>
 
       <div className="inspector-section">
-        <div className="section-label">On app restore</div>
-        <Toggle checked={meta.autoStart} onChange={(v) => update(id, { autoStart: v })} label="Auto-start process" />
+        <div className="section-label">{t("inspector.onRestore")}</div>
+        <Toggle checked={meta.autoStart} onChange={(v) => update(id, { autoStart: v })} label={t("inspector.autoStart")} />
         {meta.agent !== "powershell" && meta.agent !== "generic" && (
           <div className="resume-row">
-            <span className="resume-label">Conversation</span>
+            <span className="resume-label">{t("inspector.conversation")}</span>
             <Segmented
               size="sm"
-              ariaLabel="Resume on restore"
+              ariaLabel={t("inspector.resumeAria")}
               value={resumeMode}
               onChange={(v) => update(id, { resumeOnRestore: v === "none" ? { mode: "none" } : { mode: "continue" } })}
               options={[
-                { value: "none", label: "New" },
-                { value: "continue", label: "Continue" },
+                { value: "none", label: t("inspector.resumeNew") },
+                { value: "continue", label: t("inspector.resumeContinue") },
               ]}
             />
           </div>
         )}
         <p className="explain">
-          Restoring the layout is not the same as reconnecting a process, and neither is resuming an AI conversation. Processes never survive app exit or a reboot — they are started again.
-          {meta.agent === "claude" && " Claude resumes this pane’s own conversation via its pinned session id."}
-          {meta.agent === "codex" && " Codex resumes with “resume --last”: the most recent conversation in this folder, which may belong to another pane."}
+          {t("inspector.restoreExplain")}
+          {meta.agent === "claude" && ` ${t("inspector.restoreExplainClaude")}`}
+          {meta.agent === "codex" && ` ${t("inspector.restoreExplainCodex")}`}
         </p>
       </div>
     </div>

@@ -64,13 +64,11 @@ export function Segmented<T extends string>({
       role="radiogroup"
       aria-label={ariaLabel}
       onKeyDown={(e) => {
-        if (e.key === "ArrowRight") {
-          e.preventDefault();
-          move(1);
-        } else if (e.key === "ArrowLeft") {
-          e.preventDefault();
-          move(-1);
-        }
+        if (e.key !== "ArrowRight" && e.key !== "ArrowLeft") return;
+        e.preventDefault();
+        // Right-to-left layouts list the options from the right: ArrowLeft moves to the next one.
+        const rtl = getComputedStyle(e.currentTarget).direction === "rtl";
+        move((e.key === "ArrowRight") !== rtl ? 1 : -1);
       }}
     >
       {options.map((o) => (

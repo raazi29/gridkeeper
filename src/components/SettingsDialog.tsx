@@ -3,6 +3,7 @@
 import { memo, useEffect, useState } from "react";
 import { COMMANDS, THEME_COMMAND_PREFIX } from "../actions/commands";
 import { notify } from "../actions/notify";
+import { LOCALES, languageName, localeInfo, resolveLanguage, setLanguage, useI18n, useT, type LanguagePref, type MessageKey } from "../i18n";
 import { defaultBindings, displayCombo, eventToCombo, forbiddenReason } from "../keybindings/combo";
 import { OS, isWindows, shellLabel } from "../lib/platform";
 import { errorMessage, ipc } from "../lib/ipc";
@@ -15,7 +16,7 @@ import { useShortcutMap } from "./hooks";
 import { NotificationSettings } from "./NotificationSettings";
 import { IconFolder } from "./icons";
 import { Button } from "./ui/Button";
-import { Field, Input, NumberInput, Segmented, Toggle } from "./ui/Field";
+import { Field, Input, NumberInput, Segmented, Select, Toggle } from "./ui/Field";
 import { Modal } from "./ui/Modal";
 import { pickExecutable } from "./util/pick";
 import { TERMINAL_FONTS, preloadFont } from "../styles/fonts";
@@ -26,13 +27,13 @@ import { ThemeCard } from "./ThemeCard";
 import { BrowserSettings } from "../browser/BrowserSettings";
 
 type Section = "appearance" | "terminal" | "agents" | "keys" | "interface" | "notifications";
-const SECTIONS: { id: Section; label: string }[] = [
-  { id: "appearance", label: "Appearance" },
-  { id: "terminal", label: "Terminal" },
-  { id: "agents", label: "Agents" },
-  { id: "keys", label: "Keybindings" },
-  { id: "interface", label: "Interface" },
-  { id: "notifications", label: "Notifications" },
+const SECTIONS: { id: Section; label: MessageKey }[] = [
+  { id: "appearance", label: "settings.section.appearance" },
+  { id: "terminal", label: "settings.section.terminal" },
+  { id: "agents", label: "settings.section.agents" },
+  { id: "keys", label: "settings.section.keys" },
+  { id: "interface", label: "settings.section.interface" },
+  { id: "notifications", label: "settings.section.notifications" },
 ];
 
 function useSetting<K extends keyof Settings>(key: K): [Settings[K], (v: Settings[K]) => void] {
@@ -41,15 +42,16 @@ function useSetting<K extends keyof Settings>(key: K): [Settings[K], (v: Setting
 }
 
 export function SettingsDialog({ onClose }: { onClose: () => void }) {
+  const t = useT();
   const initial = useUi((s) => (s.dialog?.kind === "settings" ? s.dialog.section : undefined));
   const [section, setSection] = useState<Section>((initial as Section) ?? "appearance");
   return (
-    <Modal title="Settings" onClose={onClose} width={760} className="settings" footer={<Button onClick={onClose}>Done</Button>}>
+    <Modal title={t("settings.title")} onClose={onClose} width={760} className="settings" footer={<Button onClick={onClose}>{t("common.done")}</Button>}>
       <div className="settings-layout">
         <nav className="settings-nav" role="tablist" aria-orientation="vertical">
           {SECTIONS.map((s) => (
             <button key={s.id} type="button" role="tab" aria-selected={section === s.id} className={`settings-tab${section === s.id ? " is-active" : ""}`} onClick={() => setSection(s.id)}>
-              {s.label}
+              {t(s.label)}
             </button>
           ))}
         </nav>
@@ -69,6 +71,7 @@ export function SettingsDialog({ onClose }: { onClose: () => void }) {
 // ---- appearance -----------------------------------------------------------------
 
 function AppearanceSection() {
+  const t = useT();
   const themeId = getTheme(useApp((s) => s.persisted.settings.theme)).id;
   const [density, setDensity] = useSetting("uiDensity");
   const [reduceMotion, setReduceMotion] = useSetting("reduceMotion");
@@ -82,36 +85,36 @@ function AppearanceSection() {
   return (
     <div className="appearance">
       <section className="appearance-group">
-        <div className="micro-label">Theme</div>
-        <div className="theme-grid" role="radiogroup" aria-label="Theme">
-          {THEMES.map((t) => (
-            <ThemeCard key={t.id} theme={withSaber(t, saberColor)} selected={t.id === themeId} onSelect={() => useApp.getState().updateSettings({ theme: t.id })} />
+        <div className="micro-label">{t("settings.appearance.theme")}</div>
+        <div className="theme-grid" role="radiogroup" aria-label={t("settings.appearance.theme")}>
+          {THEMES.map((th) => (
+            <ThemeCard key={th.id} theme={withSaber(th, saberColor)} selected={th.id === themeId} onSelect={() => useApp.getState().updateSettings({ theme: th.id })} />
           ))}
         </div>
         <ThemeEffects theme={theme} />
       </section>
 
-      <section className="appearance-group form" aria-label="Saber">
-        <div className="micro-label">Saber</div>
+      <section className="appearance-group form" aria-label={t("settings.appearance.saber")}>
+        <div className="micro-label">{t("settings.appearance.saber")}</div>
         <SaberSettings theme={theme} />
       </section>
 
       <section className="appearance-group form">
-        <div className="micro-label">Interface</div>
-        <Field label="Density">
+        <div className="micro-label">{t("settings.appearance.interface")}</div>
+        <Field label={t("settings.appearance.density")}>
           <Segmented<UiDensity>
-            ariaLabel="Density"
+            ariaLabel={t("settings.appearance.density")}
             value={density}
             onChange={setDensity}
             options={[
-              { value: "compact", label: "Compact" },
-              { value: "comfortable", label: "Comfortable" },
+              { value: "compact", label: t("settings.appearance.densityCompact") },
+              { value: "comfortable", label: t("settings.appearance.densityComfortable") },
             ]}
           />
         </Field>
-        <Field label="Terminal font" hint={fontPreset === "custom" ? "Custom font set in Terminal settings" : "Bundled fonts work offline"}>
+        <Field label={t("settings.appearance.terminalFont")} hint={fontPreset === "custom" ? t("settings.appearance.terminalFontCustom") : t("settings.appearance.terminalFontBundled")}>
           <Segmented<string>
-            ariaLabel="Terminal font"
+            ariaLabel={t("settings.appearance.terminalFont")}
             value={fontPreset}
             onChange={async (v) => {
               await preloadFont(v);
@@ -120,28 +123,34 @@ function AppearanceSection() {
             options={TERMINAL_FONTS.map((f) => ({ value: f.value, label: f.label }))}
           />
         </Field>
-        <Toggle checked={reduceMotion} onChange={setReduceMotion} label="Reduce motion" hint={`Turns off transitions, lamp pulses, the holo band, the hyperspace jump, saber effects and the CRT overlay. Also follows the ${isWindows ? "Windows animation" : "system reduce-motion"} setting.`} />
+        <Toggle
+          checked={reduceMotion}
+          onChange={setReduceMotion}
+          label={t("settings.appearance.reduceMotion")}
+          hint={isWindows ? t("settings.appearance.reduceMotionHintWindows") : t("settings.appearance.reduceMotionHintSystem")}
+        />
         <HyperspaceToggle />
         <MissionFxToggle />
       </section>
 
       <section className="appearance-group">
-        <div className="micro-label">Modes</div>
+        <div className="micro-label">{t("settings.appearance.modes")}</div>
         <div className="mode-row">
           <Button size="sm" className={focusMode ? "is-on" : undefined} onClick={() => useUi.getState().setFocusMode(!focusMode)}>
-            {focusMode ? "Exit focus mode" : "Focus mode"}
+            {focusMode ? t("settings.appearance.focusModeExit") : t("settings.appearance.focusMode")}
           </Button>
           <Button size="sm" onClick={() => useUi.getState().setPresentation(!presentation)}>
-            {presentation ? "Exit presentation mode" : "Presentation mode"}
+            {presentation ? t("settings.appearance.presentationModeExit") : t("settings.appearance.presentationMode")}
           </Button>
         </div>
-        <p className="explain">Focus hides the sidebar, tabs and status bar (Esc outside a terminal exits). Presentation enlarges terminal text by 3 pt and scales the interface. Neither is saved between runs.</p>
+        <p className="explain">{t("settings.appearance.modesExplain")}</p>
       </section>
     </div>
   );
 }
 
 function TerminalSection() {
+  const t = useT();
   const [scrollback, setScrollback] = useSetting("scrollbackLines");
   const [buffer, setBuffer] = useSetting("bufferKib");
   const [fontFamily, setFontFamily] = useSetting("fontFamily");
@@ -154,19 +163,19 @@ function TerminalSection() {
   const [layout, setLayout] = useSetting("defaultLayout");
   return (
     <div className="form">
-      <Field label="Renderer" hint={renderer === "dom" ? "Software rendering: lowest GPU use, slower with heavy output." : "WebGL uses the GPU to draw text; falls back to DOM if a context is lost."}>
+      <Field label={t("settings.terminal.renderer")} hint={renderer === "dom" ? t("settings.terminal.rendererHintDom") : t("settings.terminal.rendererHintWebgl")}>
         <Segmented<RendererPref>
-          ariaLabel="Renderer"
+          ariaLabel={t("settings.terminal.renderer")}
           value={renderer}
           onChange={setRenderer}
           options={[
-            { value: "auto", label: "Auto (WebGL, recommended)" },
-            { value: "webgl", label: "WebGL" },
-            { value: "dom", label: "DOM (software)" },
+            { value: "auto", label: t("settings.terminal.rendererAuto") },
+            { value: "webgl", label: t("settings.terminal.rendererWebgl") },
+            { value: "dom", label: t("settings.terminal.rendererDom") },
           ]}
         />
       </Field>
-      <Field label="Font family" htmlFor="st-font">
+      <Field label={t("settings.terminal.fontFamily")} htmlFor="st-font">
         <Input
           id="st-font"
           mono
@@ -180,58 +189,46 @@ function TerminalSection() {
         />
       </Field>
       <div className="field-pair">
-        <Field label="Font size" htmlFor="st-fs">
+        <Field label={t("settings.terminal.fontSize")} htmlFor="st-fs">
           <NumberInput id="st-fs" value={fontSize} min={8} max={32} onCommit={setFontSize} width={80} />
         </Field>
-        <Field label="Line height" htmlFor="st-lh">
+        <Field label={t("settings.terminal.lineHeight")} htmlFor="st-lh">
           <NumberInput id="st-lh" value={lineHeight} min={1} max={2} step={0.05} onCommit={(v) => setLineHeight(Math.round(v * 100) / 100)} width={80} />
         </Field>
       </div>
       <div className="field-pair">
-        <Field label="Scrollback" htmlFor="st-sb" hint="Lines kept per terminal view">
+        <Field label={t("settings.terminal.scrollback")} htmlFor="st-sb" hint={t("settings.terminal.scrollbackHint")}>
           <NumberInput id="st-sb" value={scrollback} min={500} max={100000} onCommit={setScrollback} />
         </Field>
-        <Field label="Output buffer" htmlFor="st-buf" hint="KiB kept per session in the backend (replayed on reattach)">
+        <Field label={t("settings.terminal.outputBuffer")} htmlFor="st-buf" hint={t("settings.terminal.outputBufferHint")}>
           <NumberInput id="st-buf" value={buffer} min={256} max={65536} onCommit={setBuffer} />
         </Field>
       </div>
-      <Field label="Default layout">
+      <Field label={t("settings.terminal.defaultLayout")}>
         <Segmented<LayoutPreset>
-          ariaLabel="Default layout"
+          ariaLabel={t("settings.terminal.defaultLayout")}
           value={layout}
           onChange={setLayout}
           options={[
-            { value: "grid", label: "Grid" },
-            { value: "columns", label: "Columns" },
-            { value: "rows", label: "Rows" },
+            { value: "grid", label: t("settings.terminal.layoutGrid") },
+            { value: "columns", label: t("settings.terminal.layoutColumns") },
+            { value: "rows", label: t("settings.terminal.layoutRows") },
           ]}
         />
       </Field>
-      <Field
-        label="Right-click"
-        hint={
-          rightClick === "paste"
-            ? "Copies the selection, or pastes when nothing is selected. Shift+right-click opens the menu."
-            : "Opens the terminal menu (copy, paste, find, zoom, split, restart…). Programs that use the mouse get plain right-clicks; Shift+right-click opens the menu there."
-        }
-      >
+      <Field label={t("settings.terminal.rightClick")} hint={rightClick === "paste" ? t("settings.terminal.rightClickHintPaste") : t("settings.terminal.rightClickHintMenu")}>
         <Segmented<RightClickAction>
-          ariaLabel="Right-click action"
+          ariaLabel={t("settings.terminal.rightClickAction")}
           value={rightClick === "paste" ? "paste" : "menu"}
           onChange={setRightClick}
           options={[
-            { value: "menu", label: "Menu (default)" },
-            { value: "paste", label: "Paste (Windows Terminal style)" },
+            { value: "menu", label: t("settings.terminal.rightClickMenu") },
+            { value: "paste", label: t("settings.terminal.rightClickPaste") },
           ]}
         />
       </Field>
-      <Toggle checked={blink} onChange={setBlink} label="Cursor blink" />
-      <Toggle
-        checked={pasteWarning}
-        onChange={setPasteWarning}
-        label="Confirm large pastes"
-        hint="Ask before pasting more than 20 lines or 64 KiB into a program that has not enabled bracketed paste. Programs that enable it (e.g. Claude Code, Codex) are never asked."
-      />
+      <Toggle checked={blink} onChange={setBlink} label={t("settings.terminal.cursorBlink")} />
+      <Toggle checked={pasteWarning} onChange={setPasteWarning} label={t("settings.terminal.pasteWarning")} hint={t("settings.terminal.pasteWarningHint")} />
       <div className="row-end">
         <Button
           variant="ghost"
@@ -249,27 +246,29 @@ function TerminalSection() {
             })
           }
         >
-          Reset terminal settings
+          {t("settings.terminal.reset")}
         </Button>
       </div>
     </div>
   );
 }
 
-const AGENT_ROWS: { key: keyof AgentPaths; label: string; hint: string }[] =
+// Product names (Claude Code, Codex, PowerShell) are not translated; the hints are.
+const AGENT_ROWS: { key: keyof AgentPaths; label: () => string; hint: MessageKey }[] =
   OS === "windows"
     ? [
-        { key: "claude", label: "Claude Code", hint: "claude.exe (native install preferred over the npm claude.cmd shim)" },
-        { key: "codex", label: "Codex", hint: "codex.exe or codex.cmd" },
-        { key: "powershell", label: "PowerShell", hint: "pwsh.exe (PowerShell 7) or powershell.exe" },
+        { key: "claude", label: () => "Claude Code", hint: "settings.agents.hintClaudeWindows" },
+        { key: "codex", label: () => "Codex", hint: "settings.agents.hintCodexWindows" },
+        { key: "powershell", label: () => "PowerShell", hint: "settings.agents.hintPowershellWindows" },
       ]
     : [
-        { key: "claude", label: "Claude Code", hint: "claude (native install in ~/.local/bin preferred, else PATH)" },
-        { key: "codex", label: "Codex", hint: "codex on PATH" },
-        { key: "powershell", label: shellLabel(), hint: "Login shell ($SHELL), e.g. /bin/zsh; any shell path works, including pwsh" },
+        { key: "claude", label: () => "Claude Code", hint: "settings.agents.hintClaudeUnix" },
+        { key: "codex", label: () => "Codex", hint: "settings.agents.hintCodexUnix" },
+        { key: "powershell", label: () => shellLabel(), hint: "settings.agents.hintShellUnix" },
       ];
 
 function AgentsSection() {
+  const t = useT();
   const paths = useApp((s) => s.persisted.settings.agentPaths);
   const agents = useApp((s) => s.agents);
   const [detecting, setDetecting] = useState(false);
@@ -284,9 +283,9 @@ function AgentsSection() {
     try {
       const found = await ipc.agentsDetect();
       useApp.getState().setAgents(found);
-      notify("info", `Detected ${found.filter((a) => a.path).length} of ${found.length} agents`);
+      notify("info", t("settings.agents.detected", { found: found.filter((a) => a.path).length, total: found.length }));
     } catch (e) {
-      notify("error", `Detection failed: ${errorMessage(e)}`);
+      notify("error", t("settings.agents.detectFailed", { error: errorMessage(e) }));
     } finally {
       setDetecting(false);
     }
@@ -295,23 +294,32 @@ function AgentsSection() {
   return (
     <div className="form">
       <div className="section-head-row">
-        <p className="explain">Leave a path empty to auto-detect from PATH and standard install locations. A path set here takes precedence.</p>
+        <p className="explain">{t("settings.agents.explain")}</p>
         <Button size="sm" onClick={() => void detect()} disabled={detecting}>
-          {detecting ? "Detecting…" : "Detect"}
+          {detecting ? t("settings.agents.detecting") : t("settings.agents.detect")}
         </Button>
       </div>
       {AGENT_ROWS.map((row) => {
+        const label = row.label();
         const a = agents.find((x) => x.kind === row.key);
-        const status = a ? (a.path ? `Detected: ${a.path}${a.version ? ` — ${a.version}` : ""}` : `Not found${a.error ? `: ${a.error}` : ""}`) : "Not detected yet";
+        const status = a
+          ? a.path
+            ? a.version
+              ? t("settings.agents.statusDetectedVersion", { path: a.path, version: a.version })
+              : t("settings.agents.statusDetected", { path: a.path })
+            : a.error
+              ? t("settings.agents.statusNotFoundError", { error: a.error })
+              : t("settings.agents.statusNotFound")
+          : t("settings.agents.statusNotDetected");
         return (
-          <Field key={row.key} label={row.label} hint={<span title={row.hint}>{status}</span>}>
+          <Field key={row.key} label={label} hint={<span title={t(row.hint)}>{status}</span>}>
             <div className="input-group">
               <Input
                 mono
                 key={paths[row.key] ?? ""}
                 defaultValue={paths[row.key] ?? ""}
-                placeholder="Auto-detect"
-                aria-label={`${row.label} executable path`}
+                placeholder={t("settings.agents.autoDetect")}
+                aria-label={t("settings.agents.pathAria", { agent: label })}
                 onBlur={(e) => {
                   const v = e.currentTarget.value.trim();
                   if ((v || null) !== paths[row.key]) setPath(row.key, v);
@@ -321,11 +329,11 @@ function AgentsSection() {
               <Button
                 icon={<IconFolder size={13} />}
                 onClick={async () => {
-                  const p = await pickExecutable(`Choose ${row.label} executable`, paths[row.key]);
+                  const p = await pickExecutable(t("settings.agents.chooseExecutable", { agent: label }), paths[row.key]);
                   if (p) setPath(row.key, p);
                 }}
               >
-                Browse…
+                {t("common.browse")}
               </Button>
             </div>
           </Field>
@@ -337,69 +345,88 @@ function AgentsSection() {
 }
 
 function CostMeterSetting() {
+  const t = useT();
   const [on, setOn] = useSetting("costMeter");
   return (
     <div className="cost-meter-setting">
-      <div className="micro-label">Cost meter</div>
+      <div className="micro-label">{t("settings.agents.costMeter")}</div>
       <Toggle
         checked={on ?? false}
         onChange={(v) => {
           setOn(v);
           if (v) useApp.getState().updateSettings({ costMeterHintDismissed: true });
         }}
-        label="Cost & context meter for Claude panes"
-        hint={
-          <>
-            Shows Claude Code's own estimate (list price; on a subscription that is API-equivalent value, not a bill) and context
-            use in each Claude pane header, in Mission Control and in Fleet. Gridkeeper starts Claude with a <code>--settings</code> file in
-            its own data folder that sets only <code>statusLine</code>. Claude then hands Gridkeeper the status line numbers: session id,
-            cost, durations, context size and use, token counts, the current usage breakdown, rate limits and the model name. Nothing
-            from transcripts or credentials is read. It replaces Claude's status line in Gridkeeper panes, unless you have your own: then
-            Gridkeeper runs yours and it shows as before (it finds it by reading <code>statusLine</code> from your Claude settings files,
-            read-only). A pane that passes its own <code>--settings</code> isn't metered.
-            Codex and Gemini CLI report no usage to other programs (shown as n/a). Applies to newly started Claude panes: restart a
-            pane to apply.
-          </>
-        }
+        label={t("settings.agents.costMeterLabel")}
+        hint={t.rich("settings.agents.costMeterHint", { code: (c) => <code>{c}</code> })}
       />
     </div>
   );
 }
 
+function LanguageSetting() {
+  const t = useT();
+  const pref = useI18n((s) => s.pref);
+  const locale = useI18n((s) => s.locale);
+  const [busy, setBusy] = useState(false);
+  const system = localeInfo(resolveLanguage("system"));
+  return (
+    <Field label={t("settings.interface.language")} htmlFor="st-lang" hint={t("settings.interface.languageHint")}>
+      <Select
+        id="st-lang"
+        value={pref}
+        disabled={busy}
+        onChange={async (e) => {
+          const next = e.currentTarget.value as LanguagePref;
+          setBusy(true);
+          try {
+            await setLanguage(next);
+          } finally {
+            setBusy(false);
+          }
+        }}
+      >
+        <option value="system">{t("settings.interface.languageSystem", { language: system.nativeName })}</option>
+        {LOCALES.map((l) => (
+          <option key={l.code} value={l.code} lang={l.code}>
+            {l.code === locale ? l.nativeName : `${l.nativeName} — ${languageName(l.code)}`}
+          </option>
+        ))}
+      </Select>
+    </Field>
+  );
+}
+
 function InterfaceSection() {
+  const t = useT();
   const [diag, setDiag] = useSetting("statusBarDiagnostics");
   const [collapsed, setCollapsed] = useSetting("sidebarCollapsed");
   const [inspector, setInspector] = useSetting("inspectorOpen");
   const flightLog = useFlightLog((s) => s.data.enabled);
   return (
     <div className="form">
-      <Toggle checked={diag} onChange={setDiag} label="Resource usage in status bar" hint="Polls every 2 s, only while the window is visible." />
-      <Toggle checked={collapsed} onChange={setCollapsed} label="Collapse sidebar to a rail" />
-      <Toggle checked={inspector} onChange={setInspector} label="Show inspector panel" />
+      <LanguageSetting />
+      <Toggle checked={diag} onChange={setDiag} label={t("settings.interface.statusBarDiagnostics")} hint={t("settings.interface.statusBarDiagnosticsHint")} />
+      <Toggle checked={collapsed} onChange={setCollapsed} label={t("settings.interface.sidebarRail")} />
+      <Toggle checked={inspector} onChange={setInspector} label={t("settings.interface.inspector")} />
       <BrowserSettings />
-      <Toggle
-        checked={flightLog}
-        onChange={setFlightLogEnabled}
-        label="Flight log (streaks, ranks, medals)"
-        hint="A daily streak, ranks and medals from mission tasks Gridkeeper sees completed, shown in Mission Control. Stored on this machine only. Off stops counting and hides it."
-      />
+      <Toggle checked={flightLog} onChange={setFlightLogEnabled} label={t("settings.interface.flightLog")} hint={t("settings.interface.flightLogHint")} />
       <div className="mode-row">
         <Button
           size="sm"
           onClick={async () => {
             const ok = await confirmDialog({
-              title: "Reset the flight log?",
-              message: "Streak, rank, totals and medals go back to zero. This can't be undone.",
-              confirmLabel: "Reset",
+              title: t("settings.interface.flightLogResetTitle"),
+              message: t("settings.interface.flightLogResetMessage"),
+              confirmLabel: t("common.reset"),
               danger: true,
             });
             if (ok) {
               resetFlightLog();
-              notify("info", "Flight log reset.");
+              notify("info", t("settings.interface.flightLogResetDone"));
             }
           }}
         >
-          Reset flight log
+          {t("settings.interface.flightLogReset")}
         </Button>
       </div>
     </div>
@@ -409,6 +436,7 @@ function InterfaceSection() {
 // ---- keybindings --------------------------------------------------------------
 
 function KeysSection() {
+  const t = useT();
   const overrides = useApp((s) => s.persisted.settings.keybindings);
   const effective = useShortcutMap();
   const [recording, setRecording] = useState<string | null>(null);
@@ -426,7 +454,7 @@ function KeysSection() {
     const defaults = defaultBindings();
     for (const [cid, c] of Object.entries(next)) if (defaults[cid] === c || (!(cid in defaults) && c === "")) delete next[cid];
     useApp.getState().updateSettings({ keybindings: next });
-    setMessage(owner ? { id, text: `Removed from “${titles[owner] ?? owner}”`, tone: "info" } : null);
+    setMessage(owner ? { id, text: t("settings.keys.removedFrom", { command: titles[owner] ?? owner }), tone: "info" } : null);
   };
 
   const reset = (id: string) => {
@@ -438,11 +466,7 @@ function KeysSection() {
 
   return (
     <div className="keys">
-      <p className="explain explain-top">
-        {OS === "macos"
-          ? "Click a shortcut to record a new one. Terminal keys are protected: ⌃ Control combinations, ⌥+letter, arrows, Tab, Return, Esc and function keys always go to the terminal, and macOS / Edit-menu shortcuts (⌘C, ⌘V, ⌘Q, ⌘Tab …) stay with the system."
-          : "Click a shortcut to record a new one. Terminal keys are protected: plain Ctrl+letter, Alt+letter, arrows, Tab, Enter, Esc and function keys always go to the terminal."}
-      </p>
+      <p className="explain explain-top">{OS === "macos" ? t("settings.keys.explainMac") : t("settings.keys.explain")}</p>
       <div className="keys-list" role="table">
         {ids.map((id) => (
           <KeyRow
@@ -461,7 +485,7 @@ function KeysSection() {
             onRecorded={(combo) => {
               setRecording(null);
               const reason = forbiddenReason(combo);
-              if (reason) setMessage({ id, text: `${displayCombo(combo)}: ${reason}`, tone: "err" });
+              if (reason) setMessage({ id, text: t("settings.keys.forbidden", { combo: displayCombo(combo), reason }), tone: "err" });
               else apply(id, combo);
             }}
             onUnbind={() => apply(id, "")}
@@ -471,7 +495,7 @@ function KeysSection() {
       </div>
       <div className="row-end">
         <Button variant="ghost" size="sm" onClick={() => useApp.getState().updateSettings({ keybindings: {} })} disabled={Object.keys(overrides).length === 0}>
-          Reset all to defaults
+          {t("settings.keys.resetAll")}
         </Button>
       </div>
     </div>
@@ -503,6 +527,7 @@ const KeyRow = memo(function KeyRow({
   onUnbind: () => void;
   onReset: () => void;
 }) {
+  const t = useT();
   useEffect(() => {
     if (!recording) return;
     setKeyRecording(true);
@@ -532,20 +557,20 @@ const KeyRow = memo(function KeyRow({
         {title}
       </span>
       <span role="cell" className="key-cell">
-        <button type="button" className={`key-combo${recording ? " is-recording" : ""}${combo ? "" : " is-unbound"}`} onClick={onRecord} title="Click to record a new shortcut">
-          {recording ? "Press keys… (Esc cancels)" : combo ? displayCombo(combo) : "Unbound"}
+        <button type="button" className={`key-combo${recording ? " is-recording" : ""}${combo ? "" : " is-unbound"}`} onClick={onRecord} title={t("settings.keys.recordTitle")}>
+          {recording ? t("settings.keys.recording") : combo ? displayCombo(combo) : t("settings.keys.unbound")}
         </button>
         {message && <span className={`key-msg is-${message.tone}`}>{message.text}</span>}
       </span>
       <span role="cell" className="key-actions">
         {combo && (
           <button type="button" className="link-btn" onClick={onUnbind}>
-            Unbind
+            {t("settings.keys.unbind")}
           </button>
         )}
         {overridden && (
           <button type="button" className="link-btn" onClick={onReset}>
-            Reset
+            {t("common.reset")}
           </button>
         )}
       </span>

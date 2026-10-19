@@ -2,15 +2,15 @@ import { describe, expect, it } from "vitest";
 import {
   cardLine,
   chipModel,
-  CODEX_NA,
-  COMPACT_HINT,
+  codexNa,
+  compactHint,
   contextLevel,
-  ESTIMATE_NOTE,
+  estimateNote,
   formatCost,
   formatDuration,
   formatPct,
   formatTokens,
-  GEMINI_NA,
+  geminiNa,
   meterLabel,
   meterTooltip,
   paneCost,
@@ -79,8 +79,8 @@ describe("thresholds", () => {
     expect(contextLevel(null)).toBe("ok");
   });
   it("puts the compact hint in the tooltip only when nearly full", () => {
-    expect(meterTooltip(meter({ contextPct: 85 }))).toContain(COMPACT_HINT);
-    expect(meterTooltip(meter({ contextPct: 40 }))).not.toContain(COMPACT_HINT);
+    expect(meterTooltip(meter({ contextPct: 85 }))).toContain(compactHint());
+    expect(meterTooltip(meter({ contextPct: 40 }))).not.toContain(compactHint());
   });
 });
 
@@ -96,7 +96,7 @@ describe("labels and tooltip", () => {
     expect(tip).toContain("Context: 37% of 200k tokens (74k in · 2.1k out)");
     expect(tip).toContain("Model: Opus 4.1");
     expect(tip).toContain("API time: 1m 12s");
-    expect(tip).toContain(ESTIMATE_NOTE);
+    expect(tip).toContain(estimateNote());
     expect(tip).not.toContain("current conversation");
   });
   it("tooltip shows the current conversation when the pane total differs (after /clear)", () => {
@@ -144,8 +144,8 @@ describe("chipModel", () => {
     expect(chipModel({ agent: "claude", enabled: true, meter: meter({ status: "managed", note: null, updatedMs: null }) })?.kind).toBe("off");
   });
   it("Codex and Gemini are labelled n/a; other agents show nothing", () => {
-    expect(chipModel({ agent: "codex", enabled: true })).toEqual({ kind: "na", label: "n/a", tooltip: CODEX_NA });
-    expect(chipModel({ agent: "generic", preset: "gemini", enabled: true })).toEqual({ kind: "na", label: "n/a", tooltip: GEMINI_NA });
+    expect(chipModel({ agent: "codex", enabled: true })).toEqual({ kind: "na", label: "n/a", tooltip: codexNa() });
+    expect(chipModel({ agent: "generic", preset: "gemini", enabled: true })).toEqual({ kind: "na", label: "n/a", tooltip: geminiNa() });
     expect(chipModel({ agent: "generic", preset: "hermes", enabled: true })).toBeNull();
     expect(chipModel({ agent: "powershell", enabled: true })).toBeNull();
   });

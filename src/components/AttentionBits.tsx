@@ -7,14 +7,39 @@ import { useShallow } from "zustand/react/shallow";
 import type { SessionId } from "../lib/types";
 import { useApp } from "../store/appStore";
 import { countUnread, useAttention, type AttnState } from "../store/attention";
+import { t, useT, type MessageKey } from "../i18n";
 import "../styles/attention.css";
 
-export const ATTN_LABEL: Record<AttnState, string> = {
-  working: "Working",
-  waiting: "Waiting for you",
-  done: "Done",
-  error: "Error",
-  idle: "Idle",
+const ATTN_KEYS: Record<AttnState, MessageKey> = {
+  working: "attention.badge.working",
+  waiting: "attention.badge.waiting",
+  done: "attention.badge.done",
+  error: "attention.badge.error",
+  idle: "attention.badge.idle",
+};
+
+/** Attention state label in the current UI language. */
+export function attnLabel(state: AttnState): string {
+  return t(ATTN_KEYS[state]);
+}
+
+/** Attention state labels; getters, so reads at render time follow the UI language (don't spread at module load). */
+export const ATTN_LABEL: Readonly<Record<AttnState, string>> = {
+  get working() {
+    return attnLabel("working");
+  },
+  get waiting() {
+    return attnLabel("waiting");
+  },
+  get done() {
+    return attnLabel("done");
+  },
+  get error() {
+    return attnLabel("error");
+  },
+  get idle() {
+    return attnLabel("idle");
+  },
 };
 
 /** Reduce-motion: a future `settings.reduceMotion` wins; otherwise CSS honours prefers-reduced-motion. */
@@ -24,12 +49,14 @@ function useReduceMotion(): boolean {
 
 /** Pane header lamp: working (pulse) / waiting for you / done / error, plus an unread dot. */
 export const AttentionLamp = memo(function AttentionLamp({ sessionId }: { sessionId: SessionId }) {
+  const t = useT();
   const state = useAttention((s) => s.sessions[sessionId]?.state ?? "idle");
   const unread = useAttention((s) => !!s.sessions[sessionId]?.unread);
   const message = useAttention((s) => s.sessions[sessionId]?.lastMessage);
   const still = useReduceMotion();
   if (state === "idle" && !unread) return null;
-  const label = `${ATTN_LABEL[state]}${message ? ` — ${message}` : ""}${unread ? " (unread)" : ""}`;
+  const base = message ? t("attention.badge.lampMessage", { state: attnLabel(state), message }) : attnLabel(state);
+  const label = unread ? t("attention.badge.lampUnread", { label: base }) : base;
   return (
     <span className="attn-lamp-wrap" title={label} aria-label={label} role="status">
       {state !== "idle" && <span className={`attn-lamp attn-lamp--${state}${still ? " attn-still" : ""}`} />}
@@ -40,6 +67,7 @@ export const AttentionLamp = memo(function AttentionLamp({ sessionId }: { sessio
 
 /** Unread count badge for a group tab. */
 export const GroupUnreadBadge = memo(function GroupUnreadBadge({ groupId }: { groupId: string }) {
+  const t = useT();
   const ids = useApp(
     useShallow((s) => {
       for (const w of s.persisted.workspaces) for (const g of w.groups) if (g.id === groupId) return g.sessionIds;
@@ -49,7 +77,7 @@ export const GroupUnreadBadge = memo(function GroupUnreadBadge({ groupId }: { gr
   const n = useAttention((s) => countUnread(s.sessions, ids));
   if (n === 0) return null;
   return (
-    <span className="attn-count" title={`${n} session${n === 1 ? "" : "s"} need${n === 1 ? "s" : ""} attention`}>
+    <span className="attn-count" title={t("attention.badge.needAttention", { count: n })}>
       {n}
     </span>
   );
@@ -57,12 +85,13 @@ export const GroupUnreadBadge = memo(function GroupUnreadBadge({ groupId }: { gr
 
 /** Unread count badge for a sidebar workspace row (or a dot on the collapsed rail). */
 export const WorkspaceUnreadBadge = memo(function WorkspaceUnreadBadge({ workspaceId, compact }: { workspaceId: string; compact?: boolean }) {
+  const t = useT();
   const ids = useApp(
     useShallow((s) => s.persisted.workspaces.find((w) => w.id === workspaceId)?.groups.flatMap((g) => g.sessionIds) ?? []),
   );
   const n = useAttention((s) => countUnread(s.sessions, ids));
   if (n === 0) return null;
-  const title = `${n} session${n === 1 ? "" : "s"} need${n === 1 ? "s" : ""} attention`;
+  const title = t("attention.badge.needAttention", { count: n });
   return compact ? <span className="attn-badge-dot attn-rail-dot" title={title} /> : (
     <span className="attn-count" title={title}>
       {n}

@@ -5,6 +5,8 @@
 // Pure helpers take an explicit `os` (defaulting to the detected one) so tests can pin a platform:
 // vitest runs in Node, whose global `navigator.platform` reflects the HOST OS of the CI runner.
 
+import { t } from "../i18n";
+
 export type Os = "windows" | "macos" | "linux";
 
 /** Classify a `navigator.platform` / `userAgentData.platform` / `userAgent` string. Default: windows. */
@@ -48,14 +50,14 @@ export function webviewLabel(os: Os = OS): string {
 
 /** Tooltip for the webview bucket: on Unix the attribution is best effort. */
 export function webviewHint(os: Os = OS): string {
-  if (os === "windows") return "msedgewebview2.exe processes started by this app";
-  if (os === "macos") return "WebKit web content processes (com.apple.WebKit.*), attributed best effort";
-  return "WebKitGTK web processes (WebKitWebProcess, WebKitNetworkProcess), attributed best effort";
+  if (os === "windows") return t("platform.webviewHintWindows");
+  if (os === "macos") return t("platform.webviewHintMac");
+  return t("platform.webviewHintLinux");
 }
 
 /** How CPU figures are explained (the app reports a share of all logical cores everywhere). */
 export function cpuShareLabel(os: Os = OS): string {
-  return os === "windows" ? "CPU as in Task Manager" : "CPU";
+  return os === "windows" ? t("platform.cpuTaskManager") : "CPU";
 }
 
 /** Example project folder for path inputs (absolute: `~` is not expanded). */
@@ -73,13 +75,13 @@ export function executablePlaceholder(os: Os = OS): string {
 /** "Click to reveal in …" target: the system file manager. */
 export function fileManagerName(os: Os = OS): string {
   if (os === "macos") return "Finder";
-  if (os === "linux") return "the file manager";
+  if (os === "linux") return t("platform.fileManager");
   return "Explorer";
 }
 
 /** Name of the OS notification system in settings copy. */
 export function osNotificationName(os: Os = OS): string {
   if (os === "macos") return "macOS";
-  if (os === "linux") return "Desktop";
+  if (os === "linux") return t("platform.desktopNotifications");
   return "Windows";
 }

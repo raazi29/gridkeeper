@@ -6,6 +6,7 @@
 
 import { create } from "zustand";
 import { notify } from "../actions/notify";
+import { t } from "../i18n";
 import { errorMessage, ipc } from "../lib/ipc";
 import { agentsReading, installToast, pageKey, repoKey } from "../lib/skills";
 import type {
@@ -288,9 +289,9 @@ export async function installSkill(a: InstallArgs): Promise<InstallResult | null
     } catch (e) {
       if (errorCode(e) !== "conflict") throw e;
       const ok = await confirmDialog({
-        title: `Replace “${a.skill.installName}”?`,
-        message: `${errorMessage(e).replace(/^conflict:\s*/i, "")}. Replacing swaps the whole folder for this version; files you added inside it are removed.`,
-        confirmLabel: "Replace",
+        title: t("skills.replaceTitle", { name: a.skill.installName }),
+        message: t("skills.replaceMessage", { reason: errorMessage(e).replace(/^conflict:\s*/i, "") }),
+        confirmLabel: t("skills.replaceConfirm"),
         danger: true,
       });
       if (!ok) return null;
@@ -305,13 +306,13 @@ export async function installSkill(a: InstallArgs): Promise<InstallResult | null
     const readers = agentsReading(a.targets, a.agents);
     const live = readers.filter((r) => r.live).map((r) => r.id);
     const message = installToast(result.name, result.installed, readers.length);
-    if (live.length) actionToast({ kind: "info", message, action: { label: "Message agents…", run: () => messageAgents(live) } }, 12000);
+    if (live.length) actionToast({ kind: "info", message, action: { label: t("skills.messageAgents"), run: () => messageAgents(live) } }, 12000);
     else notify("info", message, 6000);
     if (result.warnings.length) notify("warn", result.warnings.join(" "));
     void loadInstalled(a.projectDir);
     return result;
   } catch (e) {
-    notify("error", `Install failed: ${errorMessage(e)}`);
+    notify("error", t("skills.installFailed", { error: errorMessage(e) }));
     return null;
   } finally {
     set({ busy: false });
@@ -322,22 +323,22 @@ export async function installSkill(a: InstallArgs): Promise<InstallResult | null
 export async function removeSkill(projectDir: string, skill: InstalledSkill): Promise<boolean> {
   if (useSkills.getState().busy) return false;
   const ok = await confirmDialog({
-    title: `Remove “${skill.name}”?`,
-    message: `Deletes ${skill.dirRel} from the project folder. Running agents keep what they already loaded until their next session.`,
+    title: t("skills.removeTitle", { name: skill.name }),
+    message: t("skills.removeMessage", { dir: skill.dirRel }),
     detail: skill.dirAbs,
-    confirmLabel: "Remove",
+    confirmLabel: t("common.remove"),
     danger: true,
   });
   if (!ok) return false;
   set({ busy: true });
   try {
     await ipc.skillsRemove(projectDir, skill.dirRel);
-    notify("info", `Removed ${skill.name} (${skill.dirRel})`);
+    notify("info", t("skills.removed", { name: skill.name, dir: skill.dirRel }));
     set((s) => ({ installedSel: s.installedSel === skill.dirRel ? null : s.installedSel }));
     void loadInstalled(projectDir);
     return true;
   } catch (e) {
-    notify("error", `Remove failed: ${errorMessage(e)}`);
+    notify("error", t("skills.removeFailed", { error: errorMessage(e) }));
     return false;
   } finally {
     set({ busy: false });

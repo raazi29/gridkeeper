@@ -14,8 +14,10 @@ import { QuickLaunchButton } from "./QuickLaunch";
 import { ThemeSwitcherButton } from "./ThemeSwitcher";
 import { IconButton } from "./ui/Button";
 import { pickFolder, revealPath } from "./util/pick";
+import { useT } from "../i18n";
 
 export function WorkspaceHeader() {
+  const t = useT();
   const wsId = useApp((s) => selectActiveWorkspace(s)?.id);
   const name = useApp((s) => selectActiveWorkspace(s)?.name ?? "");
   const projectDir = useApp((s) => selectActiveWorkspace(s)?.projectDir ?? null);
@@ -62,14 +64,14 @@ export function WorkspaceHeader() {
   if (!wsId) {
     return (
       <header className="ws-header">
-        <span className="ws-header-name muted">No workspace</span>
+        <span className="ws-header-name muted">{t("shell.header.noWorkspace")}</span>
       </header>
     );
   }
 
   const setPreset = (p: LayoutPreset) => groupId && useApp.getState().updateLayout(groupId, { preset: p, maximized: null });
   const chooseFolder = async () => {
-    const dir = await pickFolder("Choose project folder", projectDir);
+    const dir = await pickFolder(t("shell.chooseProjectFolder"), projectDir);
     if (dir) useApp.getState().updateWorkspace(wsId, { projectDir: dir });
   };
 
@@ -79,12 +81,12 @@ export function WorkspaceHeader() {
         {name}
       </span>
       {projectDir ? (
-        <button type="button" className="ws-header-path mono" title={`${projectDir}\nClick to reveal in ${fileManagerName()}`} onClick={() => void revealPath(projectDir)}>
+        <button type="button" className="ws-header-path mono" title={t("shell.header.revealPath", { path: projectDir, app: fileManagerName() })} onClick={() => void revealPath(projectDir)}>
           {projectDir}
         </button>
       ) : (
         <button type="button" className="ws-header-path is-empty" onClick={() => void chooseFolder()}>
-          <IconFolder size={13} /> Set project folder…
+          <IconFolder size={13} /> {t("shell.header.setFolder")}
         </button>
       )}
       {git?.isRepo && (
@@ -92,38 +94,38 @@ export function WorkspaceHeader() {
           type="button"
           className="chip chip-git"
           disabled={gitBusy}
-          title={`${git.root ?? ""}${git.dirty ? "\nUncommitted changes" : ""}${git.worktrees.length > 1 ? `\n${git.worktrees.length} worktrees` : ""}\nClick to refresh`}
+          title={`${git.root ?? ""}${git.dirty ? `\n${t("shell.header.gitUncommitted")}` : ""}${git.worktrees.length > 1 ? `\n${t("shell.header.gitWorktrees", { count: git.worktrees.length })}` : ""}\n${t("shell.header.gitRefresh")}`}
           onClick={() => void loadGit(projectDir)}
         >
           <IconBranch size={12} />
-          <span className="mono">{git.branch ?? "detached"}</span>
-          {git.dirty && <span className="dot is-warn" aria-label="uncommitted changes" />}
+          <span className="mono">{git.branch ?? t("shell.header.gitDetached")}</span>
+          {git.dirty && <span className="dot is-warn" aria-label={t("shell.header.gitDirtyAria")} />}
         </button>
       )}
 
       <div className="ws-header-actions">
         <QuickLaunchButton />
         <span className="divider-v" />
-        <div className="preset-switch" role="group" aria-label="Layout preset">
-          <IconButton label="Grid layout" active={preset === "grid"} onClick={() => setPreset("grid")}>
+        <div className="preset-switch" role="group" aria-label={t("shell.header.layoutPreset")}>
+          <IconButton label={t("shell.header.layoutGrid")} active={preset === "grid"} onClick={() => setPreset("grid")}>
             <IconGrid size={14} />
           </IconButton>
-          <IconButton label="Columns layout" active={preset === "columns"} onClick={() => setPreset("columns")}>
+          <IconButton label={t("shell.header.layoutColumns")} active={preset === "columns"} onClick={() => setPreset("columns")}>
             <IconColumns size={14} />
           </IconButton>
-          <IconButton label="Rows layout" active={preset === "rows"} onClick={() => setPreset("rows")}>
+          <IconButton label={t("shell.header.layoutRows")} active={preset === "rows"} onClick={() => setPreset("rows")}>
             <IconRows size={14} />
           </IconButton>
         </div>
         <span className="divider-v" />
-        <IconButton label={withShortcut("Mission Control", scMission)} onClick={() => runCommand("view.mission")}>
+        <IconButton label={withShortcut(t("shell.header.missionControl"), scMission)} onClick={() => runCommand("view.mission")}>
           <IconMission size={15} />
         </IconButton>
         <ThemeSwitcherButton />
-        <IconButton label={withShortcut(inspectorOpen ? "Hide inspector" : "Show inspector", scInspector)} active={inspectorOpen} onClick={() => runCommand("view.toggleInspector")}>
+        <IconButton label={withShortcut(inspectorOpen ? t("shell.header.hideInspector") : t("shell.header.showInspector"), scInspector)} active={inspectorOpen} onClick={() => runCommand("view.toggleInspector")}>
           <IconInspector size={15} />
         </IconButton>
-        <IconButton label={withShortcut(focusMode ? "Exit focus mode (Esc)" : "Focus mode", scFocus)} active={focusMode} onClick={() => runCommand("view.focusMode")}>
+        <IconButton label={withShortcut(focusMode ? t("shell.header.focusModeExit") : t("shell.header.focusMode"), scFocus)} active={focusMode} onClick={() => runCommand("view.focusMode")}>
           <IconFocus size={15} />
         </IconButton>
       </div>

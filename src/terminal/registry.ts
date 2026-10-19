@@ -38,6 +38,7 @@ import { isLive, useApp } from "../store/appStore";
 import { AckBatcher } from "./ackBatcher";
 import { confirmDialogEx, useUi } from "../store/uiStore";
 import { checkPaste, pasteTitle } from "./pasteGuard";
+import { t } from "../i18n";
 import { PRESENTATION_FONT_BOOST, getSearchDecorations, getTerminalTheme } from "./theme";
 import { MAX_WEBGL, allocateWebgl, type WebglCandidate } from "./webglBudget";
 import { clipboardKeyAction, linkHint, linkModifierHeld } from "./terminalKeys";
@@ -650,15 +651,14 @@ async function guardedPaste(e: Entry, text: string) {
   if (!text || e.disposed) return;
   const check = pasteCheck(e, text);
   if (check.confirm) {
-    const name = useApp.getState().persisted.sessions.find((m) => m.id === e.id)?.name ?? "this session";
+    const name = useApp.getState().persisted.sessions.find((m) => m.id === e.id)?.name ?? t("terminal.thisSession");
     const preview = text.split(/\r\n|\r|\n/, 4).map((l) => (l.length > 120 ? `${l.slice(0, 120)}…` : l));
     const { ok, checked } = await confirmDialogEx({
       title: pasteTitle(check, name),
-      message:
-        "This program has not enabled bracketed paste, so every line break is sent as Enter and each line may run as a command.",
+      message: t("terminal.pasteMessage"),
       detail: preview.join("\n") + (check.lines > preview.length ? "\n…" : ""),
-      confirmLabel: "Paste",
-      checkbox: "Don't ask again",
+      confirmLabel: t("common.paste"),
+      checkbox: t("terminal.dontAskAgain"),
     });
     if (!ok || e.disposed) return;
     if (checked) useApp.getState().updateSettings({ pasteWarning: false });

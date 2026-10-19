@@ -2,9 +2,10 @@
 
 import { Component, type ErrorInfo, type ReactNode } from "react";
 import { ipc } from "../lib/ipc";
+import { t } from "../i18n";
 
 interface Props {
-  /** Shown in the fallback, e.g. "This pane" or "The app". */
+  /** Shown in the fallback, already translated: t("errors.scopePane"), t("errors.scopeApp") … */
   scope: string;
   children: ReactNode;
   compact?: boolean;
@@ -25,11 +26,11 @@ export class ErrorBoundary extends Component<Props, { error: Error | null }> {
     if (!this.state.error) return this.props.children;
     return (
       <div className={this.props.compact ? "crash crash--compact" : "crash"} role="alert">
-        <div className="crash-title">{this.props.scope} hit an error</div>
+        <div className="crash-title">{t("errors.crashTitle", { scope: this.props.scope })}</div>
         <div className="crash-msg mono">{this.state.error.message}</div>
-        <div className="crash-note">Sessions keep running in the background.</div>
+        <div className="crash-note">{t("errors.crashNote")}</div>
         <button type="button" className="btn btn-sm" onClick={() => this.setState({ error: null })}>
-          Try again
+          {t("errors.tryAgain")}
         </button>
       </div>
     );

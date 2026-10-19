@@ -5,6 +5,7 @@
 // Every "should this ping the user?" rule lives in the pure shouldNotify() (notifyRules.ts).
 
 import { disposeAudio, playSound } from "../audio/sounds";
+import { t } from "../i18n";
 import { APP_NAME } from "../lib/brand";
 import { errorMessage, ipc, onSessionAttention, onSessionState } from "../lib/ipc";
 import { isMac } from "../lib/platform";
@@ -16,8 +17,8 @@ import { useMission } from "../store/mission";
 import { actionToast } from "../store/uiStore";
 import { jumpToSession } from "./commands";
 import {
-  MUTED_REASON_TEXT,
   eventKindOf,
+  mutedReasonText,
   normalizeNotifications,
   pruneMutes,
   shouldNotify,
@@ -28,6 +29,7 @@ import {
 export { shouldNotify } from "./notifyRules";
 
 // A sandbox instance (GRIDKEEPER_SANDBOX) keeps its marker so it is never mistaken for the live app.
+// The window title is not translated: test scripts and the sandbox tooling match it.
 let baseTitle = APP_NAME;
 
 // ---- window focus (synchronous; DOM events, not the async window API) ----------------
@@ -52,7 +54,7 @@ export function isSeen(id: SessionId): boolean {
 }
 
 export function sessionLabel(id: SessionId): string {
-  return useApp.getState().persisted.sessions.find((m) => m.id === id)?.name ?? "Session";
+  return useApp.getState().persisted.sessions.find((m) => m.id === id)?.name ?? t("notifications.sessionFallback");
 }
 
 // ---- notifications -----------------------------------------------------------------
@@ -83,9 +85,9 @@ function decide(id: SessionId, alert: Alert, now = Date.now()): NotifyDecision {
 
 function toastText(id: SessionId, alert: Alert): { title: string; body: string } {
   const name = sessionLabel(id);
-  if (alert.kind === "error") return { title: `${name} stopped with an error`, body: alert.message };
-  if (alert.kind === "done") return { title: `${name} finished`, body: alert.message };
-  return { title: alert.title ? `${name}: ${alert.title}` : `${name} needs your attention`, body: alert.message };
+  if (alert.kind === "error") return { title: t("notifications.toast.error", { name }), body: alert.message };
+  if (alert.kind === "done") return { title: t("notifications.toast.done", { name }), body: alert.message };
+  return { title: alert.title ? t("notifications.toast.titled", { name, title: alert.title }) : t("notifications.toast.attention", { name }), body: alert.message };
 }
 
 function handleAlert(id: SessionId, alert: Alert, decision: NotifyDecision) {
@@ -104,7 +106,7 @@ function handleAlert(id: SessionId, alert: Alert, decision: NotifyDecision) {
       kind: alert.kind === "error" ? "error" : alert.kind === "waiting" ? "warn" : "info",
       message: title,
       detail: body,
-      action: { label: "Jump", run: () => jumpToSession(id) },
+      action: { label: t("notifications.jump"), run: () => jumpToSession(id) },
     });
   }
 }
@@ -169,7 +171,7 @@ async function osToast(title: string, body: string) {
       pending = [];
       lastOsToast = Date.now();
       if (items.length === 1) void sendOs(items[0].title, items[0].body);
-      else if (items.length > 1) void sendOs(`${items.length} sessions need your attention`, items.map((i) => i.title).join("\n"));
+      else if (items.length > 1) void sendOs(t("notifications.osSummary", { count: items.length }), items.map((i) => i.title).join("\n"));
     }, Math.max(0, OS_GAP_MS - (now - lastOsToast)));
   }
 }
@@ -223,7 +225,7 @@ export function installAttention(): () => void {
     let decision = null as NotifyDecision | null;
     const alert = useAttention.getState().apply(id, input, isSeen(id), undefined, (a) => {
       decision = decide(id, a);
-      return decision.muted ? { muted: true, mutedReason: MUTED_REASON_TEXT[decision.reason ?? "dnd"] } : undefined;
+      return decision.muted ? { muted: true, mutedReason: mutedReasonText(decision.reason ?? "dnd") } : undefined;
     });
     if (alert && decision) handleAlert(id, alert, decision);
     if (alert) void notifyPhone(phoneEvent(id, alert));

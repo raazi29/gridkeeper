@@ -4,13 +4,14 @@
 
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { useT } from "../i18n";
 import { useApp } from "../store/appStore";
 import { useUi } from "../store/uiStore";
 import { previewTheme } from "../theme/applyTheme";
 import { resolveTheme, withSaber } from "../theme/saber";
 import { THEMES, getTheme, type Theme } from "../theme/themes";
 import { SaberPicker } from "./AppearanceExtras";
-import { ThemeCard } from "./ThemeCard";
+import { ThemeCard, themeKindLabel } from "./ThemeCard";
 import { IconButton } from "./ui/Button";
 import "../styles/experience.css";
 
@@ -29,6 +30,7 @@ const PREVIEW_DELAY_MS = 70;
 type Placement = "below-end" | "above-start";
 
 function ThemePopover({ anchor, placement, onClose }: { anchor: HTMLElement; placement: Placement; onClose: () => void }) {
+  const t = useT();
   const ref = useRef<HTMLDivElement>(null);
   const [pos, setPos] = useState<React.CSSProperties>({ visibility: "hidden", top: 0, left: 0 });
   const committed = getTheme(useApp((s) => s.persisted.settings.theme)).id;
@@ -36,9 +38,9 @@ function ThemePopover({ anchor, placement, onClose }: { anchor: HTMLElement; pla
   const [hoverId, setHoverId] = useState<string | null>(null);
   const timer = useRef<number | undefined>(undefined);
 
-  const schedulePreview = useCallback((t: Theme | null) => {
+  const schedulePreview = useCallback((th: Theme | null) => {
     window.clearTimeout(timer.current);
-    timer.current = window.setTimeout(() => previewTheme(t), t ? PREVIEW_DELAY_MS : 0);
+    timer.current = window.setTimeout(() => previewTheme(th), th ? PREVIEW_DELAY_MS : 0);
   }, []);
 
   const revert = useCallback(() => {
@@ -68,8 +70,8 @@ function ThemePopover({ anchor, placement, onClose }: { anchor: HTMLElement; pla
   // Close on outside click, Esc, window blur; always revert an uncommitted preview on the way out.
   useEffect(() => {
     const onDown = (e: MouseEvent) => {
-      const t = e.target as Node;
-      if (ref.current?.contains(t) || anchor.contains(t)) return;
+      const target = e.target as Node;
+      if (ref.current?.contains(target) || anchor.contains(target)) return;
       onClose();
     };
     const onKey = (e: KeyboardEvent) => {
@@ -94,13 +96,13 @@ function ThemePopover({ anchor, placement, onClose }: { anchor: HTMLElement; pla
     };
   }, [anchor, onClose]);
 
-  const select = (t: Theme) => {
+  const select = (th: Theme) => {
     window.clearTimeout(timer.current);
     previewTheme(null);
     setHoverId(null);
-    useApp.getState().updateSettings({ theme: t.id });
+    useApp.getState().updateSettings({ theme: th.id });
     // Saber Duel stays open so the blade colour can be picked right away.
-    if (!t.saber) {
+    if (!th.saber) {
       onClose();
       anchor.focus();
     }
@@ -130,7 +132,7 @@ function ThemePopover({ anchor, placement, onClose }: { anchor: HTMLElement; pla
       ref={ref}
       className="theme-pop"
       role="dialog"
-      aria-label="Choose a theme"
+      aria-label={t("appearance.switcherAria")}
       style={pos}
       onBlur={(e) => {
         // Keyboard focus left the popover entirely.
@@ -138,41 +140,35 @@ function ThemePopover({ anchor, placement, onClose }: { anchor: HTMLElement; pla
       }}
     >
       <div className="theme-pop-head">
-        <span className="theme-pop-title">Theme</span>
+        <span className="theme-pop-title">{t("appearance.theme")}</span>
         <span className="theme-pop-now" aria-live="polite">
-          {hoverId && hoverId !== committed ? (
-            <>
-              Previewing <b>{shown.name}</b>
-            </>
-          ) : (
-            <>
-              <b>{shown.name}</b> · {shown.kind}
-            </>
-          )}
+          {hoverId && hoverId !== committed
+            ? t.rich("appearance.previewing", { name: shown.name, b: (c) => <b>{c}</b> })
+            : t.rich("appearance.current", { name: shown.name, kind: themeKindLabel(shown.kind), b: (c) => <b>{c}</b> })}
         </span>
-        <span className="theme-pop-hint">Hover to preview · Enter to apply</span>
+        <span className="theme-pop-hint">{t("appearance.switcherHint")}</span>
       </div>
       <div
         className="theme-pop-grid"
         role="radiogroup"
-        aria-label="Theme"
+        aria-label={t("appearance.theme")}
         onKeyDown={onGridKey}
         onMouseLeave={revert}
       >
-        {THEMES.map((t) => {
-          const themed = withSaber(t, saberColor);
+        {THEMES.map((th) => {
+          const themed = withSaber(th, saberColor);
           return (
             <ThemeCard
-              key={t.id}
+              key={th.id}
               compact
               theme={themed}
-              selected={t.id === committed}
-              tabIndex={t.id === committed ? 0 : -1}
+              selected={th.id === committed}
+              tabIndex={th.id === committed ? 0 : -1}
               onPreview={() => {
-                setHoverId(t.id);
-                schedulePreview(t.id === committed ? null : themed);
+                setHoverId(th.id);
+                schedulePreview(th.id === committed ? null : themed);
               }}
-              onSelect={() => select(t)}
+              onSelect={() => select(th)}
             />
           );
         })}
@@ -180,11 +176,11 @@ function ThemePopover({ anchor, placement, onClose }: { anchor: HTMLElement; pla
       <div className="theme-pop-foot">
         {showSaber ? (
           <div className="theme-pop-saber">
-            <span className="micro-label">Blade</span>
+            <span className="micro-label">{t("appearance.blade")}</span>
             <SaberPicker size="sm" />
           </div>
         ) : (
-          <span className="theme-pop-tip">Themes recolour the terminals too. Effects like glow and scanlines live in Settings.</span>
+          <span className="theme-pop-tip">{t("appearance.switcherTip")}</span>
         )}
         <button
           type="button"
@@ -194,7 +190,7 @@ function ThemePopover({ anchor, placement, onClose }: { anchor: HTMLElement; pla
             useUi.getState().openDialog({ kind: "settings", section: "appearance" });
           }}
         >
-          More in Settings ›
+          {t("appearance.moreInSettings")}
         </button>
       </div>
     </div>,
@@ -212,12 +208,13 @@ function useThemePopover(placement: Placement) {
 
 /** Palette button for the workspace header. */
 export function ThemeSwitcherButton() {
+  const t = useT();
   const pop = useThemePopover("below-end");
   return (
     <>
       <IconButton
-        label="Theme"
-        title="Theme — hover a card to preview"
+        label={t("appearance.theme")}
+        title={t("appearance.switcherButtonTitle")}
         className={pop.open ? "is-active" : undefined}
         aria-haspopup="dialog"
         aria-expanded={pop.open}
@@ -233,23 +230,26 @@ export function ThemeSwitcherButton() {
 
 /** Status bar chip: swatch + current theme name. */
 export function ThemeChip() {
+  const t = useT();
   const themeId = useApp((s) => s.persisted.settings.theme);
   const saberColor = useApp((s) => s.persisted.settings.saberColor);
-  const t = resolveTheme({ theme: themeId, saberColor });
+  const th = resolveTheme({ theme: themeId, saberColor });
   const pop = useThemePopover("above-start");
   return (
     <>
       <button
         type="button"
         className={`sb-item sb-btn theme-chip${pop.open ? " is-active" : ""}`}
-        title="Change theme"
+        title={t("appearance.changeTheme")}
         aria-haspopup="dialog"
         aria-expanded={pop.open}
         data-theme-chip=""
         onClick={(e) => pop.toggle(e.currentTarget)}
       >
-        <span className="theme-chip-swatch" aria-hidden="true" style={{ ["--sw-bg" as string]: t.ui["bg-2"], ["--sw-accent" as string]: t.ui.accent, ["--sw-accent-2" as string]: t.ui["accent-2"] }} />
-        <span className="theme-chip-name">{t.name}</span>
+        <span className="theme-chip-swatch" aria-hidden="true" style={{ ["--sw-bg" as string]: th.ui["bg-2"], ["--sw-accent" as string]: th.ui.accent, ["--sw-accent-2" as string]: th.ui["accent-2"] }} />
+        <span className="theme-chip-name" title={th.name}>
+          {th.name}
+        </span>
       </button>
       {pop.element}
     </>

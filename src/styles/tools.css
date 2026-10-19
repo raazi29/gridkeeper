@@ -4,7 +4,7 @@
 .findbar {
   position: absolute;
   top: 6px;
-  right: 14px;
+  inset-inline-end: 14px;
   z-index: 20; /* above xterm layers (11) and scanlines (12) */
   display: flex;
   align-items: center;
@@ -43,7 +43,7 @@
   min-width: 56px;
   padding: 0 6px;
   color: var(--text-2);
-  text-align: right;
+  text-align: end;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
@@ -129,7 +129,7 @@
   color: var(--text-2);
 }
 .gpu-bar-v {
-  text-align: right;
+  text-align: end;
   font-variant-numeric: tabular-nums;
   color: var(--text-1);
 }

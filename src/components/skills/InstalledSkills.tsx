@@ -4,6 +4,7 @@
 
 import { memo } from "react";
 import { openExternal } from "../../actions/browser";
+import { useT } from "../../i18n";
 import { githubUrl, relativeTime, shortSha } from "../../lib/skills";
 import type { InstalledSkill } from "../../lib/types";
 import { checkUpdate, loadInstalled, removeSkill, selectInstalled, startUpdate, useSkills } from "../../store/skills";
@@ -12,19 +13,20 @@ import { Button } from "../ui/Button";
 import { revealPath } from "../util/pick";
 
 export function InstalledList({ projectDir }: { projectDir: string | null }) {
+  const t = useT();
   const status = useSkills((s) => (s.installed?.projectDir === projectDir ? s.installed.status : null));
   const items = useSkills((s) => (s.installed?.projectDir === projectDir ? s.installed.items : null));
   const error = useSkills((s) => (s.installed?.projectDir === projectDir ? s.installed.error : null));
   if (!projectDir)
     return (
       <div className="skills-list-wrap">
-        <div className="skills-empty">This workspace has no project folder, so there are no project skills to show.</div>
+        <div className="skills-empty">{t("skills.installed.noProject")}</div>
       </div>
     );
   return (
     <div className="skills-list-wrap">
       <div className="skills-list" role="list">
-        {status === "loading" && !items?.length && <div className="skills-empty">Reading the project's skill folders…</div>}
+        {status === "loading" && !items?.length && <div className="skills-empty">{t("skills.installed.reading")}</div>}
         {status === "error" && (
           <div className="skills-note is-error" role="alert">
             <IconWarn size={13} />
@@ -32,18 +34,15 @@ export function InstalledList({ projectDir }: { projectDir: string | null }) {
           </div>
         )}
         {status === "ok" && items?.length === 0 && (
-          <div className="skills-empty">
-            No skills in <span className="mono">.claude/skills</span> or <span className="mono">.agents/skills</span> yet. Find one under Trending, Top or
-            Search.
-          </div>
+          <div className="skills-empty">{t.rich("skills.installed.empty", { mono: (c) => <span className="mono">{c}</span> })}</div>
         )}
         {items?.map((i) => <InstalledRow key={i.dirRel} skill={i} />)}
       </div>
       <div className="skills-list-foot">
-        <span className="skills-source">from the project folder (no network)</span>
+        <span className="skills-source">{t("skills.installed.footSource")}</span>
         <span className="skills-spacer" />
         <button type="button" className="chip" onClick={() => void loadInstalled(projectDir)}>
-          Refresh
+          {t("common.refresh")}
         </button>
       </div>
     </div>
@@ -51,6 +50,7 @@ export function InstalledList({ projectDir }: { projectDir: string | null }) {
 }
 
 const InstalledRow = memo(function InstalledRow({ skill }: { skill: InstalledSkill }) {
+  const t = useT();
   const selected = useSkills((s) => s.installedSel === skill.dirRel);
   const check = useSkills((s) => s.updateChecks[skill.dirRel]);
   return (
@@ -64,7 +64,7 @@ const InstalledRow = memo(function InstalledRow({ skill }: { skill: InstalledSki
       <span className="skills-row-head">
         <span className="skills-row-name">{skill.name}</span>
         <span className="chip skills-chip mono">{skill.target}</span>
-        {check?.status === "ok" && check.data.status === "update" && <span className="chip chip-accent skills-chip">update</span>}
+        {check?.status === "ok" && check.data.status === "update" && <span className="chip chip-accent skills-chip">{t("skills.installed.updateChip")}</span>}
       </span>
       {skill.description && <span className="skills-row-desc">{skill.description}</span>}
       <span className="skills-row-meta">
@@ -73,25 +73,23 @@ const InstalledRow = memo(function InstalledRow({ skill }: { skill: InstalledSki
             {skill.provenance.repo} @ {shortSha(skill.provenance.commitSha)}
           </span>
         ) : (
-          <span>local</span>
+          <span>{t("skills.installed.local")}</span>
         )}
-        {skill.hasScripts && <span className="skills-warn-text">scripts</span>}
-        {skill.isLink && <span className="skills-warn-text">link</span>}
+        {skill.hasScripts && <span className="skills-warn-text">{t("skills.chipScripts")}</span>}
+        {skill.isLink && <span className="skills-warn-text">{t("skills.installed.link")}</span>}
       </span>
     </button>
   );
 });
 
 export function InstalledDetail({ projectDir }: { projectDir: string }) {
+  const t = useT();
   const skill = useSkills((s) => s.installed?.items.find((i) => i.dirRel === s.installedSel) ?? null);
   const check = useSkills((s) => (s.installedSel ? s.updateChecks[s.installedSel] : undefined));
   const busy = useSkills((s) => s.busy);
   if (!skill)
     return (
-      <div className="skills-detail-empty">
-        Skills installed in this project. Claude Code reads <span className="mono">.claude/skills</span>; Codex and other Agent Skills hosts read{" "}
-        <span className="mono">.agents/skills</span>. Pick one to update or remove it.
-      </div>
+      <div className="skills-detail-empty">{t.rich("skills.installed.intro", { mono: (c) => <span className="mono">{c}</span> })}</div>
     );
   const p = skill.provenance;
   return (
@@ -104,20 +102,17 @@ export function InstalledDetail({ projectDir }: { projectDir: string }) {
       {skill.isLink && (
         <div className="skills-note is-warn">
           <IconWarn size={13} />
-          <span>This folder is a junction or symbolic link. Gridkeeper lists it but never removes or replaces it.</span>
+          <span>{t("skills.installed.isLink")}</span>
         </div>
       )}
       <dl className="skills-meta">
-        <dt>Folder</dt>
+        <dt>{t("skills.installed.dtFolder")}</dt>
         <dd className="mono" title={skill.dirAbs}>
           {skill.dirRel}
         </dd>
-        <dt>Files</dt>
-        <dd>
-          {skill.isLink ? "?" : skill.fileCount}
-          {skill.hasScripts ? " · contains scripts" : ""}
-        </dd>
-        <dt>Source</dt>
+        <dt>{t("skills.installed.dtFiles")}</dt>
+        <dd>{skill.hasScripts ? t("skills.installed.filesScripts", { count: skill.isLink ? "?" : skill.fileCount }) : skill.isLink ? "?" : skill.fileCount}</dd>
+        <dt>{t("skills.installed.dtSource")}</dt>
         <dd>
           {p ? (
             <button type="button" className="skills-link mono" onClick={() => openExternal(githubUrl(p.repo, p.commitSha, p.path))}>
@@ -125,12 +120,12 @@ export function InstalledDetail({ projectDir }: { projectDir: string }) {
               {p.path ? `/${p.path}` : ""} @ {shortSha(p.commitSha)}
             </button>
           ) : (
-            "local (not installed by Gridkeeper)"
+            t("skills.installed.sourceLocal")
           )}
         </dd>
         {p && (
           <>
-            <dt>Installed</dt>
+            <dt>{t("skills.installed.dtInstalled")}</dt>
             <dd>{relativeTime(p.installedAt, Date.now()) || p.installedAt}</dd>
           </>
         )}
@@ -141,15 +136,15 @@ export function InstalledDetail({ projectDir }: { projectDir: string }) {
           <span>
             {check.data.status === "current" &&
               (check.data.currentSha === check.data.pinnedSha
-                ? "Up to date with the default branch."
-                : `Up to date: the skill folder is unchanged on the default branch (now ${shortSha(check.data.currentSha)}).`)}
-            {check.data.status === "update" && `An update is available on the default branch (${shortSha(check.data.pinnedSha)} → ${shortSha(check.data.currentSha)}).`}
-            {check.data.status === "missing" && "This skill folder no longer exists on the repository's default branch."}
+                ? t("skills.installed.upToDate")
+                : t("skills.installed.upToDateUnchanged", { sha: shortSha(check.data.currentSha) }))}
+            {check.data.status === "update" && t("skills.installed.updateAvailable", { from: shortSha(check.data.pinnedSha), to: shortSha(check.data.currentSha) })}
+            {check.data.status === "missing" && t("skills.installed.missing")}
           </span>
           <span className="skills-spacer" />
           {check.data.status === "update" && (
             <Button size="sm" variant="primary" onClick={() => startUpdate(skill)}>
-              Review update
+              {t("skills.installed.reviewUpdate")}
             </Button>
           )}
         </div>
@@ -163,11 +158,11 @@ export function InstalledDetail({ projectDir }: { projectDir: string }) {
 
       <div className="skills-actions">
         <Button size="sm" icon={<IconFolder size={13} />} onClick={() => void revealPath(skill.dirAbs)}>
-          Open folder
+          {t("skills.openFolder")}
         </Button>
         {p && (
           <Button size="sm" icon={<IconRestart size={13} />} disabled={check?.status === "loading"} onClick={() => void checkUpdate(skill)}>
-            {check?.status === "loading" ? "Checking api.github.com…" : "Check for update"}
+            {check?.status === "loading" ? t("skills.installed.checking") : t("skills.installed.checkUpdate")}
           </Button>
         )}
         {p && (
@@ -177,7 +172,7 @@ export function InstalledDetail({ projectDir }: { projectDir: string }) {
         )}
         <span className="skills-spacer" />
         <Button size="sm" variant="danger" icon={<IconTrash size={13} />} disabled={skill.isLink || busy} onClick={() => void removeSkill(projectDir, skill)}>
-          Remove
+          {t("common.remove")}
         </Button>
       </div>
     </div>

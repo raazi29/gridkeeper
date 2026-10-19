@@ -7,6 +7,7 @@ import { createPortal } from "react-dom";
 import { create } from "zustand";
 import { useShallow } from "zustand/react/shallow";
 import { jumpToSession } from "../actions/commands";
+import { useT, type MessageKey, type Translator } from "../i18n";
 import { ipc } from "../lib/ipc";
 import { processSessionIds } from "../lib/browserPanes";
 import type { SessionId } from "../lib/types";
@@ -14,7 +15,7 @@ import { AgentGlyph } from "../layout/icons";
 import { isLive, useApp } from "../store/appStore";
 import { useAttention, useAttentionUi } from "../store/attention";
 import { popModal, pushModal, useUi } from "../store/uiStore";
-import { ATTN_LABEL, IconFleet } from "./AttentionBits";
+import { IconFleet, attnLabel } from "./AttentionBits";
 import { useDiagnosticsPoll } from "./hooks";
 import { IconClose } from "./icons";
 import { fleetLamp, formatUptime, matchesFleetFilter, tailLines, type FleetFilter, type FleetLamp } from "./util/fleet";
@@ -24,12 +25,17 @@ import { useContextMenu } from "./ui/Menu";
 import { CostMeterHint, MeterChip } from "./MeterChip";
 import "../styles/attention.css";
 
-const LAMP_LABEL: Record<FleetLamp, string> = { ...ATTN_LABEL, exited: "Exited", stopped: "Not started" };
-const FILTERS: { id: FleetFilter; label: string }[] = [
-  { id: "all", label: "All" },
-  { id: "needs", label: "Needs me" },
-  { id: "working", label: "Working" },
-  { id: "errors", label: "Errors" },
+/** Tile lamp label in the UI language: the attention states' labels plus the two process-only lamps. */
+function lampLabel(lamp: FleetLamp, t: Translator): string {
+  if (lamp === "exited") return t("fleet.lampExited");
+  if (lamp === "stopped") return t("fleet.lampStopped");
+  return attnLabel(lamp);
+}
+const FILTERS: { id: FleetFilter; label: MessageKey }[] = [
+  { id: "all", label: "fleet.filter.all" },
+  { id: "needs", label: "fleet.filter.needs" },
+  { id: "working", label: "fleet.filter.working" },
+  { id: "errors", label: "fleet.filter.errors" },
 ];
 const TAIL_BYTES = 8 * 1024;
 const TAIL_REFRESH_MS = 2000;
@@ -38,6 +44,7 @@ const TAIL_REFRESH_MS = 2000;
 const useTails = create<{ tails: Record<SessionId, string[]> }>()(() => ({ tails: {} }));
 
 export function FleetOverlay() {
+  const t = useT();
   const close = useCallback(() => useAttentionUi.getState().close(), []);
   const [filter, setFilter] = useState<FleetFilter>("all");
   const [selected, setSelected] = useState<SessionId | null>(() => useApp.getState().focusedSessionId);
@@ -206,12 +213,12 @@ export function FleetOverlay() {
 
   return createPortal(
     <div className="attn-fleet-backdrop" onMouseDown={(e) => e.target === e.currentTarget && close()}>
-      <div ref={panel} className="attn-fleet" role="dialog" aria-modal="true" aria-label="Fleet overview" tabIndex={-1} onKeyDown={onKeyDown}>
+      <div ref={panel} className="attn-fleet" role="dialog" aria-modal="true" aria-label={t("fleet.overview")} tabIndex={-1} onKeyDown={onKeyDown}>
         <div className="attn-fleet-head">
           <span className="attn-fleet-title">
-            <IconFleet size={15} /> Fleet
+            <IconFleet size={15} /> {t("fleet.title")}
           </span>
-          <div className="segmented segmented-sm" role="radiogroup" aria-label="Filter">
+          <div className="segmented segmented-sm" role="radiogroup" aria-label={t("fleet.filterAria")}>
             {FILTERS.map((f) => (
               <button
                 key={f.id}
@@ -221,20 +228,20 @@ export function FleetOverlay() {
                 className={`segment${filter === f.id ? " is-selected" : ""}`}
                 onClick={() => setFilter(f.id)}
               >
-                {f.label}
+                {t(f.label)}
                 <span className="attn-fleet-count">{counts[f.id]}</span>
               </button>
             ))}
           </div>
           <span className="attn-spacer" />
           <CostMeterHint ids={allIds} variant="fleet" />
-          <span className="attn-fleet-hint">Arrows to move · Enter to jump · Esc to close</span>
-          <button type="button" className="icon-btn icon-btn-sm" aria-label="Close" title="Close (Esc)" onClick={close}>
+          <span className="attn-fleet-hint">{t("fleet.keysHint")}</span>
+          <button type="button" className="icon-btn icon-btn-sm" aria-label={t("common.close")} title={t("fleet.closeTitle")} onClick={close}>
             <IconClose size={14} />
           </button>
         </div>
         <div className="attn-fleet-body">
-          {visible.length === 0 && <div className="attn-empty">{filter === "all" ? "No sessions yet." : "Nothing here right now."}</div>}
+          {visible.length === 0 && <div className="attn-empty">{filter === "all" ? t("fleet.emptyAll") : t("fleet.emptyFilter")}</div>}
           {visible.map((g) => (
             <section key={g.id} className="attn-fleet-section">
               <h3 className="attn-fleet-ws">{g.name}</h3>
@@ -287,6 +294,7 @@ const FleetTile = memo(function FleetTile({
   onMenu: (e: React.MouseEvent, id: SessionId) => void;
   tileRef: (el: HTMLElement | null) => void;
 }) {
+  const t = useT();
   const meta = useApp(useShallow((s) => {
     const m = s.persisted.sessions.find((x) => x.id === id);
     return m ? { name: m.name, agent: m.agent, profileId: m.profileId } : null;
@@ -309,20 +317,21 @@ const FleetTile = memo(function FleetTile({
   const lamp = fleetLamp(rt, a);
   const live = isLive(rt);
   const uptime = formatUptime(rt?.startedAt, live ? null : rt?.endedAt, Date.now());
+  const lampText = lampLabel(lamp, t);
   return (
     <div
       ref={tileRef}
       data-tile={id}
       role="button"
       tabIndex={selected ? 0 : -1}
-      aria-label={`${meta.name}: ${LAMP_LABEL[lamp]}`}
+      aria-label={t("fleet.tileAria", { name: meta.name, state: lampText })}
       className={`attn-tile attn-tile--${lamp}${selected ? " is-selected" : ""}${a?.unread ? " is-unread" : ""}`}
       onClick={() => onJump(id)}
       onFocus={() => onSelect(id)}
       onContextMenu={(e) => onMenu(e, id)}
     >
       <div className="attn-tile-head">
-        <span className={`attn-lamp attn-lamp--${lamp}`} title={LAMP_LABEL[lamp]} />
+        <span className={`attn-lamp attn-lamp--${lamp}`} title={lampText} />
         <span className="attn-tile-glyph">
           <AgentGlyph agent={meta.agent} size={12} />
         </span>
@@ -331,7 +340,7 @@ const FleetTile = memo(function FleetTile({
         </span>
         {a?.unread && <span className="attn-badge-dot" />}
         {profile && (
-          <span className="chip attn-tile-account" title={`Claude profile: ${profile.name}`}>
+          <span className="chip attn-tile-account" title={t("fleet.profileTitle", { name: profile.name })}>
             <span className="dot" style={{ background: profile.color }} />
             {profile.name}
           </span>
@@ -339,11 +348,11 @@ const FleetTile = memo(function FleetTile({
         <MeterChip sessionId={id} variant="tile" />
       </div>
       <div className="attn-tile-meta">
-        <span>{LAMP_LABEL[lamp]}</span>
+        <span>{lampText}</span>
         {group && <span>{group}</span>}
-        {uptime && <span title={live ? "Uptime" : "Ran for"}>{uptime}</span>}
+        {uptime && <span title={live ? t("fleet.uptime") : t("fleet.ranFor")}>{uptime}</span>}
         {live && stats && (
-          <span title="CPU (share of all cores) · RAM of the process tree">
+          <span title={t("fleet.cpuRamTitle")}>
             {formatCpu(taskManagerCpu(stats.cpuPercent, cores))} · {formatMb(stats.memoryBytes)}
           </span>
         )}

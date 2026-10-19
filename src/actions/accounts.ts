@@ -11,6 +11,7 @@ import { useUi } from "../store/uiStore";
 import { writeLocalNotice } from "../terminal/registry";
 import { notify } from "./notify";
 import { newSession } from "./sessions";
+import { t } from "../i18n";
 
 interface ScanState {
   scanning: boolean;
@@ -26,7 +27,7 @@ export async function refreshAccounts(): Promise<void> {
     const snap = await ipc.accountsList();
     mergeAccounts(snap.accounts, snap.dismissed, false);
   } catch (e) {
-    notify("error", `Could not load accounts: ${errorMessage(e)}`);
+    notify("error", t("accounts.toast.loadFailed", { error: errorMessage(e) }));
   }
 }
 
@@ -68,10 +69,10 @@ export function scanAccounts(opts: { announce?: boolean } = {}): Promise<void> {
       if (opts.announce !== false && added.length > 0 && before.size > 0) {
         const infos = useApp.getState().accountAgents;
         const names = added.map((a) => `${infos.find((i) => i.key === accountKey(a))?.label ?? accountKey(a)} · ${a.name}`);
-        notify("info", `Found ${added.length} new account${added.length === 1 ? "" : "s"}: ${names.join(", ")}`, 6000);
+        notify("info", t("accounts.toast.found", { count: added.length, names: names.join(", ") }), 6000);
       }
     } catch (e) {
-      notify("error", `Account scan failed: ${errorMessage(e)}`);
+      notify("error", t("accounts.toast.scanFailed", { error: errorMessage(e) }));
     } finally {
       useAccountScan.setState({ scanning: false });
       scanInFlight = null;
@@ -95,9 +96,9 @@ export async function checkAccount(id: string): Promise<Account | undefined> {
 
 function parentDir(p: string | null | undefined): string | null {
   if (!p) return null;
-  const t = p.replace(/[\\/]+$/, "");
-  const i = Math.max(t.lastIndexOf("\\"), t.lastIndexOf("/"));
-  return i > 0 ? t.slice(0, i) : null;
+  const trimmed = p.replace(/[\\/]+$/, "");
+  const i = Math.max(trimmed.lastIndexOf("\\"), trimmed.lastIndexOf("/"));
+  return i > 0 ? trimmed.slice(0, i) : null;
 }
 
 const WATCH_MS = 6000;
@@ -125,10 +126,10 @@ function watchSignIn(sessionId: SessionId, accountId: string, label: string, has
       const a = await checkAccount(accountId);
       const done = hasStatus ? a?.status.verified && a.status.loggedIn === true : !!a && isSignedIn(a);
       if (done) {
-        notify("info", hasStatus ? `Signed in: ${label}` : `${label} is set up`, 6000);
+        notify("info", hasStatus ? t("accounts.toast.signedIn", { label }) : t("accounts.toast.setUp", { label }), 6000);
         stop();
       } else if (final) {
-        notify("warn", `${label}: sign-in did not complete. Use Sign in to try again.`, 8000);
+        notify("warn", t("accounts.toast.signInIncomplete", { label }), 8000);
         stop();
       }
     } catch {
@@ -149,6 +150,7 @@ function watchSignIn(sessionId: SessionId, accountId: string, label: string, has
       if (!bannerShown && rt?.state.state === "running") {
         bannerShown = true;
         const hint = infoFor(s.accounts.find((a) => a.id === accountId) ?? { agent: rt.agent, preset: null })?.loginHint;
+        // Terminal content (the agent's own login hint, from the backend): stays English.
         if (hint) window.setTimeout(() => writeLocalNotice(sessionId, `[Gridkeeper] ${label}: ${hint}`), 200);
       }
     } else if (sawLive && rt && (rt.state.state === "exited" || rt.state.state === "failed")) {
@@ -166,7 +168,7 @@ function watchSignIn(sessionId: SessionId, accountId: string, label: string, has
 export function signIn(account: Account, opts: { device?: boolean } = {}): SessionId | null {
   const info = infoFor(account);
   if (!info || info.isolation !== "verified") {
-    notify("error", "This agent has no account sign-in support");
+    notify("error", t("accounts.toast.noSignInSupport"));
     return null;
   }
   const watching = useAccountScan.getState().signingIn[account.id];
@@ -178,12 +180,12 @@ export function signIn(account: Account, opts: { device?: boolean } = {}): Sessi
   const ws = selectActiveWorkspace(s);
   const group = selectActiveGroup(s);
   if (!ws || !group) {
-    notify("error", "Open a workspace first");
+    notify("error", t("accounts.toast.openWorkspace"));
     return null;
   }
   const cwd = ws.projectDir ?? parentDir(account.resolvedDir ?? account.configDir);
   if (!cwd) {
-    notify("error", "Choose a project folder for this workspace first");
+    notify("error", t("accounts.toast.chooseFolder"));
     return null;
   }
   const args = (opts.device && info.deviceLoginArgs) || info.loginArgs;
@@ -194,7 +196,7 @@ export function signIn(account: Account, opts: { device?: boolean } = {}): Sessi
     preset: account.preset,
     profileId: account.id,
     cwd,
-    name: `Sign in · ${label}`,
+    name: t("accounts.signInSessionName", { label }),
     args,
     autoStart: false,
     resumeOnRestore: { mode: "none" },

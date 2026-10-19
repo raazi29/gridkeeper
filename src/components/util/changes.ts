@@ -1,6 +1,7 @@
 // Pure helpers for the read-only Changes drawer (unit-tested).
 
 import type { BranchFile, BranchFiles, ChangedFile, SessionMeta, Workspace } from "../../lib/types";
+import { t } from "../../i18n";
 
 export type DiffLineKind = "add" | "del" | "hunk" | "meta" | "ctx";
 
@@ -76,10 +77,11 @@ export function hasCommittedWork(b: BranchFiles | null | undefined): b is Branch
   return !!b && b.isRepo && !!b.base && b.branch !== b.base && b.ahead > 0;
 }
 
-/** "committed on feat vs main (5 files)". */
+/** "committed on feat vs main (5 files)", in the UI language ("HEAD" is git's name and stays). */
 export function committedHeading(b: BranchFiles & { base: string }): string {
   const n = b.files.length;
-  return `committed on ${b.branch ?? "HEAD"} vs ${b.base} (${n}${b.truncated ? "+" : ""} file${n === 1 && !b.truncated ? "" : "s"})`;
+  const params = { branch: b.branch ?? "HEAD", base: b.base, count: n };
+  return b.truncated ? t("changes.committedHeadingTruncated", params) : t("changes.committedHeading", params);
 }
 
 /** Summed line counts of a committed-file list (binary files count nothing). */

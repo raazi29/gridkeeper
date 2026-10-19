@@ -7,6 +7,7 @@
 // blade sounds are on); nothing ever takes focus.
 
 import { create } from "zustand";
+import { t } from "../i18n";
 import { isTerminalMeta } from "../lib/browserPanes";
 import {
   announcement,
@@ -96,7 +97,7 @@ function commit(r: ApplyResult) {
   save(r.data);
   const msg = announcement(r.promoted, r.medals);
   if (!msg) return;
-  actionToast({ kind: "info", message: msg, action: { label: "Flight log", run: openFlightLog } }, 8000);
+  actionToast({ kind: "info", message: msg, action: { label: t("flightLog.title"), run: openFlightLog } }, 8000);
   const s = useApp.getState().persisted.settings;
   if (chime && s.saberSound && currentSaberLevel(s) !== "off") chime(s.notifications?.volume ?? 50);
 }

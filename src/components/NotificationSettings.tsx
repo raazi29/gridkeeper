@@ -5,6 +5,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import { SOUND_SETS, playSound } from "../audio/sounds";
 import { toggleSessionMute, toggleWorkspaceMute, updateNotif, useNotif } from "../actions/notifyPrefs";
 import { inQuietHours } from "../actions/notifyRules";
+import { useT, type MessageKey, type Translator } from "../i18n";
 import { APP_NAME } from "../lib/brand";
 import { osNotificationName, shellLabel } from "../lib/platform";
 import type { NotificationSettings as Notif, NotifyDelivery, SoundSet } from "../lib/types";
@@ -40,18 +41,19 @@ function CheckCard({ checked, onChange, label, hint, disabled }: { checked: bool
   );
 }
 
-const EVENTS: { key: keyof Pick<Notif, "onInput" | "onIdle" | "onError" | "onBell">; label: string; hint: string }[] = [
-  { key: "onInput", label: "Needs input", hint: "Permission prompts, questions, “waiting for you”" },
-  { key: "onIdle", label: "Finished", hint: "Went quiet after working, or reported done" },
-  { key: "onError", label: "Error", hint: "Crashed, failed to start, reported an error" },
-  { key: "onBell", label: "Bell / notify", hint: "Terminal bell and OSC 9 / 777 / 99 notifications" },
+const EVENTS: { key: keyof Pick<Notif, "onInput" | "onIdle" | "onError" | "onBell">; label: MessageKey; hint: MessageKey }[] = [
+  { key: "onInput", label: "notifications.event.inputLabel", hint: "notifications.event.inputHint" },
+  { key: "onIdle", label: "notifications.event.idleLabel", hint: "notifications.event.idleHint" },
+  { key: "onError", label: "notifications.event.errorLabel", hint: "notifications.event.errorHint" },
+  { key: "onBell", label: "notifications.event.bellLabel", hint: "notifications.event.bellHint" },
 ];
 
-const AGENTS: { key: keyof Notif["agents"]; label: string }[] = [
-  { key: "claude", label: "Claude Code" },
-  { key: "codex", label: "Codex" },
-  { key: "powershell", label: shellLabel() },
-  { key: "other", label: "Other tools" },
+// Product names stay as they are; "Other tools" follows the UI language (translated at render time).
+const AGENTS: { key: keyof Notif["agents"]; label: (t: Translator) => string }[] = [
+  { key: "claude", label: () => "Claude Code" },
+  { key: "codex", label: () => "Codex" },
+  { key: "powershell", label: () => shellLabel() },
+  { key: "other", label: (t) => t("notifications.agentsOther") },
 ];
 
 /** Re-render once a minute while mounted so "quiet hours active now" stays true. */
@@ -65,6 +67,7 @@ function useMinuteTick(): number {
 }
 
 export function NotificationSettings() {
+  const t = useT();
   const n = useNotif();
   const sessions = useApp((s) => s.persisted.sessions);
   const workspaces = useApp((s) => s.persisted.workspaces);
@@ -74,14 +77,15 @@ export function NotificationSettings() {
   const preview = (set: SoundSet) => playSound(set, "needsInput", n.volume || 50);
 
   const status = off
-    ? "Off — alerts only light the lamps and collect in Comms."
+    ? t("notifications.statusOff")
     : n.dnd
-      ? "Do not disturb is on — alerts collect silently in Comms."
+      ? t("notifications.statusDnd")
       : quietNow
-        ? `Quiet hours until ${n.quietHours.end} — alerts collect silently in Comms.`
+        ? t("notifications.statusQuiet", { end: n.quietHours.end })
         : n.delivery === "off"
-          ? "Comms feed only — no toasts."
-          : "On.";
+          ? t("notifications.statusFeedOnly")
+          : t("notifications.statusOn");
+  const system = osNotificationName();
 
   return (
     <div className="notif-settings">
@@ -89,42 +93,42 @@ export function NotificationSettings() {
         <Toggle
           checked={n.enabled}
           onChange={(enabled) => updateNotif({ enabled })}
-          label="Notifications"
-          hint={`${status} ${APP_NAME} never pings you about the pane you are looking at.`}
+          label={t("notifications.master")}
+          hint={t("notifications.masterHint", { status, app: APP_NAME })}
         />
       </div>
 
-      <Section title="Tell me when a session…" disabled={off}>
+      <Section title={t("notifications.tellMeWhen")} disabled={off}>
         <div className="notif-grid">
           {EVENTS.map((e) => (
-            <CheckCard key={e.key} checked={n[e.key]} disabled={off} onChange={(v) => updateNotif({ [e.key]: v } as Partial<Notif>)} label={e.label} hint={e.hint} />
+            <CheckCard key={e.key} checked={n[e.key]} disabled={off} onChange={(v) => updateNotif({ [e.key]: v } as Partial<Notif>)} label={t(e.label)} hint={t(e.hint)} />
           ))}
         </div>
       </Section>
 
-      <Section title="Delivery" disabled={off}>
+      <Section title={t("notifications.delivery")} disabled={off}>
         <Segmented<NotifyDelivery>
-          ariaLabel="Delivery"
+          ariaLabel={t("notifications.delivery")}
           value={n.delivery}
           onChange={(delivery) => updateNotif({ delivery })}
           options={[
-            { value: "toast", label: `${osNotificationName()} + in-app`, title: `${osNotificationName()} notification while in the background; in-app toast with Jump while in front`, disabled: off },
-            { value: "inApp", label: "In-app only", title: `Only in-app toasts, never ${osNotificationName()} notifications`, disabled: off },
-            { value: "off", label: "Comms feed only", title: "No toasts; alerts only collect in Comms", disabled: off },
+            { value: "toast", label: t("notifications.deliveryToast", { system }), title: t("notifications.deliveryToastTitle", { system }), disabled: off },
+            { value: "inApp", label: t("notifications.deliveryInApp"), title: t("notifications.deliveryInAppTitle", { system }), disabled: off },
+            { value: "off", label: t("notifications.deliveryOff"), title: t("notifications.deliveryOffTitle"), disabled: off },
           ]}
         />
         <Toggle
           checked={n.onlyWhenUnfocused}
           disabled={off}
           onChange={(onlyWhenUnfocused) => updateNotif({ onlyWhenUnfocused })}
-          label="Only while the window is in the background"
-          hint="No in-app toasts while you are working in the app; the lamps and Comms still show everything."
+          label={t("notifications.onlyUnfocused")}
+          hint={t("notifications.onlyUnfocusedHint")}
         />
       </Section>
 
-      <Section title="Sound" hint="Synthesized in-app — no audio files." disabled={off}>
-        <Toggle checked={n.sound} disabled={off} onChange={(sound) => updateNotif({ sound })} label="Play a sound with each alert" />
-        <div className={`sound-sets${!n.sound || off ? " is-dim" : ""}`} role="radiogroup" aria-label="Sound set">
+      <Section title={t("notifications.sound")} hint={t("notifications.soundHint")} disabled={off}>
+        <Toggle checked={n.sound} disabled={off} onChange={(sound) => updateNotif({ sound })} label={t("notifications.soundToggle")} />
+        <div className={`sound-sets${!n.sound || off ? " is-dim" : ""}`} role="radiogroup" aria-label={t("notifications.soundSetAria")}>
           {SOUND_SETS.map((s) => (
             <div key={s.id} className={`sound-set${n.soundSet === s.id ? " is-selected" : ""}`}>
               <button
@@ -143,7 +147,7 @@ export function NotificationSettings() {
                 <span className="sound-set-hint">{s.hint}</span>
               </button>
               {s.id !== "none" && (
-                <button type="button" className="icon-btn icon-btn-sm sound-set-play" aria-label={`Play ${s.name}`} title={`Play ${s.name}`} disabled={off} onClick={() => preview(s.id)}>
+                <button type="button" className="icon-btn icon-btn-sm sound-set-play" aria-label={t("notifications.playSet", { name: s.name })} title={t("notifications.playSet", { name: s.name })} disabled={off} onClick={() => preview(s.id)}>
                   <svg width="11" height="11" viewBox="0 0 16 16" aria-hidden="true">
                     <path d="M5 3.5v9l7-4.5z" fill="currentColor" />
                   </svg>
@@ -153,7 +157,7 @@ export function NotificationSettings() {
           ))}
         </div>
         <label className="volume-row">
-          <span className="volume-label">Volume</span>
+          <span className="volume-label">{t("notifications.volume")}</span>
           <input
             type="range"
             min={0}
@@ -161,7 +165,7 @@ export function NotificationSettings() {
             step={5}
             value={n.volume}
             disabled={off || !n.sound}
-            aria-label="Volume"
+            aria-label={t("notifications.volume")}
             onChange={(e) => updateNotif({ volume: Number(e.currentTarget.value) })}
             onPointerUp={() => preview(n.soundSet === "none" ? "comm" : n.soundSet)}
             onKeyUp={(e) => (e.key.startsWith("Arrow") ? preview(n.soundSet === "none" ? "comm" : n.soundSet) : undefined)}
@@ -170,25 +174,25 @@ export function NotificationSettings() {
         </label>
       </Section>
 
-      <Section title="Quiet" disabled={off}>
+      <Section title={t("notifications.quiet")} disabled={off}>
         <Toggle
           checked={n.dnd}
           disabled={off}
           onChange={(dnd) => updateNotif({ dnd })}
-          label="Do not disturb"
-          hint="Silences toasts and sounds until you turn it off. Quick toggle: hold or right-click the Comms bell."
+          label={t("notifications.dnd")}
+          hint={t("notifications.dndHint")}
         />
         <div className="quiet-hours">
           <Toggle
             checked={n.quietHours.enabled}
             disabled={off}
             onChange={(enabled) => updateNotif({ quietHours: { ...n.quietHours, enabled } })}
-            label="Quiet hours"
-            hint={quietNow ? "Active now." : "Every day, local time. May cross midnight."}
+            label={t("notifications.quietHours")}
+            hint={quietNow ? t("notifications.quietHoursActive") : t("notifications.quietHoursHint")}
           />
           <div className="quiet-times">
             <label>
-              <span>From</span>
+              <span>{t("notifications.quietFrom")}</span>
               <input
                 type="time"
                 className="input"
@@ -198,7 +202,7 @@ export function NotificationSettings() {
               />
             </label>
             <label>
-              <span>to</span>
+              <span>{t("notifications.quietTo")}</span>
               <input
                 type="time"
                 className="input"
@@ -211,7 +215,7 @@ export function NotificationSettings() {
         </div>
       </Section>
 
-      <Section title="Agents" hint="Which kinds of session may notify you." disabled={off}>
+      <Section title={t("notifications.agents")} hint={t("notifications.agentsHint")} disabled={off}>
         <div className="notif-agents">
           {AGENTS.map((a) => (
             <button
@@ -224,34 +228,34 @@ export function NotificationSettings() {
               onClick={() => updateNotif({ agents: { ...n.agents, [a.key]: !n.agents[a.key] } })}
             >
               <span className="notif-check-box" aria-hidden="true" />
-              {a.label}
+              {a.label(t)}
             </button>
           ))}
         </div>
       </Section>
 
-      <Section title="Muted" hint="Muted alerts still appear in Comms, marked muted.">
+      <Section title={t("notifications.muted")} hint={t("notifications.mutedHint")}>
         {n.mutedSessions.length === 0 && n.mutedWorkspaces.length === 0 ? (
-          <p className="notif-empty">Nothing muted. Mute a pane from its ⋯ menu, or a workspace from its right-click menu in the sidebar.</p>
+          <p className="notif-empty">{t("notifications.mutedEmpty")}</p>
         ) : (
           <ul className="notif-muted-list">
             {n.mutedWorkspaces.map((id) => (
               <li key={`w-${id}`}>
                 <IconBellOff size={12} />
-                <span className="notif-muted-name">{workspaces.find((w) => w.id === id)?.name ?? "Workspace"}</span>
-                <span className="notif-muted-kind">workspace</span>
+                <span className="notif-muted-name">{workspaces.find((w) => w.id === id)?.name ?? t("notifications.mutedWorkspaceFallback")}</span>
+                <span className="notif-muted-kind">{t("notifications.mutedKindWorkspace")}</span>
                 <Button size="sm" variant="ghost" onClick={() => toggleWorkspaceMute(id, false)}>
-                  Unmute
+                  {t("notifications.unmute")}
                 </Button>
               </li>
             ))}
             {n.mutedSessions.map((id) => (
               <li key={`s-${id}`}>
                 <IconBellOff size={12} />
-                <span className="notif-muted-name">{sessions.find((m) => m.id === id)?.name ?? "Session"}</span>
-                <span className="notif-muted-kind">session</span>
+                <span className="notif-muted-name">{sessions.find((m) => m.id === id)?.name ?? t("notifications.mutedSessionFallback")}</span>
+                <span className="notif-muted-kind">{t("notifications.mutedKindSession")}</span>
                 <Button size="sm" variant="ghost" onClick={() => toggleSessionMute(id, false)}>
-                  Unmute
+                  {t("notifications.unmute")}
                 </Button>
               </li>
             ))}
@@ -261,10 +265,7 @@ export function NotificationSettings() {
 
       <PhoneAlerts />
 
-      <p className="hint attn-settings-note">
-        Agents only ring the bell when asked to: for Claude Code set <span className="mono">preferredNotifChannel</span> to <span className="mono">terminal_bell</span>; for Codex set{" "}
-        <span className="mono">tui.notification_condition = "always"</span>. Without that, {APP_NAME} still notices when output goes quiet.
-      </p>
+      <p className="hint attn-settings-note">{t.rich("notifications.bellNote", { app: APP_NAME, mono: (c) => <span className="mono">{c}</span> })}</p>
     </div>
   );
 }

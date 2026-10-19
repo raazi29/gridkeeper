@@ -31,14 +31,55 @@ import { terminalCommands } from "./terminalCommands";
 import { isBrowserMeta } from "../lib/browserPanes";
 import { refreshPorts, usePorts } from "../store/ports";
 import { openBrowserPane, openExternal, popOut, promptOpenUrl, reload as reloadBrowser } from "./browser";
+import { isMessageKey, t, type MessageKey } from "../i18n";
+
+export type CommandCategory = "Session" | "Workspace" | "Group" | "Layout" | "View" | "Theme";
 
 export interface Command {
+  /** Stable id (keybindings, menus, settings): never translated. */
   id: string;
-  title: string;
-  category: "Session" | "Workspace" | "Group" | "Layout" | "View" | "Theme";
+  /** Display title in the current UI language (a getter over the catalog key `command.<id>`). */
+  readonly title: string;
+  category: CommandCategory;
   run: () => void | Promise<unknown>;
   /** Hidden from the palette (still bindable). */
   hidden?: boolean;
+}
+
+/** A command as written in the registry: the title comes from the message catalog. */
+export type CommandDef = Omit<Command, "title">;
+
+/** Per-theme commands ("Theme: Deep Space", …). Ids: theme.set.<themeId>. */
+export const THEME_COMMAND_PREFIX = "theme.set.";
+
+/** A command's title in the current UI language. */
+export function commandTitle(id: string): string {
+  if (id.startsWith(THEME_COMMAND_PREFIX)) {
+    const theme = THEMES.find((th) => th.id === id.slice(THEME_COMMAND_PREFIX.length));
+    return t("command.themeSet", { name: theme?.name ?? id });
+  }
+  const focus = /^session\.focus(\d)$/.exec(id);
+  if (focus) return t("command.focusPane", { n: focus[1] });
+  const key = `command.${id}`;
+  return isMessageKey(key) ? t(key) : id;
+}
+
+const CATEGORY_KEYS: Record<CommandCategory, MessageKey> = {
+  Session: "command.category.session",
+  Workspace: "command.category.workspace",
+  Group: "command.category.group",
+  Layout: "command.category.layout",
+  View: "command.category.view",
+  Theme: "command.category.theme",
+};
+
+/** A command category's label in the current UI language. */
+export function categoryLabel(c: CommandCategory): string {
+  return t(CATEGORY_KEYS[c]);
+}
+
+function withTitles(defs: CommandDef[]): Command[] {
+  return defs.map((d) => Object.defineProperty(d, "title", { get: () => commandTitle(d.id), enumerable: true, configurable: true }) as Command);
 }
 
 // ---- navigation helpers (also used by components) ----------------------------
@@ -80,7 +121,7 @@ export function jumpToSession(id: SessionId) {
 export function jumpToNextAlert() {
   const target = nextAttentionTarget(globalSessionOrder(), useAttention.getState().sessions, useApp.getState().focusedSessionId);
   if (!target) {
-    notify("info", "No sessions need attention");
+    notify("info", t("command.toast.noAlerts"));
     return;
   }
   jumpToSession(target);
@@ -143,7 +184,7 @@ export function targetSession(): SessionId | null {
 
 function requireTarget(): SessionId | null {
   const id = targetSession();
-  if (!id) notify("info", "No session focused in this group");
+  if (!id) notify("info", t("command.toast.noFocusedSession"));
   return id;
 }
 
@@ -153,7 +194,7 @@ const isBrowserPane = (id: SessionId) => isBrowserMeta(useApp.getState().persist
 function requireTerminal(): SessionId | null {
   const id = requireTarget();
   if (id && isBrowserPane(id)) {
-    notify("info", "Not available for browser panes");
+    notify("info", t("command.toast.notForBrowser"));
     return null;
   }
   return id;
@@ -162,7 +203,7 @@ function requireTerminal(): SessionId | null {
 function requireBrowser(): SessionId | null {
   const id = targetSession();
   if (!id || !isBrowserPane(id)) {
-    notify("info", "Focus a browser pane first");
+    notify("info", t("command.toast.focusBrowser"));
     return null;
   }
   return id;
@@ -171,7 +212,7 @@ function requireBrowser(): SessionId | null {
 async function refreshPortsCommand() {
   await refreshPorts();
   const n = Object.values(usePorts.getState().bySession).reduce((a, p) => a + p.length, 0);
-  notify("info", n ? `${n} listening port${n === 1 ? "" : "s"} in your sessions` : "No session is listening on a TCP port");
+  notify("info", n ? t("command.toast.ports", { count: n }) : t("command.toast.noPorts"));
 }
 
 function cycleSession(dir: 1 | -1) {
@@ -197,16 +238,16 @@ function setPreset(preset: LayoutPreset) {
 }
 
 function sessionName(id: SessionId) {
-  return useApp.getState().persisted.sessions.find((m) => m.id === id)?.name ?? "session";
+  return useApp.getState().persisted.sessions.find((m) => m.id === id)?.name ?? t("command.sessionFallbackName");
 }
 
 export async function confirmCloseSession(id: SessionId): Promise<void> {
   const live = isLive(useApp.getState().runtime[id]);
   if (live) {
     const ok = await confirmDialog({
-      title: `Close “${sessionName(id)}”?`,
-      message: "The process is still running. Closing the pane stops it and removes the session.",
-      confirmLabel: "Stop and close",
+      title: t("command.closeSession.title", { name: sessionName(id) }),
+      message: t("command.closeSession.message"),
+      confirmLabel: t("command.closeSession.confirm"),
       danger: true,
     });
     if (!ok) return;
@@ -216,9 +257,9 @@ export async function confirmCloseSession(id: SessionId): Promise<void> {
 
 export async function confirmForceStop(id: SessionId): Promise<void> {
   const ok = await confirmDialog({
-    title: `Force stop “${sessionName(id)}”?`,
-    message: "Kills the whole process tree immediately. Unsaved agent work in progress may be lost.",
-    confirmLabel: "Force stop",
+    title: t("command.forceStop.title", { name: sessionName(id) }),
+    message: t("command.forceStop.message"),
+    confirmLabel: t("command.forceStop.confirm"),
     danger: true,
   });
   if (ok) await stopSession(id, true);
@@ -240,7 +281,7 @@ function newSessionDialog(preset?: LayoutPreset) {
 function newGroup() {
   const ws = selectActiveWorkspace(useApp.getState());
   if (!ws) return;
-  const id = useApp.getState().createGroup(ws.id, `Group ${ws.groups.length + 1}`);
+  const id = useApp.getState().createGroup(ws.id, t("command.defaultGroupName", { n: ws.groups.length + 1 }));
   useUi.getState().markVisited(ws.id);
   useApp.getState().setActiveGroup(ws.id, id);
 }
@@ -262,38 +303,33 @@ function cycleTheme(dir: 1 | -1) {
   const i = THEMES.findIndex((t) => t.id === cur);
   const next = THEMES[(i + dir + THEMES.length) % THEMES.length];
   setTheme(next.id);
-  notify("info", `Theme: ${next.name}`);
+  notify("info", t("command.toast.theme", { name: next.name }));
 }
 
-/** Per-theme commands ("Theme: Deep Space", …). Ids: theme.set.<themeId>. */
-export const THEME_COMMAND_PREFIX = "theme.set.";
-const themeCommands: Command[] = THEMES.map((t) => ({
-  id: `${THEME_COMMAND_PREFIX}${t.id}`,
-  title: `Theme: ${t.name}`,
+const themeCommands: CommandDef[] = THEMES.map((th) => ({
+  id: `${THEME_COMMAND_PREFIX}${th.id}`,
   category: "Theme" as const,
-  run: () => setTheme(t.id),
+  run: () => setTheme(th.id),
 }));
 
 // ---- registry -----------------------------------------------------------------
 
-const focusCommands: Command[] = Array.from({ length: 9 }, (_, i) => ({
+const focusCommands: CommandDef[] = Array.from({ length: 9 }, (_, i) => ({
   id: `session.focus${i + 1}`,
-  title: `Focus pane ${i + 1}`,
   category: "Session" as const,
   run: () => focusIndex(i + 1),
   hidden: i > 0,
 }));
 
-export const COMMANDS: Command[] = [
-  { id: "session.new", title: "New session…", category: "Session", run: () => newSessionDialog() },
-  { id: "session.splitColumns", title: "Split: new session in columns", category: "Session", run: () => newSessionDialog("columns") },
-  { id: "session.splitRows", title: "Split: new session in rows", category: "Session", run: () => newSessionDialog("rows") },
-  { id: "session.next", title: "Focus next session", category: "Session", run: () => cycleSession(1) },
-  { id: "session.prev", title: "Focus previous session", category: "Session", run: () => cycleSession(-1) },
+export const COMMANDS: Command[] = withTitles([
+  { id: "session.new", category: "Session", run: () => newSessionDialog() },
+  { id: "session.splitColumns", category: "Session", run: () => newSessionDialog("columns") },
+  { id: "session.splitRows", category: "Session", run: () => newSessionDialog("rows") },
+  { id: "session.next", category: "Session", run: () => cycleSession(1) },
+  { id: "session.prev", category: "Session", run: () => cycleSession(-1) },
   ...focusCommands,
   {
     id: "session.close",
-    title: "Close session",
     category: "Session",
     run: () => {
       const id = requireTarget();
@@ -302,7 +338,6 @@ export const COMMANDS: Command[] = [
   },
   {
     id: "session.restart",
-    title: "Restart session (resume)",
     category: "Session",
     run: () => {
       const id = requireTarget();
@@ -312,7 +347,6 @@ export const COMMANDS: Command[] = [
   },
   {
     id: "session.restartFresh",
-    title: "Restart session (fresh conversation)",
     category: "Session",
     run: () => {
       const id = requireTerminal();
@@ -321,7 +355,6 @@ export const COMMANDS: Command[] = [
   },
   {
     id: "session.stop",
-    title: "Stop session",
     category: "Session",
     run: () => {
       const id = requireTerminal();
@@ -330,17 +363,15 @@ export const COMMANDS: Command[] = [
   },
   {
     id: "session.forceStop",
-    title: "Force stop session…",
     category: "Session",
     run: () => {
       const id = requireTerminal();
       if (id) return confirmForceStop(id);
     },
   },
-  { id: "session.maximize", title: "Toggle maximize pane", category: "Layout", run: toggleMaximize },
+  { id: "session.maximize", category: "Layout", run: toggleMaximize },
   {
     id: "session.copyOutput",
-    title: "Copy session output",
     category: "Session",
     run: () => {
       const id = requireTerminal();
@@ -349,7 +380,6 @@ export const COMMANDS: Command[] = [
   },
   {
     id: "session.clear",
-    title: "Clear terminal",
     category: "Session",
     run: () => {
       const id = requireTerminal();
@@ -357,11 +387,10 @@ export const COMMANDS: Command[] = [
     },
   },
   ...terminalCommands(requireTerminal),
-  { id: "browser.new", title: "Browser: new pane (start page with detected ports)", category: "Session", run: () => void openBrowserPane({}) },
-  { id: "browser.open", title: "Browser: open URL in a pane…", category: "Session", run: () => promptOpenUrl(selectActiveGroup(useApp.getState())?.id) },
+  { id: "browser.new", category: "Session", run: () => void openBrowserPane({}) },
+  { id: "browser.open", category: "Session", run: () => promptOpenUrl(selectActiveGroup(useApp.getState())?.id) },
   {
     id: "browser.reload",
-    title: "Browser: reload focused pane",
     category: "Session",
     run: () => {
       const id = requireBrowser();
@@ -370,7 +399,6 @@ export const COMMANDS: Command[] = [
   },
   {
     id: "browser.popOut",
-    title: "Browser: open focused pane in a pop-out window",
     category: "Session",
     run: () => {
       const id = requireBrowser();
@@ -379,35 +407,32 @@ export const COMMANDS: Command[] = [
   },
   {
     id: "browser.external",
-    title: "Browser: open focused pane in the system browser",
     category: "Session",
     run: () => {
       const id = requireBrowser();
       if (id) openExternal(useApp.getState().persisted.sessions.find((m) => m.id === id)?.url);
     },
   },
-  { id: "ports.refresh", title: "Ports: refresh listening dev-server ports", category: "View", run: refreshPortsCommand },
+  { id: "ports.refresh", category: "View", run: refreshPortsCommand },
   {
     id: "view.changes",
-    title: "Changes: git status and diffs (read-only)",
     category: "View",
     run: () => {
       const ui = useUi.getState();
       ui.setChangesOpen(!ui.changesOpen);
     },
   },
-  { id: "workspace.new", title: "New workspace…", category: "Workspace", run: () => useUi.getState().openDialog({ kind: "newWorkspace" }) },
-  { id: "workspace.next", title: "Next workspace", category: "Workspace", run: () => cycleWorkspace(1) },
-  { id: "workspace.prev", title: "Previous workspace", category: "Workspace", run: () => cycleWorkspace(-1) },
-  { id: "workspace.switch", title: "Switch workspace…", category: "Workspace", run: () => useUi.getState().openPalette("workspaces") },
-  { id: "session.goto", title: "Go to session…", category: "Session", run: () => useUi.getState().openPalette("sessions") },
-  { id: "group.new", title: "New group", category: "Group", run: newGroup },
-  { id: "layout.grid", title: "Layout: grid", category: "Layout", run: () => setPreset("grid") },
-  { id: "layout.columns", title: "Layout: columns", category: "Layout", run: () => setPreset("columns") },
-  { id: "layout.rows", title: "Layout: rows", category: "Layout", run: () => setPreset("rows") },
+  { id: "workspace.new", category: "Workspace", run: () => useUi.getState().openDialog({ kind: "newWorkspace" }) },
+  { id: "workspace.next", category: "Workspace", run: () => cycleWorkspace(1) },
+  { id: "workspace.prev", category: "Workspace", run: () => cycleWorkspace(-1) },
+  { id: "workspace.switch", category: "Workspace", run: () => useUi.getState().openPalette("workspaces") },
+  { id: "session.goto", category: "Session", run: () => useUi.getState().openPalette("sessions") },
+  { id: "group.new", category: "Group", run: newGroup },
+  { id: "layout.grid", category: "Layout", run: () => setPreset("grid") },
+  { id: "layout.columns", category: "Layout", run: () => setPreset("columns") },
+  { id: "layout.rows", category: "Layout", run: () => setPreset("rows") },
   {
     id: "view.toggleSidebar",
-    title: "Toggle sidebar",
     category: "View",
     run: () => {
       const s = useApp.getState();
@@ -416,17 +441,15 @@ export const COMMANDS: Command[] = [
   },
   {
     id: "view.toggleInspector",
-    title: "Toggle inspector",
     category: "View",
     run: () => {
       const s = useApp.getState();
       s.updateSettings({ inspectorOpen: !s.persisted.settings.inspectorOpen });
     },
   },
-  { id: "view.toggleDiagnostics", title: "Toggle diagnostics", category: "View", run: () => toggleDialog("diagnostics") },
+  { id: "view.toggleDiagnostics", category: "View", run: () => toggleDialog("diagnostics") },
   {
     id: "view.palette",
-    title: "Command palette",
     category: "View",
     hidden: true,
     run: () => {
@@ -435,10 +458,9 @@ export const COMMANDS: Command[] = [
       else ui.openPalette("all");
     },
   },
-  { id: "view.settings", title: "Settings", category: "View", run: () => toggleDialog("settings") },
+  { id: "view.settings", category: "View", run: () => toggleDialog("settings") },
   {
     id: "view.focusMode",
-    title: "Toggle focus mode",
     category: "View",
     run: () => {
       const ui = useUi.getState();
@@ -447,33 +469,32 @@ export const COMMANDS: Command[] = [
   },
   {
     id: "view.presentation",
-    title: "Toggle presentation mode",
     category: "View",
     run: () => {
       const ui = useUi.getState();
       ui.setPresentation(!ui.presentation);
     },
   },
-  { id: "view.appearance", title: "Appearance settings…", category: "Theme", run: () => useUi.getState().openDialog({ kind: "settings", section: "appearance" }) },
-  { id: "theme.next", title: "Next theme", category: "Theme", run: () => cycleTheme(1) },
-  { id: "theme.prev", title: "Previous theme", category: "Theme", run: () => cycleTheme(-1) },
+  { id: "view.appearance", category: "Theme", run: () => useUi.getState().openDialog({ kind: "settings", section: "appearance" }) },
+  { id: "theme.next", category: "Theme", run: () => cycleTheme(1) },
+  { id: "theme.prev", category: "Theme", run: () => cycleTheme(-1) },
   ...themeCommands,
-  { id: "attention.next", title: "Jump to next alert", category: "Session", run: jumpToNextAlert },
-  { id: "view.fleet", title: "Fleet overview (all sessions)", category: "View", run: () => toggleOverlay("fleet") },
-  { id: "session.broadcast", title: "Broadcast a line to several sessions…", category: "Session", run: () => toggleOverlay("broadcast") },
-  { id: "view.comms", title: "Comms: recent alerts", category: "View", run: () => useAttentionUi.getState().toggleComms() },
-  { id: "attention.markAllRead", title: "Comms: mark all alerts read", category: "View", run: () => useAttention.getState().markAllRead() },
-  { id: "view.profiles", title: "Accounts (Claude, Codex, …)", category: "View", run: () => toggleDialog("profiles") },
-  { id: "view.mission", title: "Mission Control (team view of this workspace)", category: "View", run: () => useMission.getState().toggle() },
-  { id: "formation.launch", title: "Launch formation (agent team template)…", category: "Workspace", run: () => useMission.getState().openFormation() },
-  { id: "teamTemplate.import", title: "Team template: import…", category: "Workspace", run: () => openTeamTemplates("import") },
-  { id: "teamTemplate.export", title: "Team template: export…", category: "Workspace", run: () => openTeamTemplates("export") },
-  { id: "view.skills", title: "Skills: discover & add…", category: "Workspace", run: toggleSkills },
-  { id: "mission.replay", title: "Mission replay… (timelapse video of a recorded mission)", category: "View", run: () => openReplay() },
-  { id: "brain.open", title: "Brain: open (the team's long-term project memory)", category: "Workspace", run: () => openBrain() },
-  { id: "brain.add", title: "Brain: add memory…", category: "Workspace", run: () => rememberText() },
+  { id: "attention.next", category: "Session", run: jumpToNextAlert },
+  { id: "view.fleet", category: "View", run: () => toggleOverlay("fleet") },
+  { id: "session.broadcast", category: "Session", run: () => toggleOverlay("broadcast") },
+  { id: "view.comms", category: "View", run: () => useAttentionUi.getState().toggleComms() },
+  { id: "attention.markAllRead", category: "View", run: () => useAttention.getState().markAllRead() },
+  { id: "view.profiles", category: "View", run: () => toggleDialog("profiles") },
+  { id: "view.mission", category: "View", run: () => useMission.getState().toggle() },
+  { id: "formation.launch", category: "Workspace", run: () => useMission.getState().openFormation() },
+  { id: "teamTemplate.import", category: "Workspace", run: () => openTeamTemplates("import") },
+  { id: "teamTemplate.export", category: "Workspace", run: () => openTeamTemplates("export") },
+  { id: "view.skills", category: "Workspace", run: toggleSkills },
+  { id: "mission.replay", category: "View", run: () => openReplay() },
+  { id: "brain.open", category: "Workspace", run: () => openBrain() },
+  { id: "brain.add", category: "Workspace", run: () => rememberText() },
   ...EXPERIENCE_COMMANDS,
-];
+]);
 
 const byId = new Map(COMMANDS.map((c) => [c.id, c]));
 
@@ -488,9 +509,9 @@ export function runCommand(id: string): void {
   try {
     const r = cmd.run();
     if (r && typeof (r as Promise<unknown>).then === "function")
-      (r as Promise<unknown>).catch((e) => notify("error", `${cmd.title}: ${String((e as Error)?.message ?? e)}`));
+      (r as Promise<unknown>).catch((e) => notify("error", t("command.toast.failed", { command: cmd.title, error: String((e as Error)?.message ?? e) })));
   } catch (e) {
-    notify("error", `${cmd.title}: ${String((e as Error)?.message ?? e)}`);
+    notify("error", t("command.toast.failed", { command: cmd.title, error: String((e as Error)?.message ?? e) }));
   }
 }
 
@@ -517,10 +538,6 @@ function liveCount(ids: SessionId[]): number {
   return ids.filter((id) => isLive(rt[id])).length;
 }
 
-function plural(n: number, one: string, many = `${one}s`) {
-  return `${n} ${n === 1 ? one : many}`;
-}
-
 /** Confirm, stop every session (closeSession), then delete the workspace. */
 export async function deleteWorkspaceFlow(workspaceId: string): Promise<void> {
   const ws = useApp.getState().persisted.workspaces.find((w) => w.id === workspaceId);
@@ -528,18 +545,16 @@ export async function deleteWorkspaceFlow(workspaceId: string): Promise<void> {
   const ids = sessionIdsOf(ws.groups);
   const live = liveCount(ids);
   const ok = await confirmDialog({
-    title: `Delete workspace “${ws.name}”?`,
-    message:
-      (live > 0 ? `${plural(live, "running session")} will be stopped first. ` : "") +
-      `Removes the workspace, its groups and ${plural(ids.length, "session definition")}. Files in the project folder are not touched.`,
-    confirmLabel: live > 0 ? "Stop sessions and delete" : "Delete workspace",
+    title: t("command.deleteWorkspace.title", { name: ws.name }),
+    message: live > 0 ? t("command.deleteWorkspace.messageLive", { live, count: ids.length }) : t("command.deleteWorkspace.message", { count: ids.length }),
+    confirmLabel: live > 0 ? t("command.deleteFlow.stopAndDelete") : t("command.deleteWorkspace.confirm"),
     danger: true,
   });
   if (!ok) return;
   await Promise.all(ids.map((id) => closeSession(id).catch(() => {})));
   const app = useApp.getState();
   app.deleteWorkspace(workspaceId);
-  if (useApp.getState().persisted.workspaces.length === 0) app.createWorkspace("Workspace", null);
+  if (useApp.getState().persisted.workspaces.length === 0) app.createWorkspace(t("command.defaultWorkspaceName"), null);
   const next = selectActiveWorkspace(useApp.getState());
   if (next) switchWorkspace(next.id);
 }
@@ -550,16 +565,14 @@ export async function deleteGroupFlow(groupId: string): Promise<void> {
   const g = ws?.groups.find((x) => x.id === groupId);
   if (!ws || !g) return;
   if (ws.groups.length <= 1) {
-    notify("info", "A workspace needs at least one group");
+    notify("info", t("command.toast.lastGroup"));
     return;
   }
   const live = liveCount(g.sessionIds);
   const ok = await confirmDialog({
-    title: `Delete group “${g.name}”?`,
-    message:
-      (live > 0 ? `${plural(live, "running session")} will be stopped first. ` : "") +
-      `Removes the group and ${plural(g.sessionIds.length, "session definition")}.`,
-    confirmLabel: live > 0 ? "Stop sessions and delete" : "Delete group",
+    title: t("command.deleteGroup.title", { name: g.name }),
+    message: live > 0 ? t("command.deleteGroup.messageLive", { live, count: g.sessionIds.length }) : t("command.deleteGroup.message", { count: g.sessionIds.length }),
+    confirmLabel: live > 0 ? t("command.deleteFlow.stopAndDelete") : t("command.deleteGroup.confirm"),
     danger: true,
   });
   if (!ok) return;

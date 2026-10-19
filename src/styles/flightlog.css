@@ -43,7 +43,7 @@
 .fl-box-label {
   position: absolute;
   top: -7px;
-  left: 10px;
+  inset-inline-start: 10px;
   padding: 0 5px;
   background: var(--bg-1);
   color: var(--accent);
@@ -57,8 +57,8 @@
   color: var(--text-2);
 }
 .fl-box-label-right {
-  left: auto;
-  right: 10px;
+  inset-inline-start: auto;
+  inset-inline-end: 10px;
   color: var(--text-2);
 }
 .fl-box-label-right::before {
@@ -170,7 +170,7 @@
   color: var(--accent);
 }
 .fl-shields .fl-dim {
-  margin-left: 4px;
+  margin-inline-start: 4px;
 }
 .fl-heat-wrap {
   display: flex;
@@ -233,8 +233,8 @@
   margin: 0;
 }
 .fl-totals > div {
-  border-left: 1px solid var(--mc-line);
-  padding-left: 10px;
+  border-inline-start: 1px solid var(--mc-line);
+  padding-inline-start: 10px;
 }
 .fl-totals dt {
   color: var(--text-2);

@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { resolveConfirm, useUi, type UiStore } from "../store/uiStore";
+import { useT } from "../i18n";
 import { Button } from "./ui/Button";
 import { Modal } from "./ui/Modal";
 
@@ -18,6 +19,7 @@ function bulletLines(detail: string): string[] | null {
 }
 
 function ConfirmRequestView({ req }: { req: UiStore["confirms"][number] }) {
+  const t = useT();
   const [checked, setChecked] = useState(false);
   const cancel = () => resolveConfirm(req.id, false);
   const ok = () => resolveConfirm(req.id, true, checked);
@@ -32,10 +34,10 @@ function ConfirmRequestView({ req }: { req: UiStore["confirms"][number] }) {
         <>
           {/* Destructive prompts focus Cancel so a stray Enter never deletes anything. */}
           <Button onClick={cancel} data-autofocus={req.danger ? true : undefined}>
-            {req.cancelLabel ?? "Cancel"}
+            {req.cancelLabel ?? t("common.cancel")}
           </Button>
           <Button variant={req.danger ? "danger" : "primary"} onClick={ok} data-autofocus={req.danger ? undefined : true}>
-            {req.confirmLabel ?? "Confirm"}
+            {req.confirmLabel ?? t("confirm.confirm")}
           </Button>
         </>
       }

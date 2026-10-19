@@ -1,6 +1,7 @@
 // Resource-pressure thresholds (pure; unit-tested). Inputs come from the shared diagnostics poll.
 
 import { MAX_WEBGL } from "../terminal/webglBudget";
+import { t } from "../i18n";
 
 /** System memory use (percent of physical RAM) above which starting more sessions is discouraged. */
 export const MEMORY_PRESSURE_PERCENT = 85;
@@ -20,7 +21,7 @@ export function memoryPressure(used: number | undefined | null, total: number | 
 
 /** Short status-bar text for high memory use. */
 export function memoryPressureLabel(p: MemoryPressure): string {
-  return `Memory ${p.percent}% — close idle sessions`;
+  return t("resources.pressureLabel", { percent: p.percent });
 }
 
 /**

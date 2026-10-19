@@ -6,6 +6,7 @@ import type { AgentKind, SessionId, Workspace } from "../lib/types";
 import { isLive, type AppStore } from "../store/appStore";
 import { recordBroadcast } from "../store/activity";
 import { isTerminalMeta } from "../lib/browserPanes";
+import { t } from "../i18n";
 
 export interface BroadcastCandidate {
   id: SessionId;
@@ -51,12 +52,12 @@ export function resolveTargets(candidates: BroadcastCandidate[], selected: Reado
 
 export const CONFIRM_ABOVE = 3;
 
-/** Why the send needs an extra confirmation (null = none needed). */
+/** Why the send needs an extra confirmation (null = none needed), in the UI language. */
 export function confirmationReason(targets: BroadcastCandidate[], activeWorkspaceId: string | null | undefined): string | null {
   const reasons: string[] = [];
-  if (targets.length > CONFIRM_ABOVE) reasons.push(`${targets.length} sessions`);
-  const others = new Set(targets.filter((t) => t.workspaceId !== activeWorkspaceId).map((t) => t.workspaceName));
-  if (others.size > 0) reasons.push(`other workspace${others.size === 1 ? "" : "s"}: ${[...others].join(", ")}`);
+  if (targets.length > CONFIRM_ABOVE) reasons.push(t("broadcast.reasonSessions", { count: targets.length }));
+  const others = new Set(targets.filter((x) => x.workspaceId !== activeWorkspaceId).map((x) => x.workspaceName));
+  if (others.size > 0) reasons.push(t("broadcast.reasonOtherWorkspaces", { count: others.size, names: [...others].join(", ") }));
   return reasons.length ? reasons.join(" · ") : null;
 }
 
@@ -67,7 +68,7 @@ export function workspaceName(workspaces: Workspace[], id: string | null | undef
 /** Delay between the text and the Enter key: TUIs (Claude Code, Codex) treat a single "text\r" write as a paste. */
 const ENTER_DELAY_MS = 80;
 
-/** Send `line` + Enter to each target. Returns the names that failed. */
+/** Send `line` + Enter to each target. Returns the names that failed. The line is the user's own text, typed as written. */
 export async function sendBroadcast(line: string, targets: BroadcastCandidate[]): Promise<{ sent: number; failed: string[] }> {
   const text = line.replace(/[\r\n]+/g, " ");
   const failed: string[] = [];
