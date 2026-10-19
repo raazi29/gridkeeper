@@ -21,10 +21,12 @@
 //! - `browser`     browser panes: URL validation, embeddability probe, pop-out windows
 //! - `skills`      Agent Skills: GitHub discovery (user-initiated), review, install into a project
 //! - `meter`       Claude Code cost & context meter: status line helper mode, `--settings` file, folder watch
+//! - `agent_browser` shared browser for agents (a tab each): MCP helper mode, CDP pipe, take-over, confirmations
 //! - `logging` / `redact` structured logs with secret redaction
 //! - `webview_guard` reload / rebuild the main window when a WebView2 process dies
 
 pub mod accounts;
+pub mod agent_browser;
 pub mod adapters;
 pub mod app_menu;
 pub mod browser;
@@ -118,6 +120,8 @@ pub fn run() {
         .setup(move |app| {
             let ctx = state::AppCtx::init(app.handle())?;
             app.manage(ctx);
+            // Agent browser: helper endpoint + config (the browser itself starts on the first tool call).
+            agent_browser::app::install(app.handle());
             // What init_process_env changed (logging exists from AppCtx::init on).
             platform::log_env_report();
             if gui_self_test {
@@ -196,6 +200,17 @@ pub fn run() {
             commands::replay::replay_save_dialog,
             commands::replay::replay_save_file,
             commands::meter::meter_snapshot,
+            commands::agent_browser::agent_browser_state,
+            commands::agent_browser::agent_browser_set_session,
+            commands::agent_browser::agent_browser_set_allowlist,
+            commands::agent_browser::agent_browser_set_idle_minutes,
+            commands::agent_browser::agent_browser_set_stopped,
+            commands::agent_browser::agent_browser_take_over,
+            commands::agent_browser::agent_browser_answer,
+            commands::agent_browser::agent_browser_watch,
+            commands::agent_browser::agent_browser_unwatch,
+            commands::agent_browser::agent_browser_input,
+            commands::agent_browser::agent_browser_stop_browser,
         ])
         .build(context)
         .unwrap_or_else(|e| fatal_startup_error(&e.to_string()))
@@ -208,6 +223,7 @@ pub fn run() {
                 if let Some(ctx) = app.try_state::<state::AppCtx>() {
                     ctx.shutdown();
                 }
+                agent_browser::shutdown();
             }
             // macOS: Dock icon clicked (or the app opened again) while the main window is hidden.
             #[cfg(target_os = "macos")]

@@ -141,6 +141,12 @@ impl AgentAdapter for ClaudeAdapter {
         if let Some(file) = crate::meter::launch::prepare_claude(spec, ctx.settings, config_root.as_deref(), exe.via_cmd) {
             plan.arg("--settings").arg(file.to_string_lossy().into_owned());
         }
+        // --- agent browser (opt-in per session, see crate::agent_browser) --------
+        // `--mcp-config=<data_dir>/agent-browser/mcp-<session>.json`: one extra stdio MCP server for this
+        // process, added to the user's own servers.
+        for a in crate::agent_browser::launch::prepare_claude(spec, exe.via_cmd) {
+            plan.arg(a);
+        }
         Ok(())
     }
 }

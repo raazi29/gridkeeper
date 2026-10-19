@@ -49,7 +49,12 @@ impl AgentAdapter for CodexAdapter {
         on_path
     }
 
-    fn configure(&self, ctx: &LaunchContext<'_>, _exe: &Executable, plan: &mut PlanBuilder) -> AppResult<()> {
+    fn configure(&self, ctx: &LaunchContext<'_>, exe: &Executable, plan: &mut PlanBuilder) -> AppResult<()> {
+        // Agent browser (opt-in per session, see crate::agent_browser): `-c mcp_servers.gk-browser.*`
+        // overrides, before any subcommand (`resume`); the user's own MCP servers stay.
+        for a in crate::agent_browser::launch::prepare_codex(ctx.spec, exe.via_cmd) {
+            plan.arg(a);
+        }
         if let Some(id) = ctx.spec.profile_id.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
             let spec = crate::accounts::spec_for(AgentKind::Codex, None).expect("codex account spec");
             let account = crate::accounts::resolve_account(ctx.profiles, spec, id)?;
