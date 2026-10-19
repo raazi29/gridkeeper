@@ -5,6 +5,7 @@ import { setupBench } from "./bench";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { Shell } from "./components/Shell";
 import { errorMessage, ipc, onSessionState } from "./lib/ipc";
+import { isMac } from "./lib/platform";
 import { flushPersistence, startPersistence, useApp } from "./store/appStore";
 import { preloadFont } from "./styles/fonts";
 import "./theme/applyTheme";
@@ -44,6 +45,16 @@ async function boot() {
   }
   startPersistence();
   window.addEventListener("beforeunload", () => void flushPersistence());
+  // beforeunload can't await the save; the close request can. The window is destroyed after the handler returns
+  // (macOS: the host hides the window instead, so the JS default of destroying it is suppressed).
+  void import("@tauri-apps/api/window")
+    .then(({ getCurrentWindow }) =>
+      getCurrentWindow().onCloseRequested(async (e) => {
+        if (isMac) e.preventDefault();
+        await Promise.race([flushPersistence(), new Promise((r) => setTimeout(r, 3000))]);
+      }),
+    )
+    .catch(() => {});
 
   // Re-sync runtime for sessions that are already running (e.g. after a webview reload).
   for (const info of await ipc.sessionList().catch(() => [])) useApp.getState().setRuntime(info);

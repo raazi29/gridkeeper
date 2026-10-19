@@ -96,6 +96,8 @@ export function reduceAttention(prev: SessionAttn | undefined, input: AttnInput,
         case "active":
           return quiet("working");
         case "idle":
+          // A late idle never overwrites "needs input".
+          if (base.state === "waiting") return { next: base };
           if (ev.status === "done") return alertState("done", "done", "idle", `Finished after ${formatDuration(ev.activeMs ?? 0)}`);
           return base.state === "working" ? quiet("idle") : { next: base };
         case "bell":

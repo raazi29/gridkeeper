@@ -31,6 +31,12 @@ describe("reduceAttention", () => {
     expect(r.alerts).toEqual(["idle:done"]);
   });
 
+  it("a late idle never overwrites waiting (needs input)", () => {
+    const r = run([ev({ kind: "bell" }), ev({ kind: "idle", status: "done", activeMs: 65_000 })]);
+    expect(r.state).toMatchObject({ state: "waiting" });
+    expect(r.alerts).toEqual(["bell:waiting"]);
+  });
+
   it("a short burst goes back to idle silently", () => {
     const r = run([ev({ kind: "active" }), ev({ kind: "idle", activeMs: 900 })]);
     expect(r.state).toMatchObject({ state: "idle", unread: false });

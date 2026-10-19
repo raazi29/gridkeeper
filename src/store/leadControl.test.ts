@@ -136,6 +136,10 @@ describe("proposals", () => {
     expect(getProposal("b")?.status).toBe("queued");
     editProposal("a", "edited");
     expect(getProposal("a")).toMatchObject({ text: "edited", edited: true });
+    // Editing a queued proposal takes it back from autopilot.
+    patchProposal("b", { status: "queued", queuedAt: 5 });
+    editProposal("b", "half-edit");
+    expect(getProposal("b")).toMatchObject({ text: "half-edit", status: "proposal", queuedAt: null, edited: true });
     const before = useLeadControl.getState().proposals;
     patchProposal("missing", { text: "x" });
     removeProposal("missing");

@@ -48,11 +48,12 @@ export function installResumeWatch(): () => void {
   };
   const onVisibility = () => (document.visibilityState === "visible" ? back() : away());
   document.addEventListener("visibilitychange", onVisibility);
-  window.addEventListener("blur", away);
+  const onBlur = () => document.hasFocus() || away(); // focus moving into a browser-pane iframe is not "away"
+  window.addEventListener("blur", onBlur);
   window.addEventListener("focus", back);
   return () => {
     document.removeEventListener("visibilitychange", onVisibility);
-    window.removeEventListener("blur", away);
+    window.removeEventListener("blur", onBlur);
     window.removeEventListener("focus", back);
   };
 }
