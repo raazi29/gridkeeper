@@ -1,0 +1,38 @@
+{
+    "##": [
+        "Scoop manifest for Gridkeeper. Install: scoop bucket add gridkeeper https://github.com/raazi29/gridkeeper, then scoop install gridkeeper/gridkeeper.",
+        "Format: https://github.com/ScoopInstaller/Scoop/wiki/App-Manifests and App-Manifest-Autoupdate. Like the Tauri apps in ScoopInstaller/Extras (pot, clash-verge-rev), the NSIS setup is unpacked with 7-Zip ('#/dl.7z') instead of run, so nothing is written to the registry; post_install drops the NSIS plugin folder and uninstaller.",
+        "version/url/hash are rewritten by scripts/release/update-manifests.mjs after each release; an all-zero hash means that has not happened yet for this version."
+    ],
+    "version": "0.2.0",
+    "description": "GPU-accelerated multi-agent terminal workspace",
+    "homepage": "https://github.com/raazi29/gridkeeper",
+    "license": "MIT",
+    "notes": [
+        "Gridkeeper needs the Microsoft Edge WebView2 Runtime (preinstalled on Windows 11; on Windows 10: winget install Microsoft.EdgeWebView2Runtime).",
+        "Settings are kept in %APPDATA%\\app.gridkeeper.desktop and are not removed on uninstall."
+    ],
+    "architecture": {
+        "64bit": {
+            "url": "https://github.com/raazi29/gridkeeper/releases/download/v0.2.0/Gridkeeper_0.2.0_x64-setup.exe#/dl.7z",
+            "hash": "0000000000000000000000000000000000000000000000000000000000000000"
+        }
+    },
+    "post_install": "Remove-Item \"$dir\\`$*\", \"$dir\\uninstall*\" -Force -Recurse -ErrorAction Ignore",
+    "shortcuts": [
+        [
+            "gridkeeper.exe",
+            "Gridkeeper"
+        ]
+    ],
+    "checkver": {
+        "github": "https://github.com/raazi29/gridkeeper"
+    },
+    "autoupdate": {
+        "architecture": {
+            "64bit": {
+                "url": "https://github.com/raazi29/gridkeeper/releases/download/v$version/Gridkeeper_$version_x64-setup.exe#/dl.7z"
+            }
+        }
+    }
+}

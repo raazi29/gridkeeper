@@ -213,13 +213,30 @@ compare with [PERFORMANCE.md](PERFORMANCE.md) (idle 6 sessions: host 0.06 %, Web
 
 ```powershell
 # bump version in package.json, src-tauri/Cargo.toml and src-tauri/tauri.conf.json,
-# and the static release badge + installer name in README.md
+# and the static release badge + the installer file names in the README Install table
 npm run tauri build                       # or push the tag and take the installer from the CI run's artifact
 gh release create v0.1.2 "src-tauri\target\release\bundle\nsis\Gridkeeper_0.1.2_x64-setup.exe" `
   -R raazi29/gridkeeper --title "Gridkeeper v0.1.2" --notes-file notes.md
 ```
 
 v0.1.2 is the pending one: the commit and version bump exist, the release was never published.
+
+**Package manifests** (after the release is published with all installers attached; the README one-liners point at
+them):
+
+```powershell
+node scripts/release/update-manifests.mjs             # version from package.json; add --dry-run to preview
+# before the release is public, hash the downloaded CI artifacts instead: ... --dir <folder with the installers>
+winget validate --manifest packaging/winget/manifests/r/raazi29/Gridkeeper/<version>
+git add bucket Casks packaging/winget                 # commit + push to main
+```
+
+This rewrites `bucket/gridkeeper.json` (Scoop), `Casks/gridkeeper.rb` (Homebrew; follows whichever dmg was built:
+universal, both arches or one) and adds `packaging/winget/manifests/r/raazi29/Gridkeeper/<version>/`, with SHA-256s
+from the release's asset digests (or by downloading the assets). Scoop and Homebrew users get the new version from
+`main` on their next `scoop update` / `brew update`; winget needs a pull request to microsoft/winget-pkgs, see
+[packaging/winget/README.md](../packaging/winget/README.md). Exit code 2 means an installer was missing and its
+manifest was left unchanged. Tests: `npx vitest run scripts/release`.
 
 ## 6. Testing next to a live Gridkeeper
 

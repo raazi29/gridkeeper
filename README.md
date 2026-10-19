@@ -215,13 +215,27 @@ dependency (WSL-only on Windows).
 > [latest release](https://github.com/raazi29/gridkeeper/releases/latest) is v0.1.1 (Windows), and everything in this
 > README is available by building from source (see *Build from source* below).
 
-Download from the [latest release](https://github.com/raazi29/gridkeeper/releases/latest), or build it yourself
-(see *Build from source* below):
+| | One-liner |
+|---|---|
+| **Windows** (Scoop) | `scoop bucket add gridkeeper https://github.com/raazi29/gridkeeper; scoop install gridkeeper/gridkeeper` |
+| **Windows** (winget, once the package is accepted) | `winget install raazi29.Gridkeeper` |
+| **macOS** (Homebrew) | `brew tap raazi29/gridkeeper https://github.com/raazi29/gridkeeper && brew install --cask raazi29/gridkeeper/gridkeeper` |
+| **Linux** (AppImage) | `curl -LO https://github.com/raazi29/gridkeeper/releases/download/v0.2.0/Gridkeeper_0.2.0_amd64.AppImage && chmod +x Gridkeeper_0.2.0_amd64.AppImage && ./Gridkeeper_0.2.0_amd64.AppImage` |
+| **Linux** (Debian / Ubuntu) | `curl -LO https://github.com/raazi29/gridkeeper/releases/download/v0.2.0/Gridkeeper_0.2.0_amd64.deb && sudo apt install ./Gridkeeper_0.2.0_amd64.deb` |
+| **Direct download** | [latest release](https://github.com/raazi29/gridkeeper/releases/latest): `Gridkeeper_0.2.0_x64-setup.exe` (Windows 10 1809+ / 11, per-user, no admin), the `.dmg` (macOS 11+), `.AppImage` / `.deb` (Linux x86_64) |
 
-- **Windows 10 1809+ / 11:** `Gridkeeper_0.2.0_x64-setup.exe` (per-user install, no admin needed). The WebView2
-  runtime is preinstalled on Windows 11; the installer bootstraps it elsewhere.
-- **macOS 11+ (preview):** the `.dmg`.
-- **Linux x86_64 (preview):** the `.AppImage` or `.deb`.
+Or build it yourself (see *Build from source* below). Update with `scoop update gridkeeper`, `brew upgrade --cask
+gridkeeper`, `winget upgrade raazi29.Gridkeeper`, or by installing the new release over the old one.
+
+- **Windows:** the setup installs per-user; the WebView2 runtime is preinstalled on Windows 11 and the setup
+  bootstraps it elsewhere. Scoop unpacks the app without running the setup, so on Windows 10 without WebView2 run
+  `winget install Microsoft.EdgeWebView2Runtime` once.
+- **Homebrew:** the tap is this repository (the `Casks/` folder). Installing by the full name
+  `raazi29/gridkeeper/gridkeeper` also trusts that one cask, which Homebrew 6+ requires for non-official taps.
+- **AppImage:** if it fails with a FUSE error, install FUSE 2: `sudo apt install libfuse2t64` on Ubuntu 24.04+,
+  `sudo apt install libfuse2` on Ubuntu 22.04 / Debian 12.
+- The package manifests live in [`bucket/`](bucket/gridkeeper.json), [`Casks/`](Casks/gridkeeper.rb) and
+  [`packaging/winget/`](packaging/winget/README.md); `scripts/release/update-manifests.mjs` refreshes them per release.
 
 ### Platforms
 
@@ -233,8 +247,10 @@ Download from the [latest release](https://github.com/raazi29/gridkeeper/release
 | Shortcuts | Ctrl+Shift+… | ⇧⌘… (⌃ keys always go to the terminal) | Ctrl+Shift+… |
 | GPU telemetry | yes | no | no |
 
-**macOS:** the app isn't notarized. On first launch open System Settings › Privacy & Security and click **Open
-Anyway** (or right-click the app › Open).
+**macOS:** the app is ad-hoc signed but not notarized, so the first launch is blocked (also when installed with
+Homebrew). Open it once, then go to System Settings › Privacy & Security and click **Open Anyway** (shown for about an
+hour after the blocked launch). Right-click › Open only works on macOS 14 and older. Alternative, if you trust the
+build: `xattr -dr com.apple.quarantine /Applications/Gridkeeper.app`.
 **Linux:** needs WebKitGTK 4.1 (`libwebkit2gtk-4.1-0`: Ubuntu 22.04+, Debian 12+, Fedora 39+). If the window stays
 blank on some GPU drivers, start it with `WEBKIT_DISABLE_DMABUF_RENDERER=1`.
 **macOS/Linux caveat:** quitting stops every agent, but if Gridkeeper itself is killed hard (SIGKILL, crash, power
@@ -243,8 +259,8 @@ loss) its agents can keep running. On Windows the kernel cleans them up.
 libayatana-appindicator3-dev librsvg2-dev libssl-dev patchelf build-essential`.
 
 > [!NOTE]
-> The installer is not code-signed yet, so Windows SmartScreen may show "Windows protected your PC" on first run.
-> Choose *More info → Run anyway*. Windows notifications show the proper app name and icon only from the installed
+> The installer is not code-signed yet, so Windows SmartScreen may show "Windows protected your PC" when you run the
+> downloaded setup. Choose *More info → Run anyway*. Windows notifications show the proper app name and icon only from the installed
 > app (in a dev build they appear under PowerShell).
 
 ## Quick start
