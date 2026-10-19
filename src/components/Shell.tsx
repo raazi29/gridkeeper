@@ -30,6 +30,8 @@ import { Button } from "./ui/Button";
 import { WorkspaceHeader } from "./WorkspaceHeader";
 import { BrowserLayer } from "../browser/BrowserLayer";
 import { ChangesDrawer } from "./ChangesDrawer";
+import { TestRunHost } from "./testrun/TestRunHost";
+import { MergeHost } from "./merge/MergeDialog";
 import { installPortsWatch } from "../store/ports";
 import { installMeterWatch } from "../store/meter";
 import "../browser/browser.css";
@@ -87,6 +89,8 @@ export function Shell() {
       <StatusBar />
       <CommandPalette />
       <DialogHost />
+      <TestRunHost />
+      <MergeHost />
       <ConfirmDialog />
       <Toasts />
       <AttentionLayer />

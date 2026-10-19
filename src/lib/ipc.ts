@@ -39,6 +39,9 @@ import type {
 import { EVT_MISSION_CHANGED, EVT_SESSION_ATTENTION, EVT_SESSION_METER, EVT_SESSION_STATE } from "./types";
 // Skills
 import type { InstallResult, InstalledSkill, RepoSkills, SkillFileText, SkillRepoPage, SkillSort, SkillTarget, SkillUpdateCheck } from "./types";
+// Test runs + merge assistant
+import type { MergeOutcome, MergePlan, MergePreview, MergeRequest, TestDetection, TestRunInfo, TestRunLog, TestRunSpec, WorktreeCleanupOutcome, WorktreeCleanupPlan } from "./types";
+import { EVT_TEST_RUN } from "./types";
 
 export interface AppInfo {
   version: string;
@@ -175,6 +178,24 @@ export const ipc = {
     invoke<string>("replay_save_file", bytes, { headers: { "x-replay-token": token } }),
   // Meter: Claude Code cost & context per pane (status line JSON; live updates via onSessionMeter).
   meterSnapshot: () => invoke<SessionMeter[]>("meter_snapshot"),
+  // Test runs: the test command in a worktree as a contained background process (live updates via onTestRun).
+  /** Test commands found in a folder's own files (best first). Reads files only. */
+  testDetect: (path: string) => invoke<TestDetection>("test_detect", { path }),
+  /** Queue a run; a folder that already has an active run gets that run back. */
+  testRunStart: (spec: TestRunSpec) => invoke<TestRunInfo>("test_run_start", { spec }),
+  testRunCancel: (id: string) => invoke<boolean>("test_run_cancel", { id }),
+  testRunList: () => invoke<TestRunInfo[]>("test_run_list"),
+  /** Captured output (ANSI stripped): the newest `maxBytes` (null = all of the 2 MiB kept). */
+  testRunLog: (id: string, maxBytes: number | null = null) => invoke<TestRunLog>("test_run_log", { id, maxBytes }),
+  // Merge assistant: the one git write path (ADR-020). Preview and plan write nothing.
+  mergePreview: (path: string, base: string | null = null) => invoke<MergePreview>("merge_preview", { path, base }),
+  /** The exact commands `mergeExecute(request)` runs. */
+  mergePlan: (request: MergeRequest) => invoke<MergePlan>("merge_plan", { request }),
+  /** Guards are re-checked; refusals reject (code "conflict"), a failed step resolves with ok false + rolledBack. */
+  mergeExecute: (request: MergeRequest) => invoke<MergeOutcome>("merge_execute", { request }),
+  mergeCleanupPlan: (path: string, base: string | null = null) => invoke<WorktreeCleanupPlan>("merge_cleanup_plan", { path, base }),
+  mergeCleanup: (path: string, branch: string, base: string | null = null) =>
+    invoke<WorktreeCleanupOutcome>("merge_cleanup", { path, branch, base }),
 };
 
 export function onSessionState(cb: (info: SessionInfo) => void): Promise<UnlistenFn> {
@@ -197,4 +218,8 @@ export function onMissionChanged(cb: (ev: MissionChanged) => void): Promise<Unli
 
 export function onSessionMeter(cb: (m: SessionMeter) => void): Promise<UnlistenFn> {
   return listen<SessionMeter>(EVT_SESSION_METER, (e) => cb(e.payload));
+}
+
+export function onTestRun(cb: (info: TestRunInfo) => void): Promise<UnlistenFn> {
+  return listen<TestRunInfo>(EVT_TEST_RUN, (e) => cb(e.payload));
 }

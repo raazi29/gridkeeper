@@ -11,6 +11,7 @@ import { confirmCloseSession, confirmForceStop, focusSession, jumpToSession } fr
 import { openPort } from "../../actions/browser";
 import { messageSessions } from "../../actions/groupActions";
 import { handoffSubmenu } from "../../actions/handoff";
+import { testRunMenuItems } from "../testrun/menus";
 import { isBrowserMeta } from "../../lib/browserPanes";
 import { usePorts } from "../../store/ports";
 import { toggleSessionMute } from "../../actions/notifyPrefs";
@@ -189,6 +190,7 @@ export function buildSessionMenu(id: SessionId, ctx: SessionMenuCtx, st: Session
 
   items.push({ label: "Message…", hint: keyHint("M"), disabled: !st.live, onSelect: () => messageSessions([id], `“${st.name}”`) });
   if (surface === "mission") items.push(handoffSubmenu(id));
+  items.push(...testRunMenuItems(id));
   if (st.ports?.length) {
     items.push({
       label: "Open in browser pane",

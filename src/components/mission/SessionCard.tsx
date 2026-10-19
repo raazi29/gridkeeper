@@ -34,6 +34,9 @@ import { beginSessionDrag, currentTaskDrag, dragHas, endSessionDrag, endTaskDrag
 import { RoleTag, roleStyle } from "./RoleTag";
 import { Sparkline } from "./Sparkline";
 import { useMissionTails } from "./useOutputTails";
+import { evidencePath } from "../../actions/handoff";
+import { runTestsForSession } from "../../store/testrun";
+import { IconFlask, TestBadge } from "../testrun/TestBadge";
 
 export const SessionCard = memo(function SessionCard({
   id,
@@ -91,6 +94,7 @@ export const SessionCard = memo(function SessionCard({
     }),
   );
   const rt = useApp((s) => s.runtime[id]);
+  const testPath = useApp((s) => evidencePath(s.persisted.sessions.find((x) => x.id === id)));
   const a = useAttention((s) => s.sessions[id]);
   const rate = useRates((s) => latestRate(s.hist[id]));
   const stats = useUi((s) => s.diag?.sessions.find((x) => x.id === id)?.stats);
@@ -271,6 +275,7 @@ export const SessionCard = memo(function SessionCard({
             <span className="mc-ellipsis">{meta.branch}</span>
           </span>
         )}
+        <TestBadge path={testPath} now={now} />
       </div>
       {task ? (
         <div className={`mc-card-task is-${taskState ?? "todo"}`} title={`Mission task (${taskState === "doing" ? "doing" : "next"}): ${task}`}>
@@ -337,6 +342,9 @@ export const SessionCard = memo(function SessionCard({
           onClick={act(() => void (st.live ? confirmStop(id, meta.name) : startSession(id, conv ? meta.resume : { mode: "none" })))}
         >
           {st.live ? <IconStop size={11} /> : <IconPlay size={11} />}
+        </button>
+        <button type="button" tabIndex={-1} title="Run tests in its worktree (the log opens from the badge)" aria-label="Run tests" disabled={!testPath} onClick={act(() => void runTestsForSession(id))}>
+          <IconFlask size={11} />
         </button>
         <button
           type="button"

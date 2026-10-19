@@ -7,6 +7,7 @@ import { isWorkspaceMuted, toggleWorkspaceMute } from "../../actions/notifyPrefs
 import { useApp } from "../../store/appStore";
 import { useMission } from "../../store/mission";
 import type { MenuItem } from "../ui/Menu";
+import { laneTestsSubmenu, workspaceTestMenuItem } from "../testrun/menus";
 import { formationItem, layoutSubmenu, newSessionSubmenu, shortcutHint } from "./common";
 
 function findGroup(groupId: string) {
@@ -33,6 +34,7 @@ export function buildGroupMenu(groupId: string, ctx: { onRename?: () => void } =
     { label: "Message all in group…", disabled: empty, onSelect: () => messageSessions(groupSessionIds(groupId), what) },
     { label: "Restart all…", disabled: empty, onSelect: () => void restartSessions(groupSessionIds(groupId), what) },
     { label: "Stop all…", disabled: empty, onSelect: () => void stopSessions(groupSessionIds(groupId), what) },
+    laneTestsSubmenu(groupId),
     "separator",
     { label: "Close all sessions…", danger: true, disabled: empty, onSelect: () => void closeSessions(groupSessionIds(groupId), what) },
     { label: "Delete group…", danger: true, disabled: ws.groups.length <= 1, onSelect: () => void deleteGroupFlow(groupId) },
@@ -58,6 +60,7 @@ export function workspaceExtraItems(workspaceId: string): MenuItem[] {
     },
     { label: muted ? "Unmute notifications" : "Mute notifications", checked: muted, hint: "alerts still reach Comms", onSelect: () => toggleWorkspaceMute(workspaceId) },
     { label: "Stop all sessions…", disabled: !hasSessions, onSelect: () => void stopSessions(workspaceSessionIds(workspaceId), `“${ws.name}”`) },
+    workspaceTestMenuItem(workspaceId),
   ];
 }
 

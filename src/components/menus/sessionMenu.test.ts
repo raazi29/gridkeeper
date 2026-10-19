@@ -238,6 +238,7 @@ describe("menu actions", () => {
       "Message all in group…",
       "Restart all…",
       "Stop all…",
+      "Tests",
       "Close all sessions…",
       "Delete group…",
     ]);

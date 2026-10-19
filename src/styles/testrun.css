@@ -1,0 +1,358 @@
+/* Test runs (badges, log viewer, test command dialog) and the merge assistant dialog. Theme tokens only. */
+
+/* ---- badge --------------------------------------------------------------------------------------- */
+
+.tr-badge {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+  max-width: 100%;
+  height: 16px;
+  padding: 0 5px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-s);
+  background: transparent;
+  color: var(--text-1);
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  line-height: 14px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
+.tr-badge:hover {
+  border-color: var(--text-2);
+}
+.tr-badge:focus-visible {
+  outline: 1px solid var(--accent);
+  outline-offset: 1px;
+}
+.tr-badge.is-ok {
+  border-color: var(--ok-line);
+  color: var(--ok-fg);
+}
+.tr-badge.is-bad {
+  border-color: var(--err-line);
+  color: var(--err-fg);
+  background: var(--err-soft);
+}
+.tr-badge.is-busy {
+  border-color: var(--accent-line);
+  color: var(--accent-fg);
+}
+.tr-badge.is-muted {
+  color: var(--text-2);
+}
+
+/* ---- shared ---------------------------------------------------------------------------------------- */
+
+.tr-dim {
+  color: var(--text-2);
+}
+.tr-ellipsis {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.callout.tr-callout-warn {
+  border-color: var(--warn-line);
+  background: var(--warn-soft);
+  color: var(--warn-fg);
+}
+.tr-foot-note,
+.mg-foot-note {
+  margin-right: auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--fs-xs);
+  color: var(--text-2);
+}
+
+/* ---- log viewer ------------------------------------------------------------------------------------ */
+
+.tr-head {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 8px;
+  font-size: var(--fs-s);
+}
+.tr-head-row {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+.tr-cmd {
+  color: var(--text-0);
+  word-break: break-all;
+}
+.tr-status {
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: var(--label-tracking);
+  font-size: var(--fs-xs);
+}
+.tr-status.is-ok {
+  color: var(--ok-fg);
+}
+.tr-status.is-bad {
+  color: var(--err-fg);
+}
+.tr-status.is-busy {
+  color: var(--accent-fg);
+}
+.tr-status.is-muted {
+  color: var(--text-2);
+}
+.tr-failures {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  color: var(--err-fg);
+  font-size: var(--fs-xs);
+  max-height: 120px;
+  overflow: auto;
+}
+.tr-dropped {
+  font-size: var(--fs-xs);
+  margin-bottom: 4px;
+}
+.tr-log {
+  margin: 0;
+  height: min(52vh, 520px);
+  overflow: auto;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-m);
+  background: var(--term-bg);
+  color: var(--term-fg);
+  font-size: 11.5px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  user-select: text;
+}
+.tr-log:focus-visible {
+  outline: 1px solid var(--accent);
+}
+
+/* ---- test command dialog ----------------------------------------------------------------------------- */
+
+.tr-detect {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-m);
+  background: var(--bg-0);
+  font-size: var(--fs-s);
+}
+.tr-detect-head {
+  display: flex;
+  gap: 6px;
+  min-width: 0;
+  color: var(--text-1);
+}
+.tr-candidates {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.tr-candidates li {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+.tr-candidate {
+  flex-shrink: 0;
+  padding: 0 6px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-s);
+  background: transparent;
+  color: var(--text-0);
+  cursor: pointer;
+}
+.tr-candidate:hover {
+  border-color: var(--accent);
+}
+.tr-tag {
+  font-size: var(--fs-xs);
+  color: var(--accent-fg);
+}
+.tr-effective {
+  font-size: var(--fs-s);
+  color: var(--text-1);
+}
+.tr-limits {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+/* ---- merge dialog ------------------------------------------------------------------------------------- */
+
+.mg-body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  font-size: var(--fs-s);
+}
+.mg-section {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.mg-h {
+  font-size: var(--fs-xs);
+  text-transform: uppercase;
+  letter-spacing: var(--label-tracking);
+  color: var(--text-2);
+}
+.mg-route {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  color: var(--text-0);
+}
+.mg-arrow {
+  margin: 0 6px;
+  color: var(--text-2);
+}
+.mg-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  color: var(--text-1);
+}
+.mg-dialog .is-add {
+  color: var(--ok-fg);
+}
+.mg-dialog .is-del {
+  color: var(--err-fg);
+}
+.mg-details summary {
+  cursor: pointer;
+  color: var(--text-1);
+}
+.mg-commits,
+.mg-files,
+.mg-conflicts {
+  margin: 4px 0 0;
+  padding: 0;
+  list-style: none;
+  max-height: 160px;
+  overflow: auto;
+  font-size: var(--fs-xs);
+  line-height: 1.6;
+}
+.mg-letter {
+  display: inline-block;
+  width: 12px;
+  color: var(--text-2);
+}
+.mg-blockers {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.mg-check {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+}
+.mg-gate {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-left: 22px;
+  color: var(--text-1);
+}
+.mg-gate.is-ok {
+  color: var(--ok-fg);
+}
+.mg-gate.is-failed,
+.mg-gate.is-stale,
+.mg-gate.is-noCommand {
+  color: var(--warn-fg);
+}
+.mg-strategies {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.mg-strategy {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  cursor: pointer;
+}
+.mg-strategy.is-disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+.mg-strategy-label {
+  min-width: 96px;
+  color: var(--text-0);
+}
+.mg-message {
+  width: 100%;
+}
+.mg-commands {
+  margin: 0;
+}
+.mg-onfail {
+  font-size: var(--fs-xs);
+}
+.callout.mg-ok {
+  border-color: var(--ok-line);
+  background: var(--ok-soft);
+  color: var(--ok-fg);
+}
+.mg-error {
+  margin: 4px 0 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: var(--fs-xs);
+}
+.mg-steps {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 4px;
+}
+.mg-step pre {
+  margin: 2px 0 0 14px;
+  max-height: 140px;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: var(--fs-xs);
+  color: var(--text-1);
+}
+.mg-step.is-failed > .mono {
+  color: var(--err-fg);
+}
+
+/* ---- hook-ins on cards ------------------------------------------------------------------------------- */
+
+.mc-card-meta .tr-badge {
+  margin-left: 4px;
+  height: 14px;
+  line-height: 12px;
+}
+.so-evidence .tr-badge {
+  margin-left: 8px;
+  align-self: center;
+}
