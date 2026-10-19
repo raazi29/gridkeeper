@@ -1,0 +1,29 @@
+# Staged for a pull request to microsoft/winget-pkgs (see packaging/winget/README.md); not published by this repo.
+# Format: https://learn.microsoft.com/windows/package-manager/package/manifest (multi-file manifest, schema 1.28.0)
+# Tauri NSIS installer, installMode "currentUser": installs to %LOCALAPPDATA%\Gridkeeper without elevation, accepts
+# the NSIS /S switch, and registers HKCU\...\Uninstall\Gridkeeper (DisplayName "Gridkeeper", Publisher "gridkeeper").
+# InstallerUrl/InstallerSha256 are rewritten by scripts/release/update-manifests.mjs; all zeros = not done yet.
+# yaml-language-server: $schema=https://aka.ms/winget-manifest.installer.1.28.0.schema.json
+
+PackageIdentifier: raazi29.Gridkeeper
+PackageVersion: 0.2.0
+InstallerLocale: en-US
+MinimumOSVersion: 10.0.17763.0
+InstallerType: nullsoft
+Scope: user
+InstallModes:
+- interactive
+- silent
+- silentWithProgress
+UpgradeBehavior: install
+ProductCode: Gridkeeper
+AppsAndFeaturesEntries:
+- DisplayName: Gridkeeper
+  Publisher: gridkeeper
+  ProductCode: Gridkeeper
+Installers:
+- Architecture: x64
+  InstallerUrl: https://github.com/raazi29/gridkeeper/releases/download/v0.2.0/Gridkeeper_0.2.0_x64-setup.exe
+  InstallerSha256: 0000000000000000000000000000000000000000000000000000000000000000
+ManifestType: installer
+ManifestVersion: 1.28.0

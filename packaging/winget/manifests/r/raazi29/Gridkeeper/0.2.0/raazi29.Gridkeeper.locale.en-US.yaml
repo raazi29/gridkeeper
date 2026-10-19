@@ -1,0 +1,30 @@
+# Staged for a pull request to microsoft/winget-pkgs (see packaging/winget/README.md); not published by this repo.
+# Format: https://learn.microsoft.com/windows/package-manager/package/manifest (multi-file manifest, schema 1.28.0)
+# yaml-language-server: $schema=https://aka.ms/winget-manifest.defaultLocale.1.28.0.schema.json
+
+PackageIdentifier: raazi29.Gridkeeper
+PackageVersion: 0.2.0
+PackageLocale: en-US
+Publisher: raazi29
+PublisherUrl: https://github.com/raazi29
+PublisherSupportUrl: https://github.com/raazi29/gridkeeper/issues
+PackageName: Gridkeeper
+PackageUrl: https://github.com/raazi29/gridkeeper
+License: MIT
+LicenseUrl: https://github.com/raazi29/gridkeeper/blob/main/LICENSE
+ShortDescription: GPU-accelerated multi-agent terminal workspace
+Description: |-
+  Gridkeeper is a desktop terminal workspace for running many AI coding agents side by side
+  (Claude Code, Codex, Hermes and any other CLI). It shows a grid of terminals backed by ConPTY,
+  restores sessions, tracks per-agent cost and context, and coordinates agent teams through a
+  shared Markdown mission file.
+Moniker: gridkeeper
+Tags:
+- ai-agents
+- claude-code
+- codex
+- terminal
+- terminal-emulator
+ReleaseNotesUrl: https://github.com/raazi29/gridkeeper/releases/tag/v0.2.0
+ManifestType: defaultLocale
+ManifestVersion: 1.28.0
