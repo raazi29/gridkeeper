@@ -5,6 +5,7 @@
 //! - `platform`    per-OS bits: os name, GUI-launch PATH (login shell + tool folders), macOS LANG,
 //!               Linux WebKitGTK workaround, Unix termination guards
 //! - `app_menu`    the native macOS menu (App, Edit, View, Window, Help)
+//! - `selftest`    `--gk-self-test` / `--gk-self-test-gui`: smoke tests of the built binary (CI)
 //! - `procs`       Unix process table (sessions, trees, CPU/RAM) for containment and diagnostics
 //! - `adapters`    agent adapters (PowerShell, Claude Code, Codex, generic)
 //! - `profiles`    account records (`profiles.json`; historically Claude-only)
@@ -43,6 +44,7 @@ pub mod pty;
 pub mod redact;
 pub mod replay;
 pub mod sandbox;
+pub mod selftest;
 pub mod skills;
 pub mod state;
 pub mod types;
@@ -55,6 +57,11 @@ pub fn run() {
     // macOS / Linux GUI launches: PATH from the login shell + tool folders, LANG, WebKitGTK
     // workaround (no-op on Windows). Single-threaded here.
     platform::init_process_env();
+    // `--gk-self-test-gui`: runs as sandbox "self-test" unless one is set (before the sandbox is resolved).
+    let gui_self_test = selftest::gui_requested();
+    if gui_self_test {
+        selftest::prepare_gui();
+    }
     let mut context = tauri::generate_context!();
     // Sandbox (GRIDKEEPER_SANDBOX): resolved first, while the process is still single-threaded, because it
     // sets WEBVIEW2_USER_DATA_FOLDER before any window exists. An invalid name refuses to start.
@@ -66,6 +73,8 @@ pub fn run() {
             w.title = sandbox::window_title(&w.title, &s.name);
         }
     }
+    // Window self-test: hard deadline for the whole run (starts a thread; no env changes after this).
+    selftest::arm_gui_deadline();
     let mut builder = tauri::Builder::default();
     // Benchmark runs (GRIDKEEPER_BENCH) and sandboxes may run beside a normal instance, so they skip the
     // single-instance lock.
@@ -106,11 +115,14 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_notification::init())
-        .setup(|app| {
+        .setup(move |app| {
             let ctx = state::AppCtx::init(app.handle())?;
             app.manage(ctx);
             // What init_process_env changed (logging exists from AppCtx::init on).
             platform::log_env_report();
+            if gui_self_test {
+                selftest::start_gui_watchdog(app.handle().clone());
+            }
             // Unix: stop sessions on SIGTERM/SIGINT/SIGHUP and on a main-thread panic (no-op on Windows).
             platform::install_exit_guards(app.handle());
             if let Some(w) = app.get_webview_window(webview_guard::MAIN) {
@@ -208,6 +220,11 @@ pub fn run() {
 /// another process). Tell the user instead of exiting silently.
 fn fatal_startup_error(message: &str) -> ! {
     tracing::error!(error = %redact::redact(message), "startup failed");
+    // The window self-test (CI) must never wait on a dialog.
+    if selftest::gui_mode() {
+        eprintln!("Gridkeeper could not start: {message}");
+        std::process::exit(1);
+    }
     #[cfg(windows)]
     {
         use windows_sys::Win32::UI::WindowsAndMessaging::{MessageBoxW, MB_ICONERROR, MB_OK};
