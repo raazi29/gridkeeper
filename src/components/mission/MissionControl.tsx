@@ -256,7 +256,7 @@ function headerMenu(projectDir: string | null): MenuItem[] {
 }
 
 /** Entry jump + staggered panel assembly (mission.css): `is-entering` stays on this long. */
-const ENTRY_MS = 1700;
+const ENTRY_MS = 2300;
 let pulseSeq = 1;
 
 /** CSS breakpoint where the mission board and the lead box sit side by side (mission.css, .mc-top). */

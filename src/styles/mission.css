@@ -1260,8 +1260,7 @@
 }
 
 /* ---- effects: only under .has-fx (the "Mission Control effects" setting, never under reduced motion).
-   Motion is transform / opacity wherever it loops; the dash flow on the connectors is the one paint loop
-   (a few short strokes). Every loop pauses while the window is in the background. ------------------- */
+   Motion is transform / opacity wherever it loops; the dash flow on busy connectors is the one paint loop. Every loop pauses while the window is in the background. ------------------- */
 
 .mc-jump {
   position: absolute;
@@ -1381,8 +1380,8 @@
   }
 }
 
-/* energy connectors: gold motes flow mission → lead → lanes → sign-off; faster and brighter where work is
-   happening, amber toward a lane that needs you. A comet runs along a line on a real event (Links.tsx). */
+/* energy connectors: gold motes along mission → lead → lanes → sign-off; they flow (brighter, faster) where work
+   is happening and amber toward a lane that needs you. A comet runs along a line on a real event (Links.tsx). */
 .mc.has-fx .mc-link,
 .mc.has-fx .mc-link.is-active {
   stroke: color-mix(in srgb, var(--mc-gold) 30%, var(--mc-line));
@@ -1400,7 +1399,10 @@
   stroke-linecap: round;
   stroke-dasharray: 0.5 13.5;
   opacity: 0.55;
-  animation: mc-energy 2.4s linear infinite;
+}
+/* the motes flow only where something is happening (the dash flow is a paint per frame); idle lines rest */
+.mc.has-fx .mc-link-energy:is(.is-active, .is-needs, .is-review) {
+  animation: mc-energy 2.4s steps(14) infinite; /* 1 px per step: smooth to the eye, repaints only on a step */
 }
 .mc.has-fx .mc-link-energy.is-active {
   stroke: var(--mc-gold-hi);
@@ -1467,19 +1469,34 @@
   }
 }
 
-/* cards: working = a gold arc runs round the border (a rotating conic layer under a ring mask: compositor
-   only); needs you = the border breathes amber; idle stays calm */
+/* cards: working = a gold arc runs round the border; needs you = the border breathes amber; idle stays calm.
+   The lit layer sits under the card's content (z-index -1 in the card's own stacking context): the ring colour
+   or a rotating conic layer, covered by an inner plate in the card's background except for a 1.5 px rim. Only
+   transform / opacity animate, so the compositor does the work. */
+.mc.has-fx .mc-card:is([data-lamp="working"], [data-lamp="waiting"]) {
+  isolation: isolate;
+}
 .mc.has-fx .mc-card:is([data-lamp="working"], [data-lamp="waiting"]) > .mc-card-fx {
   display: block;
   position: absolute;
   inset: -1px;
-  padding: 1.5px;
+  z-index: -1;
   border-radius: inherit;
   overflow: hidden;
   pointer-events: none;
-  mask-image: linear-gradient(#000 0 0), linear-gradient(#000 0 0);
-  mask-clip: content-box, border-box;
-  mask-composite: exclude;
+}
+.mc.has-fx .mc-card > .mc-card-fx::after {
+  content: "";
+  position: absolute;
+  inset: 1.5px;
+  border-radius: 3px;
+  background: var(--bg-0);
+}
+.mc.has-fx .mc-card:is(:hover, .is-selected, :focus-visible) > .mc-card-fx::after {
+  background: var(--bg-2);
+}
+.mc.has-fx .mc-card[data-lamp="working"] > .mc-card-fx {
+  background: color-mix(in srgb, var(--mc-gold) 30%, var(--mc-line));
 }
 .mc.has-fx .mc-card[data-lamp="working"] > .mc-card-fx::before {
   content: "";
@@ -1501,9 +1518,6 @@
   );
   transform: translate(-50%, -50%) rotate(0deg);
   animation: mc-spin 3.6s linear infinite;
-}
-.mc.has-fx .mc-card[data-lamp="working"] {
-  border-color: color-mix(in srgb, var(--mc-gold) 30%, var(--mc-line));
 }
 .mc.has-fx .mc-card[data-lamp="working"]:not(.is-selected, :focus-visible) {
   box-shadow: 0 0 18px -8px var(--mc-gold);
