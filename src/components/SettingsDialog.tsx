@@ -9,7 +9,8 @@ import { errorMessage, ipc } from "../lib/ipc";
 import type { AgentPaths, LayoutPreset, RendererPref, RightClickAction, Settings, UiDensity } from "../lib/types";
 import { DEFAULT_SETTINGS } from "../lib/types";
 import { useApp } from "../store/appStore";
-import { setKeyRecording, useUi } from "../store/uiStore";
+import { resetFlightLog, setFlightLogEnabled, useFlightLog } from "../store/flightlog";
+import { confirmDialog, setKeyRecording, useUi } from "../store/uiStore";
 import { useShortcutMap } from "./hooks";
 import { NotificationSettings } from "./NotificationSettings";
 import { IconFolder } from "./icons";
@@ -367,11 +368,37 @@ function InterfaceSection() {
   const [diag, setDiag] = useSetting("statusBarDiagnostics");
   const [collapsed, setCollapsed] = useSetting("sidebarCollapsed");
   const [inspector, setInspector] = useSetting("inspectorOpen");
+  const flightLog = useFlightLog((s) => s.data.enabled);
   return (
     <div className="form">
       <Toggle checked={diag} onChange={setDiag} label="Resource usage in status bar" hint="Polls every 2 s, only while the window is visible." />
       <Toggle checked={collapsed} onChange={setCollapsed} label="Collapse sidebar to a rail" />
       <Toggle checked={inspector} onChange={setInspector} label="Show inspector panel" />
+      <Toggle
+        checked={flightLog}
+        onChange={setFlightLogEnabled}
+        label="Flight log (streaks, ranks, medals)"
+        hint="A daily streak, ranks and medals from mission tasks Gridkeeper sees completed, shown in Mission Control. Stored on this machine only. Off stops counting and hides it."
+      />
+      <div className="mode-row">
+        <Button
+          size="sm"
+          onClick={async () => {
+            const ok = await confirmDialog({
+              title: "Reset the flight log?",
+              message: "Streak, rank, totals and medals go back to zero. This can't be undone.",
+              confirmLabel: "Reset",
+              danger: true,
+            });
+            if (ok) {
+              resetFlightLog();
+              notify("info", "Flight log reset.");
+            }
+          }}
+        >
+          Reset flight log
+        </Button>
+      </div>
     </div>
   );
 }

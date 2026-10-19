@@ -140,6 +140,16 @@ interface Rec {
 }
 
 const recs = new Map<string, Rec>();
+/** Observers of queued events (the flight log reads branch and message events). */
+export type RecorderTap = (projectKey: string, ev: ReplayEvent) => void;
+const taps = new Set<RecorderTap>();
+
+/** Observe every event a recording queues (`projectKey` = dirKey of the project). Returns an unsubscribe. */
+export function tapRecorder(fn: RecorderTap): () => void {
+  taps.add(fn);
+  return () => void taps.delete(fn);
+}
+
 /** Projects whose recording the user stopped this run: no auto-restart. */
 const userStopped = new Set<string>();
 let installed = false;
@@ -214,6 +224,13 @@ function push(rec: Rec, ev: ReplayEvent) {
   rec.pending.push(ev);
   rec.lastEventAt = Math.max(rec.lastEventAt, ev.t);
   schedule(rec);
+  for (const tap of taps) {
+    try {
+      tap(rec.key, ev);
+    } catch {
+      /* an observer never breaks recording */
+    }
+  }
 }
 
 function schedule(rec: Rec, ms = FLUSH_MS) {

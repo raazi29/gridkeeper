@@ -32,6 +32,7 @@ import { buildSessionMenu, confirmRestart, confirmStop } from "../menus/sessionM
 import { QuickLaunchButton } from "../QuickLaunch";
 import { ReplayHeaderControls } from "../replay/ReplayControls";
 import { CostMeterHint, WorkspaceCost } from "../MeterChip";
+import { FlightLogChip } from "../flightlog/FlightLogChip";
 import { useContextMenu, type MenuItem } from "../ui/Menu";
 import { ActivityRiver } from "./ActivityRiver";
 import type { FleetLamp } from "../util/fleet";
@@ -595,6 +596,7 @@ export function MissionControl() {
             agents [ <b>{model.counts.live}</b>/<b>{total}</b> ]
           </span>
           <span className="mc-head-actions">
+            <FlightLogChip />
             <ReplayHeaderControls projectDir={projectDir} />
             <button
               type="button"

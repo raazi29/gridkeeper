@@ -7,6 +7,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { notify } from "../../actions/notify";
 import { errorMessage, ipc } from "../../lib/ipc";
+import { dayKey, statusLine } from "../../lib/flightlog";
 import type { ReplayExportKind, ReplayInfo } from "../../lib/types";
 import { ExportCancelled, exportReplay, pickVideoType, type ExportProgress } from "../../replay/export";
 import { goalSlug, metaFromName, parseReplay, summarize, type RecordingSummary, type ReplayEvent } from "../../replay/events";
@@ -15,6 +16,7 @@ import { flushRecording, startRecording, stopRecording } from "../../replay/reco
 import { ASPECTS, loadReplayFonts, makeScene, paintFrame, type Aspect } from "../../replay/render";
 import { formatClock, formatClockRange, formatWall, LENGTHS, type ReplayLength } from "../../replay/timeline";
 import { useApp } from "../../store/appStore";
+import { useFlightLog } from "../../store/flightlog";
 import { dirKey } from "../../store/missionDoc";
 import { closeReplay, setAutoRecord, useReplay } from "../../store/replay";
 import { actionToast, confirmDialog } from "../../store/uiStore";
@@ -34,9 +36,11 @@ interface Prefs {
   aspect: Aspect;
   watermark: boolean;
   theme: string; // "active" or a theme id
+  /** Flight log line ("Day 7 streak · Captain") on the end card. */
+  flightLine: boolean;
 }
 
-const DEFAULT_PREFS: Prefs = { length: 30, aspect: "landscape", watermark: true, theme: "active" };
+const DEFAULT_PREFS: Prefs = { length: 30, aspect: "landscape", watermark: true, theme: "active", flightLine: true };
 
 function readPrefs(): Prefs {
   try {
@@ -48,6 +52,7 @@ function readPrefs(): Prefs {
       aspect: v.aspect && v.aspect in ASPECTS ? v.aspect : DEFAULT_PREFS.aspect,
       watermark: typeof v.watermark === "boolean" ? v.watermark : true,
       theme: typeof v.theme === "string" ? v.theme : "active",
+      flightLine: typeof v.flightLine === "boolean" ? v.flightLine : true,
     };
   } catch {
     return DEFAULT_PREFS;
@@ -108,6 +113,7 @@ export function ReplayDialog() {
   const rec = useReplay((s) => (dir ? s.recording[dirKey(dir)] : undefined));
   const themeId = useApp((s) => s.persisted.settings.theme);
   const reduceSetting = useApp((s) => s.persisted.settings.reduceMotion);
+  const flightLog = useFlightLog((s) => s.data);
 
   const [items, setItems] = useState<Item[] | null>(null);
   const [listError, setListError] = useState<string | null>(null);
@@ -189,7 +195,13 @@ export function ReplayDialog() {
 
   const current = items?.find((i) => i.info.name === selected) ?? null;
   const events = current?.loaded?.events ?? null;
-  const scene = useMemo(() => (events && events.length ? makeScene(events, prefs.length) : null), [events, prefs.length]);
+  const baseScene = useMemo(() => (events && events.length ? makeScene(events, prefs.length) : null), [events, prefs.length]);
+  // Flight log status on the day the recording ends (streak and rank as they were then).
+  const flightLine = useMemo(
+    () => (prefs.flightLine && flightLog.enabled && events && events.length ? statusLine(flightLog, dayKey(events[events.length - 1].t)) : null),
+    [prefs.flightLine, flightLog, events],
+  );
+  const scene = useMemo(() => (baseScene && flightLine ? { ...baseScene, flightLine } : baseScene), [baseScene, flightLine]);
   const palette = useMemo(
     () => (prefs.theme === "active" ? activePalette(themeId) : paletteFromTheme(getTheme(prefs.theme))),
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -541,6 +553,11 @@ export function ReplayDialog() {
               <div className="rp-opt">
                 <Toggle checked={prefs.watermark} onChange={(v) => setPrefs({ watermark: v })} label="Watermark" hint="“Made with Gridkeeper” on the end card" />
               </div>
+              {flightLog.enabled && (
+                <div className="rp-opt">
+                  <Toggle checked={prefs.flightLine} onChange={(v) => setPrefs({ flightLine: v })} label="Flight log line" hint="Your streak and rank on the end card, e.g. “Day 7 streak · Captain”" />
+                </div>
+              )}
             </div>
             {summary && st && (
               <div className="rp-facts mono">

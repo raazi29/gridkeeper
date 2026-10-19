@@ -88,6 +88,22 @@ describe("paintFrame (smoke, stub context)", () => {
     expect(texts.some((s) => s.startsWith("Made with Gridkeeper"))).toBe(false);
   });
 
+  it("adds the optional flight-log line to the end card", () => {
+    const base = makeScene(events(3, 5), 15);
+    const end = base.plan.totalMs;
+    const paint = (scene: typeof base, aspect: Aspect) => {
+      const { ctx, texts } = stubContext();
+      paintFrame(ctx, scene, end, { width: ASPECTS[aspect].w, height: ASPECTS[aspect].h, palette, watermark: true });
+      return texts;
+    };
+    expect(paint(base, "landscape").some((s) => s.includes("streak"))).toBe(false);
+    const scene = { ...base, flightLine: "Day 7 streak · Captain" };
+    // Its own row where there is room, joined to the time range where the watermark is close.
+    expect(paint(scene, "landscape")).toContain("Day 7 streak · Captain");
+    expect(paint(scene, "square").some((s) => s.endsWith("·  Day 7 streak · Captain"))).toBe(true);
+    expect(paint(scene, "vertical")).toContain("Day 7 streak · Captain");
+  });
+
   it("handles an empty recording", () => {
     const scene = makeScene([], 15);
     const { ctx } = stubContext();
