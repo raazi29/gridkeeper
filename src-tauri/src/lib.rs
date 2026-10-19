@@ -2,7 +2,8 @@
 //!
 //! Module ownership:
 //! - `pty`         PTY sessions (ConPTY / Unix pty), output ring buffer, flow control, process containers
-//! - `platform`    per-OS bits: os name, macOS PATH/LANG, Unix termination guards
+//! - `platform`    per-OS bits: os name, GUI-launch PATH (login shell + tool folders), macOS LANG,
+//!               Linux WebKitGTK workaround, Unix termination guards
 //! - `procs`       Unix process table (sessions, trees, CPU/RAM) for containment and diagnostics
 //! - `adapters`    agent adapters (PowerShell, Claude Code, Codex, generic)
 //! - `profiles`    account records (`profiles.json`; historically Claude-only)
@@ -49,7 +50,8 @@ use tauri::Manager;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    // macOS: launchd's minimal PATH / missing LANG (no-op elsewhere). Single-threaded here.
+    // macOS / Linux GUI launches: PATH from the login shell + tool folders, LANG, WebKitGTK
+    // workaround (no-op on Windows). Single-threaded here.
     platform::init_process_env();
     let mut context = tauri::generate_context!();
     // Sandbox (GRIDKEEPER_SANDBOX): resolved first, while the process is still single-threaded, because it
@@ -81,6 +83,8 @@ pub fn run() {
         .setup(|app| {
             let ctx = state::AppCtx::init(app.handle())?;
             app.manage(ctx);
+            // What init_process_env changed (logging exists from AppCtx::init on).
+            platform::log_env_report();
             // Unix: stop sessions on SIGTERM/SIGINT/SIGHUP and on a main-thread panic (no-op on Windows).
             platform::install_exit_guards(app.handle());
             if let Some(w) = app.get_webview_window(webview_guard::MAIN) {
