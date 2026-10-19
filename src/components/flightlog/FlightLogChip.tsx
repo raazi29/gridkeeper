@@ -19,9 +19,9 @@ export function FlightLogChip() {
   }, [data]);
   if (!data.enabled) return null;
   return (
-    <button type="button" className="mc-btn fl-chip" title={view.title} onClick={openFlightLog}>
+    <button type="button" className="mc-btn fl-chip" title={view.title} aria-label={`Flight log: ${view.text}`} onClick={openFlightLog}>
       <Insignia index={view.index} size={13} />
-      {view.text}
+      <span className="fl-chip-text">{view.text}</span>
     </button>
   );
 }

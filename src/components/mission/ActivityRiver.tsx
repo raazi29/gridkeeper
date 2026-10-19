@@ -1,12 +1,15 @@
 // "Activity river": one smooth trail per session over the last 120 s; thickness and brightness follow
 // the session's REAL output rate (bytes/s from the rate sampler, log-scaled), colour = role. 2D canvas,
 // at most 10 fps, only while on screen and the document is visible; with reduced motion it redraws only
-// when a new sample arrives.
+// when a new sample arrives. Folds to its label line (remembered on this device); folded, nothing is drawn.
+// The label line carries the colour legend of the roles present.
 
 import { memo, useEffect, useRef } from "react";
 import type { SessionId } from "../../lib/types";
 import { roleInfo } from "../../lib/roles";
 import { RATE_HISTORY, useRates } from "../../store/rates";
+import { usePref } from "./mcPrefs";
+import { roleStyle } from "./RoleTag";
 
 const FRAME_MS = 100;
 
@@ -20,13 +23,17 @@ export function trailWidth(rate: number, peak: number, maxHalf: number): number 
 export const ActivityRiver = memo(function ActivityRiver({
   sessions,
   still,
+  roles,
 }: {
   sessions: { id: SessionId; role: string | null }[];
   still: boolean;
+  /** Roles present in the workspace, in legend order. */
+  roles: string[];
 }) {
   const canvas = useRef<HTMLCanvasElement>(null);
   const sessionsRef = useRef(sessions);
   sessionsRef.current = sessions;
+  const [open, setOpen] = usePref<boolean>("riverOpen", () => true);
 
   useEffect(() => {
     const el = canvas.current;
@@ -152,18 +159,45 @@ export const ActivityRiver = memo(function ActivityRiver({
       unsub();
       document.removeEventListener("visibilitychange", onVis);
     };
-  }, [still]);
+  }, [still, open]);
 
   return (
-    <div className="mc-river">
-      <span className="mc-river-label mc-micro">activity river · out rate per session</span>
-      <span className="mc-river-note mc-micro">thickness = KB/s (log) · colour = role</span>
-      <canvas ref={canvas} aria-label="Output rate of each session over the last 120 seconds" role="img" />
-      <div className="mc-river-axis">
-        <span>−120 s</span>
-        <span>−60 s</span>
-        <span>now</span>
+    <section className={`mc-river${open ? "" : " is-folded"}`} aria-label="Activity river">
+      <div className="mc-band-head">
+        <button
+          type="button"
+          className="mc-fold"
+          aria-expanded={open}
+          aria-label={open ? "Fold the activity river" : "Show the activity river"}
+          title={open ? "Fold to one line (remembered on this device)" : "Show the activity river"}
+          onClick={() => setOpen(!open)}
+        >
+          {open ? "▾" : "▸"}
+        </button>
+        <span className="mc-micro">activity river · out rate per session</span>
+        <span className="mc-spacer" />
+        {open && <span className="mc-micro mc-river-note">thickness = KB/s (log)</span>}
+        {roles.length > 0 && (
+          <span className="mc-legend" aria-label="Colour = role">
+            {roles.map((r) => (
+              <span key={r} className="mc-legend-item" style={roleStyle(r)}>
+                <span className="mc-legend-sq" />
+                {roleInfo(r)?.id ?? r}
+              </span>
+            ))}
+          </span>
+        )}
       </div>
-    </div>
+      {open && (
+        <div className="mc-river-body">
+          <canvas ref={canvas} aria-label="Output rate of each session over the last 120 seconds" role="img" />
+          <div className="mc-river-axis">
+            <span>−120 s</span>
+            <span>−60 s</span>
+            <span>now</span>
+          </div>
+        </div>
+      )}
+    </section>
   );
 });

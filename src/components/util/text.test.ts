@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   basename,
+  formatSince,
+  shortPath,
   defaultWorktreePath,
   formatCpu,
   formatMb,
@@ -85,5 +87,29 @@ describe("format", () => {
     expect(initials("api server")).toBe("AS");
     expect(initials("frontend")).toBe("FR");
     expect(initials("")).toBe("?");
+  });
+});
+
+describe("shortPath", () => {
+  it("keeps short paths", () => {
+    expect(shortPath(String.raw`C:\gk-demo\oauth-app`)).toBe(String.raw`C:\gk-demo\oauth-app`);
+  });
+  it("drops middle folders, never cutting a name", () => {
+    expect(shortPath(String.raw`C:\Users\amraa\AppData\Local\Temp\gk-uiaudit\oauth-app`)).toBe(String.raw`C:\…\Temp\gk-uiaudit\oauth-app`);
+    expect(shortPath(String.raw`C:\Users\amraa\AppData\Local\Temp\gk-uiaudit\oauth-app`, 26)).toBe(String.raw`C:\…\gk-uiaudit\oauth-app`);
+    expect(shortPath("/home/dev/projects/clients/acme/web/oauth-app", 24)).toBe("/…/acme/web/oauth-app");
+  });
+  it("keeps at least the last folder", () => {
+    expect(shortPath(String.raw`C:\a\b\a-very-long-final-folder-name-that-is-long`, 10)).toBe(String.raw`C:\…\a-very-long-final-folder-name-that-is-long`);
+  });
+});
+
+describe("formatSince", () => {
+  it("formats seconds, minutes, hours and days", () => {
+    expect(formatSince(42_000)).toBe("42s");
+    expect(formatSince(185_000)).toBe("3m 05s");
+    expect(formatSince(2 * 3600_000 + 14 * 60_000)).toBe("2h 14m");
+    expect(formatSince(76 * 3600_000)).toBe("3d 4h");
+    expect(formatSince(-5)).toBe("0s");
   });
 });

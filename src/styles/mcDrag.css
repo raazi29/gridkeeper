@@ -39,7 +39,14 @@
   outline: none;
 }
 .mc-lane-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
   cursor: default;
+}
+/* a lane's corner label never runs into the agent count on the right */
+.mc-lanes .mc-box-label {
+  max-width: calc(100% - 104px);
 }
 .mc-lane-rename {
   height: 16px;

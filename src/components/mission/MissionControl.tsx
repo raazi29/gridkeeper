@@ -1,8 +1,10 @@
 // Mission Control: a full-window team view — and cockpit — of the ACTIVE workspace in a terminal /
 // box-drawing style. The shared mission board (goal + tasks from <projectDir>/.gridkeeper/mission.md, watched
-// only while open) on top, then the lead node(s), one lane per group (a group is a phase / team), a SIGN-OFF dock
-// listing sessions that wait for review, connector lines, an activity river, the session log and a status
-// line. Lanes have actions (add session, message, restart, stop, formation); cards have a hover toolbar,
+// only while open) and the lead node(s) on top (side by side on wide windows), then one lane per group (a group
+// is a phase / team), the SIGN-OFF box listing sessions that wait for review (in the flow at the end of the
+// canvas, so it never covers a lane; the header's "sign-off [n]" scrolls to it), connector lines, an activity
+// river and the session log (both foldable, the log resizable) and a status line. The header keeps the primary
+// actions; flight log, replay recording and the project folder are also in its "⋯" menu. Lanes have actions (add session, message, restart, stop, formation); cards have a hover toolbar,
 // the shared session context menu and keyboard actions (Enter / R / S / M / Del / F2 / Shift+F10).
 // Every number shown is real: process state, exit codes, attention state, PTY output bytes/s (sampled
 // once per second ONLY while this overlay is open), CPU/RAM from the shared diagnostics poll.
@@ -14,16 +16,21 @@ import { confirmCloseSession, deleteGroupFlow, jumpToSession } from "../../actio
 import { messageSessions, restartSessions, restartTargets, stopSessions } from "../../actions/groupActions";
 import { closeSession, startSession } from "../../actions/sessions";
 import { commandForEvent } from "../../keybindings";
+import { chipText, dayKey, rankProgress, streakInfo } from "../../lib/flightlog";
 import { ipc } from "../../lib/ipc";
 import { countOwned, currentTaskFor, progress, type Task, type TeamMember } from "../../lib/missionDoc";
-import { BUILTIN_ROLES, roleInfo } from "../../lib/roles";
+import { fileManagerName } from "../../lib/platform";
+import { BUILTIN_ROLES } from "../../lib/roles";
 import type { GitInfo, SessionId } from "../../lib/types";
+import { startRecording, stopRecording } from "../../replay/recorder";
 import { AgentGlyph } from "../../layout/icons";
 import { findGroupOf, isLive, selectActiveGroup, selectActiveWorkspace, useApp } from "../../store/appStore";
 import { useAttention } from "../../store/attention";
+import { openFlightLog, useFlightLog } from "../../store/flightlog";
 import { LEAD_BOX, useMission } from "../../store/mission";
-import { useMissionFile } from "../../store/missionDoc";
+import { dirKey, useMissionFile } from "../../store/missionDoc";
 import { acquireRateSampler, formatRate, latestRate, useRates } from "../../store/rates";
+import { openReplay, useReplay } from "../../store/replay";
 import { requestRename } from "../../store/renameRequest";
 import { actionToast, confirmDialog, isTopModal, popModal, pushModal, useUi } from "../../store/uiStore";
 import { useDiagnosticsPoll } from "../hooks";
@@ -33,7 +40,9 @@ import { QuickLaunchButton } from "../QuickLaunch";
 import { ReplayHeaderControls } from "../replay/ReplayControls";
 import { CostMeterHint, WorkspaceCost } from "../MeterChip";
 import { FlightLogChip } from "../flightlog/FlightLogChip";
-import { useContextMenu, type MenuItem } from "../ui/Menu";
+import { anchorOf, useContextMenu, type MenuItem, type MenuOpenEvent } from "../ui/Menu";
+import { copyText, revealPath } from "../util/pick";
+import { shortPath } from "../util/text";
 import { ActivityRiver } from "./ActivityRiver";
 import type { FleetLamp } from "../util/fleet";
 import { deriveMission, insertIndex, laneProgress, nextLaneName, phaseMark, reorderTarget, sessionStatus, sideOf, type DropSide, type LaneModel } from "./derive";
@@ -52,7 +61,6 @@ import {
   useMcDragKind,
 } from "./mcDrag";
 import { MissionNode } from "./MissionNode";
-import { roleStyle } from "./RoleTag";
 import { SessionCard } from "./SessionCard";
 import { SessionLog } from "./SessionLog";
 import { SignoffNode } from "./Signoff";
@@ -66,7 +74,7 @@ const SEP = "\u0000";
 
 const NO_TASKS: Task[] = [];
 
-type MenuEvent = { clientX: number; clientY: number; preventDefault?: () => void; stopPropagation?: () => void };
+type MenuEvent = MenuOpenEvent;
 type OpenMenu = (e: MenuEvent, items: MenuItem[]) => void;
 
 interface GroupRow {
@@ -203,6 +211,76 @@ function nearestCard(root: HTMLElement, x: number, y: number, exclude: SessionId
   return best ? { id: best.id, side: sideOf(x, best.r) } : null;
 }
 
+/** The header's "⋯" menu: the secondary actions (also listed when a wide header shows some of them inline). */
+function headerMenu(projectDir: string | null): MenuItem[] {
+  const rec = projectDir ? useReplay.getState().recording[dirKey(projectDir)] : undefined;
+  const fl = useFlightLog.getState().data;
+  const items: MenuItem[] = [];
+  if (fl.enabled)
+    items.push({ label: "Flight log…", hint: chipText(streakInfo(fl.days, dayKey(Date.now())).current, rankProgress(fl.tasks).rank), onSelect: openFlightLog });
+  items.push(
+    {
+      label: rec ? "Stop recording the replay" : "Record a mission replay",
+      disabled: !projectDir,
+      onSelect: () => {
+        if (!projectDir) return;
+        if (rec) stopRecording(projectDir);
+        else void startRecording(projectDir, { manual: true });
+      },
+    },
+    { label: "Replay…", onSelect: () => openReplay(projectDir) },
+    "separator",
+    { label: "Copy project path", disabled: !projectDir, onSelect: () => projectDir && void copyText(projectDir, "Project path copied") },
+    { label: `Show project folder in ${fileManagerName()}`, disabled: !projectDir, onSelect: () => projectDir && void revealPath(projectDir) },
+  );
+  return items;
+}
+
+/** CSS breakpoint where the mission board and the lead box sit side by side (mission.css, .mc-top). */
+const SPLIT_TOP = "(min-width: 1360px)";
+
+/** A media query's current match, following changes (an event listener, no polling). */
+function useMedia(query: string): boolean {
+  const [on, setOn] = useState(() => typeof matchMedia === "function" && matchMedia(query).matches);
+  useEffect(() => {
+    if (typeof matchMedia !== "function") return;
+    const mq = matchMedia(query);
+    const onChange = () => setOn(mq.matches);
+    onChange();
+    mq.addEventListener("change", onChange);
+    return () => mq.removeEventListener("change", onChange);
+  }, [query]);
+  return on;
+}
+
+/**
+ * Wall clock for elapsed times, ticking once a second only while the window is visible (Mission Control is
+ * open whenever this runs); it jumps to the right time when the window shows again.
+ */
+function useVisibleClock(ms = 1000): number {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    let timer: ReturnType<typeof setInterval> | undefined;
+    const start = () => {
+      if (timer !== undefined || document.visibilityState === "hidden") return;
+      setNow(Date.now());
+      timer = setInterval(() => setNow(Date.now()), ms);
+    };
+    const stop = () => {
+      if (timer !== undefined) clearInterval(timer);
+      timer = undefined;
+    };
+    const onVisibility = () => (document.visibilityState === "hidden" ? stop() : start());
+    start();
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      stop();
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
+  }, [ms]);
+  return now;
+}
+
 export function MissionControl() {
   const close = useCallback(() => useMission.getState().toggle(false), []);
   const panel = useRef<HTMLDivElement>(null);
@@ -233,7 +311,8 @@ export function MissionControl() {
   const stillSetting = useApp((s) => (s.persisted.settings as { reduceMotion?: boolean }).reduceMotion === true);
   const prefersReduced = useMemo(() => typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches, []);
   const still = stillSetting || prefersReduced;
-  const sampledAt = useRates((s) => s.sampledAt);
+  const now = useVisibleClock();
+  const splitTop = useMedia(SPLIT_TOP);
   const collapsed = useMission((s) => s.collapsed);
   const [renamingLane, setRenamingLane] = useState<string | null>(null);
   const [announce, setAnnounce] = useState("");
@@ -535,11 +614,14 @@ export function MissionControl() {
   // ---- connectors ------------------------------------------------------------------------------
   const linkKey =
     model.lanes.map((l) => `${l.groupId}:${l.state}:${l.done}:${l.needs}`).join("|") +
-    `|${model.signoff.length}|${model.leads.length}|m${taskStats.doing}:${taskStats.blocked}`;
+    `|${model.signoff.length}|${model.leads.length}|m${taskStats.doing}:${taskStats.blocked}|${splitTop ? "split" : "stack"}`;
   const links = useMemo<LinkSpec[]>(() => {
     const out: LinkSpec[] = [{ key: "mission", from: "mission", to: "lead", cls: taskStats.blocked ? "is-needs" : taskStats.doing ? "is-active" : "" }];
+    // Board and lead side by side: the lanes hang from the bottom of that whole row (a line from the lead box
+    // itself would run under the board).
+    const laneSource = splitTop ? "top" : "lead";
     for (const l of model.lanes) {
-      out.push({ key: `in:${l.groupId}`, from: "lead", to: `lane:${l.groupId}`, cls: l.needs ? "is-needs" : l.working ? "is-active" : "" });
+      out.push({ key: `in:${l.groupId}`, from: laneSource, to: `lane:${l.groupId}`, cls: l.needs ? "is-needs" : l.working ? "is-active" : "" });
       const ready = l.ids.some((id) => model.signoff.includes(id));
       out.push({ key: `out:${l.groupId}`, from: `lane:${l.groupId}`, to: "signoff", cls: l.needs ? "is-needs" : ready ? "is-review" : "" });
     }
@@ -547,9 +629,17 @@ export function MissionControl() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [linkKey]);
 
-  const now = sampledAt ?? Date.now();
   const total = model.counts.total;
-  const cardProps = { selected, onSelect: setSelected, onJump: jump, onMenu: openCardMenu, now, tasks: cardTasks, lamps, onMoved };
+  const signoffNeeds = model.signoff.some((id) => lamps[id] === "waiting");
+  /** Header "sign-off [n]": bring the sign-off box into view and focus its first card. */
+  const showSignoff = () => {
+    const box = panel.current?.querySelector<HTMLElement>('[data-node="signoff"]');
+    if (!box) return;
+    box.scrollIntoView({ block: "nearest", behavior: still ? "auto" : "smooth" });
+    box.querySelector<HTMLElement>(".so-jump")?.focus({ preventScroll: true });
+  };
+  const board = !!mission.doc;
+  const cardProps = { selected, onSelect: setSelected, onJump: jump, onMenu: openCardMenu, now, tasks: cardTasks, board, diag: diagOn, lamps, onMoved };
   const collapsedKey = Object.keys(collapsed).sort().join(",");
 
   return createPortal(
@@ -565,36 +655,46 @@ export function MissionControl() {
       >
         <header className="mc-head">
           <span className="mc-title">
-            <span className="mc-title-glyph">◆</span> mission control
+            <span className="mc-title-glyph">◆</span>
+            <span className="mc-title-text">mission control</span>
           </span>
           <div className="mc-head-meta">
-            <span className="mc-strong">{wsName || "no workspace"}</span>
+            <span className="mc-strong mc-ws" title={projectDir ? `${wsName}\n${projectDir}` : wsName}>
+              {wsName || "no workspace"}
+            </span>
             {projectDir && (
               <span className="mc-path" title={projectDir}>
-                {projectDir}
+                {shortPath(projectDir)}
               </span>
             )}
             {git?.isRepo && (
-              <span className="mc-branch" title={git.root ?? ""}>
-                ⎇ {git.branch ?? "detached"}
-                {git.dirty ? " *" : ""}
-                {git.worktrees.length > 1 ? ` · ${git.worktrees.length} worktrees` : ""}
+              <span
+                className="mc-branch"
+                title={[`branch ${git.branch ?? "detached"}${git.dirty ? " (uncommitted changes)" : ""}`, git.root ?? "", git.worktrees.length > 1 ? `${git.worktrees.length} worktrees` : ""]
+                  .filter(Boolean)
+                  .join("\n")}
+              >
+                <span className="mc-branch-name">
+                  ⎇ {git.branch ?? "detached"}
+                  {git.dirty ? " *" : ""}
+                </span>
+                {git.worktrees.length > 1 && <span className="mc-branch-wt">· {git.worktrees.length} worktrees</span>}
               </span>
             )}
           </div>
-          {rolesPresent.length > 0 && (
-            <span className="mc-legend" aria-label="Roles present">
-              {rolesPresent.map((r) => (
-                <span key={r} className="mc-legend-item" style={roleStyle(r)}>
-                  <span className="mc-legend-sq" />
-                  {roleInfo(r)?.id}
-                </span>
-              ))}
-            </span>
-          )}
-          <span className="mc-bracket">
+          <span className="mc-bracket mc-head-count">
             agents [ <b>{model.counts.live}</b>/<b>{total}</b> ]
           </span>
+          {model.signoff.length > 0 && (
+            <button
+              type="button"
+              className={`mc-btn mc-head-signoff${signoffNeeds ? " is-needs" : ""}`}
+              title="Scroll to the sign-off box: sessions that finished or wait for you"
+              onClick={showSignoff}
+            >
+              sign-off [ <b>{model.signoff.length}</b> ] ↓
+            </button>
+          )}
           <span className="mc-head-actions">
             <FlightLogChip />
             <ReplayHeaderControls projectDir={projectDir} />
@@ -610,6 +710,16 @@ export function MissionControl() {
             <button type="button" className="mc-btn is-primary" onClick={() => useMission.getState().openFormation()}>
               launch formation…
             </button>
+            <button
+              type="button"
+              className="mc-btn mc-btn-icon"
+              aria-label="More Mission Control actions"
+              aria-haspopup="menu"
+              title="More: flight log, replay recording, project folder"
+              onClick={(e) => openMenu(anchorOf(e.currentTarget), headerMenu(projectDir))}
+            >
+              ⋯
+            </button>
             <button type="button" className="mc-btn" aria-label="Close" title="Close (Esc)" onClick={close}>
               esc ✕
             </button>
@@ -619,16 +729,20 @@ export function MissionControl() {
         <div className="mc-scroll">
           <div className="mc-canvas">
             <Links links={links} version={`${structure.join("|")}|${linkKey}|${collapsedKey}`} />
-            <div className="mc-row">
-              <MissionNode workspaceId={wsId} projectDir={projectDir} mission={mission} team={team} onSelectSession={selectCard} openMenu={openMenu} selectedSessionId={selected} />
-            </div>
-            {total === 0 ? (
-              <EmptyMission groupId={activeGroupId} />
-            ) : (
-              <>
-                <div className="mc-row">
+            <div className="mc-top" data-node="top">
+              <div className="mc-row">
+                <MissionNode workspaceId={wsId} projectDir={projectDir} mission={mission} team={team} onSelectSession={selectCard} openMenu={openMenu} selectedSessionId={selected} />
+              </div>
+              <div className="mc-row">
+                {total === 0 ? (
+                  <EmptyMission groupId={activeGroupId} />
+                ) : (
                   <LeadNode leads={model.leads} lanes={model.lanes} allIds={allIds} collapsed={!!collapsed[LEAD_BOX]} {...cardProps} />
-                </div>
+                )}
+              </div>
+            </div>
+            {total > 0 && (
+              <>
                 <div className="mc-lanes">
                   {model.lanes.map((l, i) => (
                     <LaneNode
@@ -654,7 +768,7 @@ export function MissionControl() {
           </div>
         </div>
 
-        <ActivityRiver sessions={riverSessions} still={still} />
+        <ActivityRiver sessions={riverSessions} still={still} roles={rolesPresent} />
         <SessionLog workspaceIds={wsIdSet} />
 
         <footer className="mc-status" aria-label="Status">
@@ -706,6 +820,10 @@ interface CardProps {
   now: number;
   /** Current mission task per session (see currentTaskFor). */
   tasks: Record<SessionId, Task>;
+  /** A mission board exists: every card shows its task row. */
+  board: boolean;
+  /** CPU / RAM are sampled: every card shows its resources row. */
+  diag: boolean;
   /** Lamp per session (collapsed one-line summaries). */
   lamps: Record<SessionId, FleetLamp>;
   /** A card / lane move finished (drag & drop): announce + refocus. */
@@ -788,6 +906,8 @@ function LeadNode({
   onMenu,
   now,
   tasks,
+  board,
+  diag,
   lamps,
   onMoved,
 }: CardProps & { leads: SessionId[]; lanes: LaneModel[]; allIds: SessionId[]; collapsed: boolean }) {
@@ -869,6 +989,8 @@ function LeadNode({
             now={now}
             task={tasks[id]?.text ?? null}
             taskState={tasks[id]?.state ?? null}
+            board={board}
+            diag={diag}
           />
         ))}
       </div>
@@ -925,6 +1047,8 @@ function LaneNode({
   onMenu,
   now,
   tasks,
+  board,
+  diag,
   lamps,
   onMoved,
   collapsed,
@@ -986,7 +1110,7 @@ function LaneNode({
       {renaming ? (
         <LaneRename groupId={lane.groupId} name={lane.name} onDone={() => onRenaming(null)} />
       ) : (
-        <span className="mc-lane-name" title="Double-click to rename (F2 on the lane)" onDoubleClick={() => onRenaming(lane.groupId)}>
+        <span className="mc-lane-name" title={`Lane ${index}: ${lane.name} — double-click to rename (F2 on the lane)`} onDoubleClick={() => onRenaming(lane.groupId)}>
           lane {index} · {lane.name}
         </span>
       )}
@@ -1026,17 +1150,38 @@ function LaneNode({
       {label}
       <span className="mc-node-label mc-node-label-right">{lane.total === 1 ? "1 agent" : `${lane.total} agents`}</span>
       <div className="mc-lane-actions" role="toolbar" aria-label={`${lane.name} actions`}>
-        <QuickLaunchButton groupId={lane.groupId} variant="ghost" label="Add session" />
+        <QuickLaunchButton groupId={lane.groupId} variant="ghost" label="add" />
         {lane.total > 0 ? (
           <>
-            <button type="button" className="mc-btn" disabled={lane.live === 0} title="Type one line to this lane's running sessions" onClick={() => messageSessions(lane.ids, what)}>
-              message lane…
+            <button
+              type="button"
+              className="mc-btn"
+              disabled={lane.live === 0}
+              aria-label="Message lane"
+              title="Type one line to this lane's running sessions"
+              onClick={() => messageSessions(lane.ids, what)}
+            >
+              message…
             </button>
-            <button type="button" className="mc-btn" disabled={!canRestart} title="Restart every session of this lane (asks first)" onClick={() => void restartSessions(lane.ids, what)}>
-              restart lane
+            <button
+              type="button"
+              className="mc-btn mc-lane-opt"
+              disabled={!canRestart}
+              aria-label="Restart lane"
+              title="Restart every session of this lane (asks first)"
+              onClick={() => void restartSessions(lane.ids, what)}
+            >
+              restart
             </button>
-            <button type="button" className="mc-btn" disabled={lane.live === 0} title="Stop this lane's running sessions (asks first)" onClick={() => void stopSessions(lane.ids, what)}>
-              stop lane
+            <button
+              type="button"
+              className="mc-btn mc-lane-opt"
+              disabled={lane.live === 0}
+              aria-label="Stop lane"
+              title="Stop this lane's running sessions (asks first)"
+              onClick={() => void stopSessions(lane.ids, what)}
+            >
+              stop
             </button>
           </>
         ) : (
@@ -1058,10 +1203,7 @@ function LaneNode({
           aria-label={`More actions for ${lane.name}`}
           aria-haspopup="menu"
           title="More lane actions"
-          onClick={(e) => {
-            const r = e.currentTarget.getBoundingClientRect();
-            laneMenu({ clientX: r.left, clientY: r.bottom + 2 });
-          }}
+          onClick={(e) => laneMenu(anchorOf(e.currentTarget))}
         >
           ⋯
         </button>
@@ -1094,6 +1236,8 @@ function LaneNode({
             now={now}
             task={tasks[id]?.text ?? null}
             taskState={tasks[id]?.state ?? null}
+            board={board}
+            diag={diag}
             dropSide={anchor?.id === id ? anchor.side : null}
           />
         ))}
@@ -1249,16 +1393,14 @@ function NewLaneDrop({ wsId, zone, onMoved, onRenaming }: { wsId: string | null;
 
 function EmptyMission({ groupId }: { groupId: string | undefined }) {
   return (
-    <div className="mc-row">
-      <div data-node="lead" className="mc-node mc-lead is-placeholder">
-        <span className="mc-node-label">mission</span>
-        <div>No agents in this workspace yet.</div>
-        <div className="mc-empty-actions">
-          {groupId && <QuickLaunchButton groupId={groupId} variant="ghost" label="Add session" />}
-          <button type="button" className="mc-btn is-primary" onClick={() => useMission.getState().openFormation({ groupId })}>
-            launch formation…
-          </button>
-        </div>
+    <div data-node="lead" className="mc-node mc-lead is-placeholder">
+      <span className="mc-node-label">team</span>
+      <div>No agents in this workspace yet.</div>
+      <div className="mc-empty-actions">
+        {groupId && <QuickLaunchButton groupId={groupId} variant="ghost" label="Add session" />}
+        <button type="button" className="mc-btn is-primary" onClick={() => useMission.getState().openFormation({ groupId })}>
+          launch formation…
+        </button>
       </div>
     </div>
   );

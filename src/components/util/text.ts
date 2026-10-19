@@ -163,3 +163,34 @@ export function formatTime(iso: string | null | undefined): string {
 export function clamp(n: number, lo: number, hi: number): number {
   return Math.min(hi, Math.max(lo, n));
 }
+
+/**
+ * A long path shortened in the middle, keeping the root and the last folders whole:
+ * "C:\Users\me\AppData\Local\Temp\demo\oauth-app" → "C:\…\demo\oauth-app". Never cuts a folder name;
+ * a path that already fits (or has too few parts) comes back unchanged. `max` counts characters.
+ */
+export function shortPath(p: string, max = 32): string {
+  if (p.length <= max) return p;
+  const sep = p.includes("\\") ? "\\" : "/";
+  const parts = p.split(sep);
+  if (parts.length <= 3) return p;
+  const head = parts[0] === "" ? sep : parts[0] + sep; // "C:\" or "/" (POSIX root)
+  const tail: string[] = [parts[parts.length - 1]];
+  for (let i = parts.length - 2; i > 0; i--) {
+    const next = `${head}…${sep}${[parts[i], ...tail].join(sep)}`;
+    if (next.length > max) break;
+    tail.unshift(parts[i]);
+  }
+  return `${head}…${sep}${tail.join(sep)}`;
+}
+
+/** Elapsed time as a short label: "42s", "3m 05s", "2h 14m", "3d 4h". */
+export function formatSince(ms: number): string {
+  const s = Math.max(0, Math.floor(ms / 1000));
+  if (s < 60) return `${s}s`;
+  const m = Math.floor(s / 60);
+  if (m < 60) return `${m}m ${String(s % 60).padStart(2, "0")}s`;
+  const h = Math.floor(m / 60);
+  if (h < 48) return `${h}h ${String(m % 60).padStart(2, "0")}m`;
+  return `${Math.floor(h / 24)}d ${h % 24}h`;
+}

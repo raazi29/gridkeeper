@@ -34,7 +34,7 @@ export function ReplayHeaderControls({ projectDir }: { projectDir: string | null
         <span className="rp-rec-dot" aria-hidden="true" />
         rec
       </button>
-      <button type="button" className="mc-btn" title="Turn a recorded mission into a shareable timelapse video or GIF" onClick={() => openReplay(projectDir)}>
+      <button type="button" className="mc-btn rp-replay" title="Turn a recorded mission into a shareable timelapse video or GIF" onClick={() => openReplay(projectDir)}>
         replay…
       </button>
     </>

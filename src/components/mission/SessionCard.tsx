@@ -1,8 +1,10 @@
 // Mission Control session mini card: name, agent glyph, role, account, worktree branch, state lamp +
-// label, uptime, current mission task (from .gridkeeper/mission.md), last output line, real output-rate
-// sparkline and CPU/RAM (shared diagnostics poll).
-// Hover / selection shows a toolbar (jump, restart, stop/start, mute, close); right-click opens the shared
-// session menu; a session that needs you gets an "Answer →" call to action.
+// label and how long it has been in that state (uptime in the tooltip; "ran …" once stopped), current mission
+// task (from .gridkeeper/mission.md), last output line, real output-rate sparkline and CPU/RAM (shared
+// diagnostics poll). Rows are the same for every card of a workspace (placeholders where a value is missing),
+// so cards line up.
+// Hover / selection shows a toolbar (jump, restart, stop/start, mute, close) in place of the role tag; right-click
+// opens the shared session menu; a session that needs you gets an "Answer →" call to action.
 
 import { memo, useEffect, useRef, useState, type DragEvent, type MouseEvent } from "react";
 import { useShallow } from "zustand/react/shallow";
@@ -26,7 +28,7 @@ import { IconBell } from "../AttentionBits";
 import { IconBellOff } from "../MutedGlyph";
 import { MeterCardLine } from "../MeterChip";
 import { formatUptime } from "../util/fleet";
-import { basename, formatCpu, formatMb, taskManagerCpu } from "../util/text";
+import { basename, formatCpu, formatMb, formatSince, formatTime, taskManagerCpu } from "../util/text";
 import { LAMP_TEXT, sessionStatus, type DropSide } from "./derive";
 import { beginSessionDrag, currentTaskDrag, dragHas, endSessionDrag, endTaskDrag, SESSION_MIME, TASK_MIME, useMcDragKind } from "./mcDrag";
 import { RoleTag, roleStyle } from "./RoleTag";
@@ -42,6 +44,8 @@ export const SessionCard = memo(function SessionCard({
   now,
   task,
   taskState,
+  board = false,
+  diag = false,
   dropSide,
 }: {
   id: SessionId;
@@ -49,11 +53,15 @@ export const SessionCard = memo(function SessionCard({
   onSelect: (id: SessionId) => void;
   onJump: (id: SessionId) => void;
   onMenu: (e: { clientX: number; clientY: number; preventDefault?: () => void; stopPropagation?: () => void }, id: SessionId) => void;
-  /** Coarse clock (re-render tick for uptime). */
+  /** Wall clock (ticks once a second while Mission Control is open and the window visible). */
   now: number;
   /** Current mission task owned by this session (first "doing", else first "todo"). */
   task?: string | null;
   taskState?: TaskState | null;
+  /** The workspace has a mission board: the task row is shown (a placeholder when nothing is owned). */
+  board?: boolean;
+  /** CPU / RAM are sampled (status bar diagnostics on): the resources row is shown. */
+  diag?: boolean;
   /** A dragged card would land on this side of this card (insertion bar). */
   dropSide?: DropSide | null;
 }) {
@@ -112,9 +120,21 @@ export const SessionCard = memo(function SessionCard({
   if (!meta) return null;
 
   const st = sessionStatus(rt, a);
-  const uptime = formatUptime(rt?.startedAt, st.live ? null : rt?.endedAt, now);
   const exitCode = rt?.state.state === "exited" ? rt.state.code : null;
   const label = st.lamp === "exited" && exitCode !== null ? `exit ${exitCode}` : LAMP_TEXT[st.lamp];
+  // Live: how long it has been in this state (since its last attention change, at most since the start);
+  // the uptime goes in the tooltip. Stopped: how long it ran.
+  const started = rt?.startedAt ? Date.parse(rt.startedAt) : Number.NaN;
+  let since = "";
+  let sinceTitle = "";
+  if (st.live && !Number.isNaN(started)) {
+    since = formatSince(now - (a && a.at >= started ? a.at : started));
+    sinceTitle = `${label} for ${since} · running for ${formatSince(now - started)}`;
+  } else if (!st.live && rt?.startedAt) {
+    const ran = formatUptime(rt.startedAt, rt.endedAt, now);
+    since = ran ? `ran ${ran}` : "";
+    sinceTitle = rt.endedAt ? `Ran for ${ran}, until ${formatTime(rt.endedAt)}` : "";
+  }
   const cls = [
     "mc-card",
     st.live ? "is-live" : "",
@@ -237,20 +257,33 @@ export const SessionCard = memo(function SessionCard({
       </div>
       <div className="mc-card-row mc-card-meta">
         <span className={`is-${st.lamp}`}>{label}</span>
-        {uptime && <span>· {uptime}</span>}
+        {since && <span title={sinceTitle || undefined}>· {since}</span>}
         {account && (
           <span className="mc-account" title={account.isDefault ? "Default account" : `Account: ${account.name}`}>
-            · {account.color && <span className="mc-account-dot" style={{ background: account.color }} />}
-            {account.name}
+            <span className="mc-sep">·</span>
+            {account.color && <span className="mc-account-dot" style={{ background: account.color }} />}
+            <span className="mc-ellipsis">{account.name}</span>
           </span>
         )}
-        {meta.branch && <span title={`Worktree branch ${meta.branch}`}>· ⎇ {meta.branch}</span>}
+        {meta.branch && (
+          <span className="mc-card-branch" title={`Worktree branch ${meta.branch}`}>
+            <span className="mc-sep">· ⎇</span>
+            <span className="mc-ellipsis">{meta.branch}</span>
+          </span>
+        )}
       </div>
-      {task && (
+      {task ? (
         <div className={`mc-card-task is-${taskState ?? "todo"}`} title={`Mission task (${taskState === "doing" ? "doing" : "next"}): ${task}`}>
           <span className="mc-card-task-box">{taskState === "doing" ? "[~]" : "[ ]"}</span>
           <span className="mc-card-task-text">{task}</span>
         </div>
+      ) : (
+        board && (
+          <div className="mc-card-task is-none" title="No open task on the mission board names this session (or its role)">
+            <span className="mc-card-task-box">[ ]</span>
+            <span className="mc-card-task-text">no task on the board</span>
+          </div>
+        )
       )}
       <div className={`mc-card-tail${tail ? "" : " is-empty"}`} title={tail || undefined}>
         {tail || (st.live ? "…" : "no output yet")}
@@ -268,7 +301,7 @@ export const SessionCard = memo(function SessionCard({
           <span className="mc-cta-go">Answer →</span>
         </button>
       ) : (
-        <div className="mc-card-row">
+        <div className="mc-card-row mc-card-rate">
           <Sparkline id={id} />
           <span className="mc-out" title="Terminal output rate (bytes of PTY output, not tokens)">
             out {st.live ? formatRate(rate) : "—"}
@@ -276,9 +309,9 @@ export const SessionCard = memo(function SessionCard({
         </div>
       )}
       <MeterCardLine sessionId={id} />
-      {st.live && stats && (
+      {diag && (
         <div className="mc-card-row mc-res" title="CPU (share of all cores) · RAM of the process tree">
-          cpu {formatCpu(taskManagerCpu(stats.cpuPercent, cores))} · ram {formatMb(stats.memoryBytes)}
+          {st.live && stats ? `cpu ${formatCpu(taskManagerCpu(stats.cpuPercent, cores))} · ram ${formatMb(stats.memoryBytes)}` : st.live ? "cpu … · ram …" : "cpu — · ram —"}
         </div>
       )}
       {/* mousedown keeps focus on the card, so arrow / letter keys keep working after a toolbar click */}

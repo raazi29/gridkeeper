@@ -62,9 +62,10 @@
 .mc-backdrop {
   position: fixed;
   inset: 0;
-  z-index: 90; /* below .modal-backdrop (100) so the formation dialog and confirms sit above */
+  z-index: var(--z-overlay); /* dialogs (--z-modal) and menus (--z-menu) opened from it sit above */
   display: flex;
-  background: color-mix(in srgb, var(--bg-0) 70%, transparent);
+  /* nearly opaque: the app's own header must not show through the margin as half-visible buttons */
+  background: color-mix(in srgb, var(--bg-0) 90%, transparent);
   padding: 14px;
 }
 .mc {
@@ -92,25 +93,25 @@
   color: var(--text-0);
 }
 
-/* header strip */
+/* header strip: one row. Left: title, workspace, short path, branch (the path and branch give way first);
+   right: counts and the primary actions. Secondary actions collapse into "⋯" on narrower windows. */
 .mc-head {
   display: flex;
   align-items: center;
-  gap: 14px;
-  padding: 8px 12px;
+  gap: 12px;
+  padding: 7px 10px 7px 12px;
   border-bottom: 1px solid var(--border);
   background: var(--bg-1);
   min-height: 38px;
-  flex-wrap: nowrap; /* one row: the path ellipsizes instead of pushing the canvas down */
+  flex-wrap: nowrap;
   flex-shrink: 0;
 }
-.mc-head > :not(.mc-head-meta) {
+.mc-head > * {
   flex-shrink: 0;
 }
-@media (max-width: 1280px) {
-  .mc-legend {
-    display: none;
-  }
+.mc-head > .mc-head-meta {
+  flex: 1 1 auto;
+  min-width: 0;
 }
 .mc-title {
   display: inline-flex;
@@ -130,22 +131,73 @@
   align-items: center;
   gap: 10px;
   min-width: 0;
-  flex: 1;
   overflow: hidden;
   white-space: nowrap;
 }
+/* Only the path shrinks (with an ellipsis): a name or branch that shrank by a fraction of a pixel would
+   already paint "…". A very long workspace name is capped instead. */
+.mc-ws {
+  flex: 0 0 auto;
+  max-width: 32ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 .mc-path {
+  flex: 0 1 auto;
   overflow: hidden;
   text-overflow: ellipsis;
   color: var(--text-2);
   min-width: 0;
 }
 .mc-branch {
+  display: inline-flex;
+  gap: 6px;
+  flex: 0 0 auto;
   color: var(--text-1);
+}
+.mc-branch-wt {
+  color: var(--text-2);
+}
+.mc-head-signoff b {
+  color: var(--text-0);
+  font-weight: 600;
+}
+.mc-head-signoff.is-needs {
+  border-color: var(--accent);
+  color: var(--text-0);
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+}
+/* below 1600 px: the flight log chip shows only its insignia; "● rec" (when off) and "replay…" live in ⋯ */
+@media (max-width: 1599px) {
+  .mc-head .fl-chip-text,
+  .mc-head .rp-rec:not(.is-on),
+  .mc-head .rp-replay {
+    display: none;
+  }
+  .mc-head .mc-btn.fl-chip {
+    padding: 0 6px;
+  }
+}
+@media (max-width: 1279px) {
+  .mc-path,
+  .mc-branch-wt {
+    display: none;
+  }
+  .mc-ws {
+    max-width: 22ch;
+  }
+}
+@media (max-width: 1099px) {
+  .mc-title-text,
+  .mc-head-count {
+    display: none;
+  }
 }
 .mc-legend {
   display: inline-flex;
   gap: 10px;
+  min-width: 0;
+  overflow: hidden;
   white-space: nowrap;
 }
 .mc-legend-item {
@@ -153,6 +205,9 @@
   align-items: center;
   gap: 4px;
   color: var(--text-1);
+  font-size: var(--mc-fs-micro);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
 }
 .mc-legend-sq {
   width: 8px;
@@ -273,8 +328,32 @@
 }
 .mc-row + .mc-row,
 .mc-lanes + .mc-row,
-.mc-row + .mc-lanes {
+.mc-top + .mc-lanes {
   margin-top: 34px;
+}
+/* mission board + lead box: stacked and centred; side by side when the window is wide enough, so the lanes
+   start on the first screen */
+.mc-top {
+  display: flex;
+  flex-direction: column;
+  gap: 34px;
+}
+.mc-top > .mc-row + .mc-row {
+  margin-top: 0;
+}
+@media (min-width: 1360px) {
+  .mc-top {
+    display: grid;
+    grid-template-columns: minmax(0, 8fr) minmax(0, 7fr);
+    align-items: start;
+    gap: 22px;
+    max-width: 1640px;
+    margin: 0 auto;
+  }
+  .mc-top .mb-node,
+  .mc-top .mc-lead {
+    width: 100%;
+  }
 }
 
 /* nodes: thin box, corner label */
@@ -375,14 +454,15 @@
 }
 .mc-lane-head {
   display: flex;
+  flex-wrap: wrap; /* the stats move to a second line in a narrow lane instead of spilling out of it */
   align-items: center;
-  gap: 8px;
+  gap: 2px 8px;
   margin-bottom: 8px;
   color: var(--text-2);
   white-space: nowrap;
 }
 .mc-progress {
-  flex: 1;
+  flex: 1 1 60px;
   height: 4px;
   min-width: 40px;
   background: var(--bg-3);
@@ -396,6 +476,9 @@
 .mc-lane-stats {
   display: inline-flex;
   gap: 8px;
+}
+.mc-lane-stats:empty {
+  display: none;
 }
 .mc-lane-stats .is-working {
   color: var(--role-builder);
@@ -464,6 +547,9 @@
   min-width: 0;
   white-space: nowrap;
 }
+.mc-card > .mc-card-row:first-child {
+  min-height: 16px; /* the role tag's height: no jump when the hover toolbar hides it */
+}
 .mc-card-name {
   color: var(--text-0);
   overflow: hidden;
@@ -478,8 +564,31 @@
 .mc-card-meta {
   color: var(--text-2);
   overflow: hidden;
-  text-overflow: ellipsis;
   min-width: 0;
+}
+.mc-card-meta > span {
+  flex-shrink: 0;
+}
+/* the branch (then the account) gives way with an ellipsis, never cut mid-letter */
+.mc-card-meta > .mc-card-branch,
+.mc-card-meta > .mc-account {
+  display: inline-flex;
+  gap: 4px;
+  min-width: 0;
+  flex: 0 1 auto;
+}
+.mc-card-meta > .mc-account {
+  flex-shrink: 4;
+  max-width: 40%;
+}
+.mc-sep {
+  flex-shrink: 0;
+}
+.mc-ellipsis {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .mc-card-meta .is-working {
   color: var(--role-builder);
@@ -494,15 +603,11 @@
   color: var(--ok);
 }
 .mc-account {
-  display: inline-flex;
   align-items: center;
-  gap: 3px;
   color: var(--text-1);
-  max-width: 90px;
-  overflow: hidden;
-  text-overflow: ellipsis;
 }
 .mc-account-dot {
+  align-self: center;
   width: 6px;
   height: 6px;
   border-radius: 50%;
@@ -524,19 +629,16 @@
   min-width: 62px;
   text-align: right;
 }
+/* the output row and the "Answer →" call to action have the same height: no jump when one replaces the other */
+.mc-card-rate {
+  min-height: 20px;
+}
 .mc-res {
   color: var(--text-2);
 }
 
-/* sign-off: docked to the bottom of the scrolling canvas, so it is always fully visible above the
-   activity river however many lanes / cards there are; it settles in place when scrolled to the end. */
-.mc-signoff-dock {
-  position: sticky;
-  bottom: 0;
-  z-index: 3;
-  padding: 12px 0 2px;
-  background: linear-gradient(to bottom, transparent, var(--bg-0) 12px);
-}
+/* sign-off: in the flow at the end of the canvas (it never covers a lane); the header's "sign-off [n]"
+   button scrolls to it. */
 .mc-signoff {
   width: min(760px, 100%);
   --rc: var(--ok);
@@ -580,50 +682,58 @@
   background: var(--rc);
 }
 
-/* ---- activity river ------------------------------------------------------------------------ */
+/* ---- activity river (foldable band) ------------------------------------------------------- */
 
 .mc-river {
-  position: relative;
-  height: 86px;
-  overflow: hidden;
+  display: flex;
+  flex-direction: column;
   flex-shrink: 0;
   border-top: 1px solid var(--border);
   background: var(--bg-0);
 }
-.mc-river canvas {
-  position: absolute;
-  inset: 18px 0 14px 0;
-  width: 100%;
-  height: calc(100% - 32px);
+/* a band's one-line head: fold toggle, label, then right-aligned notes */
+.mc-band-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 22px;
+  padding: 0 12px 0 8px;
+  white-space: nowrap;
+  overflow: hidden;
 }
-.mc-river-label {
+.mc-river-body {
+  position: relative;
+  height: 62px;
+  overflow: hidden;
+}
+.mc-river-body canvas {
   position: absolute;
-  top: 4px;
-  left: 12px;
+  inset: 0 0 14px 0;
+  width: 100%;
+  height: calc(100% - 14px);
 }
 .mc-river-axis {
   position: absolute;
   left: 12px;
   right: 12px;
-  bottom: 2px;
+  bottom: 1px;
   display: flex;
   justify-content: space-between;
   color: var(--text-2);
   font-size: var(--mc-fs-micro);
 }
 .mc-river-note {
-  position: absolute;
-  top: 4px;
-  right: 12px;
+  flex-shrink: 0;
 }
 
 /* ---- session log --------------------------------------------------------------------------- */
 
 .mc-log {
+  position: relative;
   display: flex;
   flex-direction: column;
-  height: 190px;
   flex-shrink: 0;
+  min-height: 0;
   border-top: 1px solid var(--border);
   background: var(--bg-1);
 }
@@ -631,8 +741,71 @@
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 5px 12px;
+  min-height: 28px;
+  padding: 3px 12px 3px 8px;
   border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+.mc-log.is-folded .mc-log-head {
+  border-bottom: 0;
+}
+.mc-log-count {
+  flex-shrink: 0;
+}
+/* drag handle on the log's top border (also keyboard: focus it, ↑ / ↓) */
+.mc-log-resize {
+  position: absolute;
+  top: -4px;
+  left: 0;
+  right: 0;
+  height: 7px;
+  z-index: 1;
+  cursor: ns-resize;
+  outline: none;
+}
+.mc-log-resize:hover,
+.mc-log-resize:focus-visible,
+.mc-log-resize.is-dragging {
+  background: linear-gradient(transparent 3px, var(--accent) 3px, var(--accent) 4px, transparent 4px);
+}
+/* folded log: the newest event in the head line, a click opens the log */
+.mc-log-latest {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--text-1);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  overflow: hidden;
+}
+.mc-log-latest:hover .mc-log-msg {
+  color: var(--text-0);
+}
+.mc-log-latest .mc-log-who {
+  flex: 0 1 auto;
+  max-width: 24ch;
+}
+.mc-log-latest .mc-log-msg {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.mc-log-latest.is-needs .mc-log-msg {
+  color: var(--accent);
+}
+.mc-log-latest.is-error .mc-log-msg {
+  color: var(--err);
+}
+.mc-log-empty-inline {
+  color: var(--text-2);
+  cursor: default;
 }
 .mc-seg {
   display: inline-flex;
@@ -709,6 +882,7 @@
 }
 .mc-log-jump {
   margin-left: auto;
+  flex-shrink: 0;
 }
 
 /* ---- status line --------------------------------------------------------------------------- */
@@ -861,6 +1035,19 @@
   gap: 8px;
   margin-top: 10px;
 }
+/* lane toolbar: one row; in a narrow lane restart / stop give way (both are in the lane's ⋯ menu too) */
+.mc-lanes > .mc-node {
+  container-type: inline-size;
+}
+.mc-lane-actions {
+  flex-wrap: nowrap;
+  overflow: hidden;
+}
+@container (max-width: 300px) {
+  .mc-lane-opt {
+    display: none;
+  }
+}
 /* the app's quick-launch button, dressed as a Mission Control button */
 .mc .btn.quick-launch {
   height: 22px;
@@ -925,6 +1112,13 @@
 .mc-card:focus-visible .mc-card-tools,
 .mc-card:focus-within .mc-card-tools {
   display: inline-flex;
+}
+/* while the toolbar shows, the name row ends before it (the name ellipsizes, nothing is covered) */
+.mc-card:is(:hover, :focus-visible, :focus-within) > .mc-card-row:first-child {
+  padding-right: 110px;
+}
+.mc-card:is(:hover, :focus-visible, :focus-within) > .mc-card-row:first-child > .role-tag {
+  display: none;
 }
 .mc-card-tools button {
   display: inline-flex;
@@ -993,41 +1187,34 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
-/* keyboard selection never scrolls a card under the sticky sign-off dock */
-.mc-scroll {
-  scroll-padding-bottom: 104px;
-}
 .mc-keys kbd {
   font-family: var(--font-mono);
   font-size: var(--mc-fs-micro);
   color: var(--text-1);
 }
 
-/* short windows (e.g. 1536×794 at 125 %): give the canvas the room */
+/* short windows (e.g. 1440×844 or 1536×794 at 125 %): give the canvas the room */
 @media (max-height: 860px) {
   .mc-backdrop {
     padding: 8px;
   }
-  .mc-river {
-    height: 60px;
-  }
-  .mc-log {
-    height: 132px;
+  .mc-river-body {
+    height: 44px;
   }
   .mc-canvas {
-    padding-top: 12px;
+    padding-top: 14px;
   }
   .mc-row + .mc-row,
   .mc-lanes + .mc-row,
-  .mc-row + .mc-lanes {
-    margin-top: 24px;
+  .mc-top + .mc-lanes {
+    margin-top: 26px;
+  }
+  .mc-top {
+    row-gap: 26px;
   }
 }
 @media (max-height: 640px) {
-  .mc-river {
+  .mc-river-body {
     display: none;
-  }
-  .mc-log {
-    height: 104px;
   }
 }
