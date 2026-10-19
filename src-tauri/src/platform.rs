@@ -15,8 +15,9 @@
 //!     `~/.local/bin` (Claude Code's native installer), npm-global, bun, volta, cargo, deno, asdf and
 //!     mise shims, fnm's default alias, nvm's default Node version.
 //!   * macOS: `LANG=en_US.UTF-8` when no locale is set (what Terminal.app does).
-//!   * Linux: `WEBKIT_DISABLE_DMABUF_RENDERER=1` when the NVIDIA proprietary driver is loaded and the
-//!     variable is not set (WebKitGTK's DMA-BUF renderer shows a blank window there).
+//!   * Linux: `WEBKIT_DISABLE_DMABUF_RENDERER=1` when the NVIDIA proprietary driver is loaded or the app
+//!     runs as an AppImage (its bundled WebKitGTK meets the host's Mesa / drivers), unless the variable
+//!     is already set either way. WebKitGTK's DMA-BUF renderer shows a blank window on those setups.
 //!
 //!   What happened is kept in [`env_report`] and logged by [`log_env_report`] once logging is up.
 //! - [`install_exit_guards`]: Unix has no kill-on-close Job Object, so the host stops its sessions
@@ -358,9 +359,11 @@ pub fn pick_nvm_version(installed: &[String], alias: Option<&str>) -> Option<Str
 }
 
 /// Whether WebKitGTK's DMA-BUF renderer should be turned off for this process: the NVIDIA proprietary
-/// driver is loaded and the user did not set the variable either way.
-pub fn want_dmabuf_workaround(nvidia_proprietary: bool, already_set: bool) -> bool {
-    nvidia_proprietary && !already_set
+/// driver is loaded, or this is an AppImage (WebKitGTK from the build machine on the user's graphics
+/// stack), and the user did not set the variable either way. It costs the faster rendering path
+/// (shared-memory compositing instead), which is why it is not unconditional.
+pub fn want_dmabuf_workaround(nvidia_proprietary: bool, appimage: bool, already_set: bool) -> bool {
+    (nvidia_proprietary || appimage) && !already_set
 }
 
 /// See the module docs. Must run before any other thread exists. Windows: does nothing.
@@ -421,8 +424,10 @@ mod unix_env {
         }
         #[cfg(target_os = "linux")]
         {
+            // /proc/driver/nvidia exists only with the proprietary driver (not nouveau).
             let nvidia = Path::new("/proc/driver/nvidia/version").exists();
-            if want_dmabuf_workaround(nvidia, std::env::var_os(WEBKIT_DMABUF_ENV).is_some()) {
+            let appimage = std::env::var_os("APPIMAGE").is_some_and(|v| !v.is_empty());
+            if want_dmabuf_workaround(nvidia, appimage, std::env::var_os(WEBKIT_DMABUF_ENV).is_some()) {
                 // SAFETY: as above (single-threaded start, before GTK / WebKitGTK initialise).
                 unsafe { std::env::set_var(WEBKIT_DMABUF_ENV, "1") };
                 set_vars.push(format!("{WEBKIT_DMABUF_ENV}=1"));
@@ -649,9 +654,10 @@ mod tests {
 
     #[test]
     fn dmabuf_workaround_decision() {
-        assert!(want_dmabuf_workaround(true, false));
-        assert!(!want_dmabuf_workaround(true, true), "the user's own setting wins");
-        assert!(!want_dmabuf_workaround(false, false));
+        assert!(want_dmabuf_workaround(true, false, false));
+        assert!(want_dmabuf_workaround(false, true, false), "AppImage");
+        assert!(!want_dmabuf_workaround(true, true, true), "the user's own setting wins");
+        assert!(!want_dmabuf_workaround(false, false, false));
     }
 
     #[cfg(unix)]
