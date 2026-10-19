@@ -43,7 +43,7 @@
   color: var(--text-2);
   white-space: pre-line;
   display: -webkit-box;
-  -webkit-line-clamp: 3;
+  -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
@@ -56,9 +56,10 @@
   display: flex;
   flex-direction: column;
   gap: 6px;
-  max-height: 300px;
+  max-height: clamp(140px, 32vh, 300px); /* a long board scrolls inside itself; short windows keep room for the lanes */
   overflow: auto;
   overscroll-behavior: contain;
+  padding-right: 2px;
 }
 .mb-group-head {
   margin: 2px 0 2px;
@@ -526,12 +527,12 @@
   color: var(--text-2);
   font-size: var(--fs-xs);
 }
+/* the dialog body scrolls (one scroll area): no inner max-height here */
 .mb-brief {
   display: flex;
   flex-direction: column;
   gap: 10px;
-  max-height: 56vh;
-  overflow: auto;
+  margin-top: 12px;
 }
 .mb-brief-row {
   display: flex;
@@ -551,6 +552,9 @@
 }
 .mb-brief-text {
   min-height: 56px;
+  max-height: 40vh;
+  field-sizing: content; /* every line fully visible; long ones scroll inside past 40vh */
+  line-height: 1.45;
 }
 .mb-brief-skipped {
   display: flex;

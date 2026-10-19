@@ -50,14 +50,14 @@ import { useApp } from "../../store/appStore";
 import { dirKey, editMission, reloadMission, useMissionDocs, writeMission, type EditOptions, type MissionEntry } from "../../store/missionDoc";
 import { confirmDialog } from "../../store/uiStore";
 import { Button } from "../ui/Button";
-import type { MenuItem } from "../ui/Menu";
+import { anchorOf, type MenuItem, type MenuOpenEvent } from "../ui/Menu";
 import { Modal } from "../ui/Modal";
 import { copyText, pickFolder, revealPath } from "../util/pick";
 import { beginTaskDrag, endTaskDrag } from "./mcDrag";
 import { RoleTag, roleStyle } from "./RoleTag";
 import "../../styles/missionBoard.css";
 
-type MenuEvent = { clientX: number; clientY: number; preventDefault?: () => void; stopPropagation?: () => void };
+type MenuEvent = MenuOpenEvent;
 
 export const BOX_TEXT: Record<TaskState, string> = { todo: "[ ]", doing: "[~]", done: "[x]", blocked: "[!]" };
 const STATE_TEXT: Record<TaskState, string> = { todo: "todo", doing: "doing", done: "done", blocked: "blocked" };
@@ -872,10 +872,7 @@ function TaskRow({ task, ctx, children }: { task: Task; ctx: RowCtx; children?: 
           tabIndex={-1}
           aria-label={`Actions for ${task.text}`}
           title="Task actions (right-click, Shift+F10)"
-          onClick={(e) => {
-            const r = e.currentTarget.getBoundingClientRect();
-            ctx.onMenu(task, { clientX: r.left, clientY: r.bottom });
-          }}
+          onClick={(e) => ctx.onMenu(task, anchorOf(e.currentTarget))}
         >
           ⋯
         </button>
@@ -1306,6 +1303,7 @@ function BriefDialog({ missionPath, team, onClose }: { missionPath: string; team
               </label>
               <textarea
                 className="fm-textarea mb-brief-text"
+                rows={Math.min(8, Math.max(2, Math.ceil(d.text.length / 84)))}
                 value={d.text}
                 disabled={!d.on}
                 onChange={(e) => edit(d.id, { text: e.target.value })}

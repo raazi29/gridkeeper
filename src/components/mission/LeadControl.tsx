@@ -25,10 +25,8 @@ const MODES: { id: ControlMode; label: string; explain: string }[] = [
 ];
 
 const AUTOPILOT_DETAIL = [
-  "• message / review instructions from .gridkeeper/outbox/ are typed into the target and submitted with Enter",
-  "  — only while it is idle or done and not asking anything (never into a prompt or a permission question)",
-  "• at most 1 automatic delivery per agent every 20 s and 8 per minute; an item that finds no safe moment",
-  "  within 10 minutes comes back here for you",
+  "• message / review instructions from .gridkeeper/outbox/ are typed into the target and submitted with Enter — only while it is idle or done and not asking anything (never into a prompt or a permission question)",
+  "• at most 1 automatic delivery per agent every 20 s and 8 per minute; an item that finds no safe moment within 10 minutes comes back here for you",
   "• stop / restart are never automatic: they stay here for you to confirm",
   "• with auto-review on, a teammate's finished work is sent to the lead for review",
   "• every automatic send is logged in the activity log",
@@ -212,7 +210,7 @@ function ProposalRow({ pkey }: { pkey: string }) {
         <textarea
           className="lc-text"
           value={p.text}
-          rows={2}
+          rows={Math.min(6, Math.max(2, Math.ceil(p.text.length / 90)))}
           spellCheck={false}
           disabled={busy}
           aria-label={`Instruction for ${p.targetLabel}`}

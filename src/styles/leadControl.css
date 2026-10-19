@@ -184,6 +184,8 @@
 .lc-text {
   width: 100%;
   min-height: 38px;
+  max-height: 30vh;
+  field-sizing: content; /* grows with the instruction instead of hiding its end behind a scrollbar */
   padding: 3px 6px;
   border: 1px solid var(--mc-line);
   border-radius: var(--radius-s);

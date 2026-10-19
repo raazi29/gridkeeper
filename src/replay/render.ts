@@ -406,12 +406,19 @@ function header(p: P, L: Layout, s: SceneState, clock: SceneClock) {
   const goal = s.goal ?? "Untitled mission";
   const clockW = (L.stacked ? 250 : 330) * u;
   overline(p, "MISSION · REPLAY", h.x, h.y + 22 * u, pal.accent);
-  const gsize = L.stacked ? 46 : 52;
+  // A goal that needs two lines is set smaller, so the second line clears the progress label under the header.
+  let gsize = L.stacked ? 46 : 52;
   p.ctx.font = font(p, 600, gsize, p.f.display);
-  const lines = wrap(p.ctx, goal, h.w - clockW - 24 * u, 2);
+  let lines = wrap(p.ctx, goal, h.w - clockW - 24 * u, 2);
+  if (lines.length > 1) {
+    gsize = L.stacked ? 40 : 42;
+    p.ctx.font = font(p, 600, gsize, p.f.display);
+    lines = wrap(p.ctx, goal, h.w - clockW - 24 * u, 2);
+  }
   const flash = s.goalAt ? 1 - clamp01(age(p, s.goalAt) / 900) : 0;
+  const top = lines.length > 1 ? 72 : 78;
   lines.forEach((l, i) =>
-    text(p, l, h.x, h.y + (78 + i * gsize * 1.12) * u, { size: gsize, weight: 600, family: p.f.display, color: flash > 0 ? mixColor(pal.text0, pal.accent, flash * 0.6) : pal.text0 }),
+    text(p, l, h.x, h.y + (top + i * gsize * 1.12) * u, { size: gsize, weight: 600, family: p.f.display, color: flash > 0 ? mixColor(pal.text0, pal.accent, flash * 0.6) : pal.text0 }),
   );
   // Real-time clock (right).
   const rx = h.x + h.w;
