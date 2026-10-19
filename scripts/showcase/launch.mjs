@@ -256,10 +256,17 @@ async function typeText(text, perChar = 70) {
     await sleep(perChar);
   }
 }
+/** On-camera clicks go through the page: under the 1920x1080 device-metrics emulation, WebView2 maps real mouse
+ *  coordinates onto a smaller window, so CDP mouse events miss anything but the top of the view. The page's own
+ *  hit test uses the emulated layout, so elementFromPoint + click() always reaches the element under the cursor. */
 async function mouseClick(x, y) {
-  await C.send("Input.dispatchMouseEvent", { type: "mouseMoved", x, y });
-  await C.send("Input.dispatchMouseEvent", { type: "mousePressed", x, y, button: "left", clickCount: 1 });
-  await C.send("Input.dispatchMouseEvent", { type: "mouseReleased", x, y, button: "left", clickCount: 1 });
+  const ok = await js((px, py) => {
+    const el = document.elementFromPoint(px, py);
+    if (!el) return false;
+    el.click();
+    return true;
+  }, x, y);
+  if (!ok) throw new Error(`nothing to click at ${x},${y}`);
 }
 /** Find an element (page-library spec), scroll it into view, return its centre or throw. */
 async function locate(spec, ms = 8000, smooth = false) {
@@ -316,8 +323,23 @@ function installPageLib() {
         el.scrollIntoView({ block: "center", inline: "nearest", behavior: smooth ? "smooth" : "auto" });
         await sleep(smooth ? 700 : 120);
       }
-      const q = el.getBoundingClientRect();
-      return { x: Math.round(q.left + q.width / 2), y: Math.round(q.top + Math.min(q.height / 2, 40)) };
+      const point = () => {
+        const q = el.getBoundingClientRect();
+        return { x: Math.round(q.left + q.width / 2), y: Math.round(q.top + Math.min(q.height / 2, 40)) };
+      };
+      // Inside the window but covered (Mission Control's sticky sign-off dock): bring it to the top of its
+      // scroller so a real mouse click at that point reaches it.
+      const covered = (p) => {
+        const hit = document.elementFromPoint(p.x, p.y);
+        return !hit || !(hit === el || el.contains(hit));
+      };
+      let p = point();
+      if (covered(p)) {
+        el.scrollIntoView({ block: "start", inline: "nearest", behavior: smooth ? "smooth" : "auto" });
+        await sleep(smooth ? 700 : 120);
+        p = point();
+      }
+      return p;
     },
     rect(el) {
       if (typeof el === "string") el = document.querySelector(el);
