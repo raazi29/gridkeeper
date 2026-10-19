@@ -950,10 +950,15 @@ mod tests {
 
     // ---- real repositories ----------------------------------------------------------------------
 
+    /// The real-repository tests share the process-wide write lock (a concurrent merge is refused by
+    /// design), so they run one at a time.
+    static SERIAL: Mutex<()> = Mutex::new(());
+
     struct Repo {
         _tmp: tempfile::TempDir,
         main: PathBuf,
         base: PathBuf,
+        _serial: parking_lot::MutexGuard<'static, ()>,
     }
 
     fn git(dir: &Path, args: &[&str]) -> String {
@@ -973,6 +978,7 @@ mod tests {
     /// main with a.txt; worktree `wt` on branch `feat` (created from main).
     fn repo() -> Option<Repo> {
         git::git_exe()?;
+        let serial = SERIAL.lock();
         let tmp = tempfile::tempdir().unwrap();
         let base = tmp.path().to_path_buf();
         let main = base.join("main");
@@ -987,7 +993,7 @@ mod tests {
         commit(&main, "init");
         let wt = base.join("wt");
         git(&main, &["worktree", "add", "-q", "-b", "feat", &wt.to_string_lossy()]);
-        Some(Repo { _tmp: tmp, main, base })
+        Some(Repo { _tmp: tmp, main, base, _serial: serial })
     }
 
     impl Repo {
@@ -1099,7 +1105,8 @@ mod tests {
         };
         assert!(!clean);
         assert_eq!(conflicts.iter().map(|c| c.path.as_str()).collect::<Vec<_>>(), ["a.txt"]);
-        assert_eq!(worktrees(&r.main).len(), 2, "the temporary worktree is gone");
+        let listed = git(&r.main, &["worktree", "list", "--porcelain"]);
+        assert_eq!(git::parse_worktrees(&listed).len(), 2, "the temporary worktree is gone: {listed}");
 
         // Executing anyway (the preview's blockers are advisory to the UI): git stops, we roll back.
         let m = crate::testrun::Manager::new();

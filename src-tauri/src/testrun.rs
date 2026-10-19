@@ -472,6 +472,23 @@ fn is_not_found_code(code: i32) -> bool {
     if cfg!(windows) { code == 9009 } else { code == 127 }
 }
 
+/// The shell could not find the command: its "not found" exit code, or cmd.exe's / sh's message in the
+/// last lines (cmd.exe does not always exit with 9009). Only meaningful when no test summary was found.
+pub fn looks_not_found(code: Option<i32>, lines: &[String]) -> bool {
+    if code.is_some_and(is_not_found_code) {
+        return true;
+    }
+    code.is_some_and(|c| c != 0)
+        && lines.iter().rev().take(5).any(|l| {
+            l.contains("is not recognized as an internal or external command") || l.ends_with(": command not found") || l.ends_with(": not found")
+        })
+}
+
+/// The line that says what was not found (else the last line).
+fn not_found_line(lines: &[String]) -> Option<&String> {
+    lines.iter().rev().take(5).find(|l| l.contains("not recognized") || l.contains("not found")).or(lines.last())
+}
+
 // ---------------------------------------------------------------------------
 // Contained helper processes (also used by `merge` for git writes)
 // ---------------------------------------------------------------------------
@@ -787,6 +804,7 @@ impl Manager {
             let start_now = inner.active < inner.max_concurrent;
             if start_now {
                 inner.active += 1;
+                mark_launched(&run);
             } else {
                 inner.queue.push_back(Arc::clone(&run));
             }
@@ -831,6 +849,7 @@ impl Manager {
                     continue;
                 }
                 inner.active += 1;
+                mark_launched(&r);
                 starts.push(r);
             }
             starts
@@ -846,17 +865,19 @@ impl Manager {
         let mut status = status;
         let mut error = error;
         let lines = last_lines(&text, LAST_LINES);
-        if status == TestRunStatus::Error && error.is_none() {
-            error = Some(match lines.last() {
-                Some(l) => format!("command not found: {l}"),
-                None => "command not found".into(),
-            });
-        }
         let counts = if code.is_some() { parse_counts(&text) } else { None };
-        // A "not found" exit code with a recognizable summary is a real test result.
-        if status == TestRunStatus::Error && code.is_some() && counts.is_some() {
-            status = TestRunStatus::Failed;
-            error = None;
+        if code.is_some() && error.is_none() {
+            // The shell's "not found" (exit code or message) without a test summary: the command never ran.
+            if counts.is_none() && looks_not_found(code, &lines) {
+                status = TestRunStatus::Error;
+                error = Some(match not_found_line(&lines) {
+                    Some(l) => format!("command not found: {l}"),
+                    None => "command not found".into(),
+                });
+            } else if status == TestRunStatus::Error {
+                // A "not found" exit code with a recognizable summary is a real test result.
+                status = TestRunStatus::Failed;
+            }
         }
         let failures = if status == TestRunStatus::Passed { Vec::new() } else { failing_names(&text) };
         let cwd = PathBuf::from(&run.info.lock().cwd);
@@ -893,8 +914,6 @@ impl Manager {
         let facts = git_facts(&cwd);
         {
             let mut i = run.info.lock();
-            i.status = TestRunStatus::Running;
-            i.started_ms = Some(now_ms());
             i.repo_root = facts.root;
             i.head_sha = facts.head;
             i.uncommitted = facts.uncommitted;
@@ -969,33 +988,32 @@ impl Manager {
     /// Cancel a queued or running run. Returns false when it is unknown or already finished.
     pub fn cancel(&self, id: &str) -> bool {
         let Some(run) = self.find(id) else { return false };
-        let status = run.info.lock().status;
-        match status {
-            TestRunStatus::Queued => {
-                {
-                    let mut inner = self.inner.lock();
-                    inner.queue.retain(|r| !Arc::ptr_eq(r, &run));
-                }
-                {
-                    let mut i = run.info.lock();
-                    if i.status != TestRunStatus::Queued {
-                        drop(i);
-                        return self.cancel(id);
-                    }
-                    i.status = TestRunStatus::Cancelled;
-                    i.ended_ms = Some(now_ms());
-                }
-                self.emit(&run.snapshot());
+        // Still waiting for a slot: taken out of the queue under the manager lock, so it never starts.
+        let dequeued = {
+            let mut inner = self.inner.lock();
+            let before = inner.queue.len();
+            inner.queue.retain(|r| !Arc::ptr_eq(r, &run));
+            if inner.queue.len() != before {
+                let mut i = run.info.lock();
+                i.status = TestRunStatus::Cancelled;
+                i.ended_ms = Some(now_ms());
                 true
+            } else {
+                false
             }
-            TestRunStatus::Running => {
-                run.cancel.store(true, Ordering::SeqCst);
-                let _g = run.wake_lock.lock();
-                run.wake.notify_all();
-                true
-            }
-            _ => false,
+        };
+        if dequeued {
+            self.emit(&run.snapshot());
+            return true;
         }
+        // Launched (it got a slot): its runner thread ends the tree.
+        if run.info.lock().status.is_active() {
+            run.cancel.store(true, Ordering::SeqCst);
+            let _g = run.wake_lock.lock();
+            run.wake.notify_all();
+            return true;
+        }
+        false
     }
 
     /// Every known run, oldest first.
@@ -1055,6 +1073,13 @@ impl Manager {
         }
         false
     }
+}
+
+/// A run got a slot (called under the manager lock, so `cancel` sees it either in the queue or running).
+fn mark_launched(run: &Run) {
+    let mut i = run.info.lock();
+    i.status = TestRunStatus::Running;
+    i.started_ms = Some(now_ms());
 }
 
 /// Keep every active run and the newest `KEEP_FINISHED` finished ones.
@@ -1250,6 +1275,16 @@ mod tests {
         assert_eq!(status_for_exit(None), TestRunStatus::Failed);
         let nf = if cfg!(windows) { 9009 } else { 127 };
         assert_eq!(status_for_exit(Some(nf)), TestRunStatus::Error);
+        let lines = |v: &[&str]| v.iter().map(|s| s.to_string()).collect::<Vec<String>>();
+        // cmd.exe does not always exit with 9009: its message counts too.
+        let cmd = lines(&["'npx' is not recognized as an internal or external command,", "operable program or batch file."]);
+        assert!(looks_not_found(Some(1), &cmd));
+        assert_eq!(not_found_line(&cmd).map(String::as_str), Some(cmd[0].as_str()));
+        assert!(looks_not_found(Some(127), &lines(&["sh: 1: pytest: not found"])));
+        assert!(looks_not_found(Some(1), &lines(&["bash: pytest: command not found"])));
+        assert!(looks_not_found(Some(nf), &[]));
+        assert!(!looks_not_found(Some(1), &lines(&["FAIL src/a.test.ts", "Tests  1 failed (1)"])));
+        assert!(!looks_not_found(Some(0), &cmd), "a passing run is never 'not found'");
     }
 
     #[test]
@@ -1309,7 +1344,8 @@ mod tests {
         let bad = wait_status(&m, &bad.id, Duration::from_secs(30));
         assert_eq!((bad.status, bad.exit_code), (TestRunStatus::Failed, Some(3)));
         let ev = events.lock().clone();
-        assert!(ev.contains(&TestRunStatus::Queued) && ev.contains(&TestRunStatus::Running) && ev.contains(&TestRunStatus::Failed), "{ev:?}");
+        // A run that gets a slot at once is reported as running (queued only while waiting for a slot).
+        assert!(ev.contains(&TestRunStatus::Running) && ev.contains(&TestRunStatus::Passed) && ev.contains(&TestRunStatus::Failed), "{ev:?}");
 
         let missing = m.start(spec(t.path(), "definitely-not-a-command-gridkeeper-xyz"), &settings(2)).unwrap();
         let missing = wait_status(&m, &missing.id, Duration::from_secs(30));
