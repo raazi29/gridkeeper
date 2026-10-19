@@ -1,11 +1,13 @@
 // Attention wiring: Rust `session-attention` + `session-state` events -> attention store, unread
-// clearing on focus, window title badge, in-app / Windows toasts, taskbar flash and optional sound.
+// clearing on focus, window title badge (+ Dock badge on macOS), in-app / OS toasts, taskbar flash and
+// optional sound.
 // `installAttention()` is called once (AttentionLayer) and returns a full cleanup.
 // Every "should this ping the user?" rule lives in the pure shouldNotify() (notifyRules.ts).
 
 import { disposeAudio, playSound } from "../audio/sounds";
 import { APP_NAME } from "../lib/brand";
 import { errorMessage, ipc, onSessionAttention, onSessionState } from "../lib/ipc";
+import { isMac } from "../lib/platform";
 import type { SessionId, SessionInfo } from "../lib/types";
 import { findGroupOf, selectActiveGroup, useApp } from "../store/appStore";
 import { countUnread, useAttention, type Alert } from "../store/attention";
@@ -168,13 +170,24 @@ async function flashTaskbar() {
 // ---- window title --------------------------------------------------------------------
 
 let lastTitle = "";
+let lastBadge = 0;
 function syncTitle(unread: number) {
+  syncDockBadge(unread);
   const title = unread > 0 ? `(${unread}) ${baseTitle}` : baseTitle;
   if (title === lastTitle) return;
   lastTitle = title;
   document.title = title;
   void import("@tauri-apps/api/window")
     .then(({ getCurrentWindow }) => getCurrentWindow().setTitle(title))
+    .catch(() => {});
+}
+
+/** macOS: unread count on the Dock icon (capabilities/macos.json). Windows / Linux: nothing. */
+function syncDockBadge(unread: number) {
+  if (!isMac || unread === lastBadge) return;
+  lastBadge = unread;
+  void import("@tauri-apps/api/window")
+    .then(({ getCurrentWindow }) => getCurrentWindow().setBadgeCount(unread > 0 ? unread : undefined))
     .catch(() => {});
 }
 

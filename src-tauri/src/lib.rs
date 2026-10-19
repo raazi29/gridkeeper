@@ -4,6 +4,7 @@
 //! - `pty`         PTY sessions (ConPTY / Unix pty), output ring buffer, flow control, process containers
 //! - `platform`    per-OS bits: os name, GUI-launch PATH (login shell + tool folders), macOS LANG,
 //!               Linux WebKitGTK workaround, Unix termination guards
+//! - `app_menu`    the native macOS menu (App, Edit, View, Window, Help)
 //! - `procs`       Unix process table (sessions, trees, CPU/RAM) for containment and diagnostics
 //! - `adapters`    agent adapters (PowerShell, Claude Code, Codex, generic)
 //! - `profiles`    account records (`profiles.json`; historically Claude-only)
@@ -24,6 +25,7 @@
 
 pub mod accounts;
 pub mod adapters;
+pub mod app_menu;
 pub mod browser;
 pub mod commands;
 pub mod diagnostics;
@@ -70,10 +72,34 @@ pub fn run() {
     if std::env::var_os("GRIDKEEPER_BENCH").is_none() && sandbox.is_none() {
         builder = builder.plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
             if let Some(w) = app.get_webview_window(webview_guard::MAIN) {
+                // macOS: the main window may be hidden (⌘W).
+                #[cfg(target_os = "macos")]
+                let _ = w.show();
                 let _ = w.unminimize();
                 let _ = w.set_focus();
             }
         }));
+    }
+    // macOS: the native menu (app_menu.rs), and ⌘W / the close button hide the main window instead
+    // of quitting with every agent (the Dock icon and Window › Main Window bring it back; ⌘Q quits).
+    #[cfg(target_os = "macos")]
+    {
+        builder = builder
+            .menu(|app| app_menu::build(app))
+            .on_menu_event(|app, event| app_menu::handle_event(app, &event))
+            .on_window_event(|window, event| {
+                if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                    if window.label() == webview_guard::MAIN {
+                        api.prevent_close();
+                        // Hiding a full-screen window would leave an empty Space: leave full screen first.
+                        if window.is_fullscreen().unwrap_or(false) {
+                            let _ = window.set_fullscreen(false);
+                        } else {
+                            let _ = window.hide();
+                        }
+                    }
+                }
+            });
     }
     builder
         .plugin(tauri_plugin_opener::init())
@@ -171,6 +197,9 @@ pub fn run() {
                     ctx.shutdown();
                 }
             }
+            // macOS: Dock icon clicked (or the app opened again) while the main window is hidden.
+            #[cfg(target_os = "macos")]
+            tauri::RunEvent::Reopen { has_visible_windows: false, .. } => app_menu::show_main(app),
             _ => {}
         });
 }

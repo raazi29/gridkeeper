@@ -7,6 +7,8 @@ import { useShallow } from "zustand/react/shallow";
 import { installFocusTracking } from "../actions/commands";
 import { installResumeWatch } from "../actions/resume";
 import { installKeybindings } from "../keybindings";
+import { installNativeMenu } from "../lib/nativeMenu";
+import { isMac } from "../lib/platform";
 import { GroupGrid } from "../layout/GroupGrid";
 import { selectActiveGroup, selectActiveWorkspace, useApp } from "../store/appStore";
 import { useUi } from "../store/uiStore";
@@ -40,6 +42,8 @@ export function Shell() {
 
   useEffect(() => {
     const offKeys = installKeybindings();
+    // macOS only: the native app menu's custom items (Windows / Linux have no native menu).
+    const offMenu = isMac ? installNativeMenu() : () => {};
     const offFocus = installFocusTracking();
     const offResume = installResumeWatch();
     const offPorts = installPortsWatch();
@@ -52,6 +56,7 @@ export function Shell() {
     window.addEventListener("gridkeeper:new-session", onNewSession);
     return () => {
       offKeys();
+      offMenu();
       offFocus();
       offResume();
       offPorts();
