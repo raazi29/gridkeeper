@@ -37,6 +37,13 @@
   position: absolute;
   inset: 0;
 }
+/* Native browser panes: a snapshot stands in for a view hidden under an overlay or during a drag
+   (src/browser/nativeViews.ts sets the image). */
+.browser-host[data-snapshot] {
+  background-repeat: no-repeat;
+  background-position: 0 0;
+  background-size: 100% 100%;
+}
 .browser-bar {
   position: relative;
   flex: 0 0 auto;

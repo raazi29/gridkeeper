@@ -53,6 +53,31 @@ export function lastKeyCommand(): { id: string; at: number } | null {
   return lastKeyRun;
 }
 
+const repeatable = (id: string) => id.startsWith("session.next") || id.startsWith("session.prev") || id === "terminal.zoomIn" || id === "terminal.zoomOut";
+
+function runBound(id: string, repeat: boolean) {
+  if (repeat && !repeatable(id)) return;
+  lastKeyRun = { id, at: Date.now() };
+  runCommand(id);
+}
+
+/** Every bound combo (canonical strings), e.g. for native browser panes that must hand them to the app. */
+export function boundCombos(): string[] {
+  return [...bindings().keys()];
+}
+
+/**
+ * Run the command bound to a combo pressed outside this document (a native browser pane forwards app
+ * shortcuts, see src/browser/nativeViews.ts). Returns false when nothing ran.
+ */
+export function runBoundCombo(combo: string, repeat: boolean): boolean {
+  if (isKeyCaptureSuspended()) return false;
+  const id = bindings().get(combo);
+  if (!id) return false;
+  runBound(id, repeat);
+  return true;
+}
+
 /** Install the single capture-phase keydown listener. Returns an uninstall function. */
 export function installKeybindings(): () => void {
   const onKeyDown = (e: KeyboardEvent) => {
@@ -61,9 +86,7 @@ export function installKeybindings(): () => void {
     if (!id) return;
     e.preventDefault();
     e.stopPropagation();
-    if (e.repeat && !id.startsWith("session.next") && !id.startsWith("session.prev") && id !== "terminal.zoomIn" && id !== "terminal.zoomOut") return;
-    lastKeyRun = { id, at: Date.now() };
-    runCommand(id);
+    runBound(id, e.repeat);
   };
   window.addEventListener("keydown", onKeyDown, true);
   return () => window.removeEventListener("keydown", onKeyDown, true);

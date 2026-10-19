@@ -22,6 +22,7 @@ import { useSessionMuted } from "../actions/notifyPrefs";
 import { isSignedIn } from "../lib/accounts";
 import { goHome, openExternal, openPort, popOut, reload } from "../actions/browser";
 import { ownOrigin, useBrowserNav, viewOf, type BrowserView } from "../browser/nav";
+import { currentEngine } from "../browser/engine";
 import { portChipLabel } from "../lib/browserPanes";
 import { usePorts } from "../store/ports";
 import { copyText } from "../components/util/pick";
@@ -264,7 +265,7 @@ export const PaneHeader = memo(function PaneHeader({ sessionId, groupId, index, 
   const browserState = useBrowserNav(
     useShallow((s) => {
       const n = s.panes[sessionId];
-      return { view: viewOf(n, ownOrigin()), loading: !!n?.loading, url: n?.url ?? null };
+      return { view: viewOf(n, ownOrigin(), currentEngine()), loading: !!n?.loading, url: n?.url ?? null };
     }),
   );
 

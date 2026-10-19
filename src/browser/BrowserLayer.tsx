@@ -1,6 +1,8 @@
 // One persistent layer (inside .grid-area) holding every browser pane's iframe, laid over the pane's
 // host box. Positions are applied imperatively (no React render per resize). Overlays (menus, palette,
-// dialogs, toasts) are DOM above this layer, so they work normally — unlike native child webviews.
+// dialogs, toasts) are DOM above this layer, so they work normally.
+// With the native engine (engine.ts) the panes are child webviews instead (nativeViews.ts): the layer
+// then renders no iframes, but its geometry triggers drive those views too.
 
 import { memo, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useShallow } from "zustand/react/shallow";
@@ -10,7 +12,9 @@ import type { SessionId } from "../lib/types";
 import { FRAME_SANDBOX } from "../lib/url";
 import { useApp } from "../store/appStore";
 import { useUi } from "../store/uiStore";
+import { useBrowserEngine } from "./engine";
 import { frameBox, getHost, hostIds, subscribeHosts } from "./frameHosts";
+import { installNativeViews, scheduleNativeSync } from "./nativeViews";
 import { ownOrigin, useBrowserNav, viewOf } from "./nav";
 
 const slots = new Map<SessionId, HTMLDivElement>();
@@ -34,14 +38,17 @@ function syncNow() {
   }
 }
 
-/** Re-place every frame on the next animation frame (coalesced). */
+/** Re-place every frame (and native view) on the next animation frame (coalesced). */
 export function syncFrames() {
   if (!raf) raf = requestAnimationFrame(syncNow);
+  scheduleNativeSync();
 }
 
 export function BrowserLayer() {
   const ref = useRef<HTMLDivElement>(null);
   const [passive, setPassive] = useState(false);
+
+  useEffect(() => installNativeViews(), []);
   // Panes that have been on screen at least once keep their frame (hidden) while their host is
   // unmounted, so maximize / group switches do not reload pages. Closed panes drop out.
   const browserIds = useApp(useShallow((s) => s.persisted.sessions.filter((m) => isBrowserMeta(m)).map((m) => m.id)));
@@ -152,7 +159,8 @@ const FrameSlot = memo(function FrameSlot({ id }: { id: SessionId }) {
   const ref = useRef<HTMLDivElement>(null);
   const nav = useBrowserNav((s) => s.panes[id]);
   const name = useApp((s) => s.persisted.sessions.find((m) => m.id === id)?.name ?? "Browser");
-  const view = viewOf(nav, ownOrigin());
+  const engine = useBrowserEngine();
+  const view = viewOf(nav, ownOrigin(), engine);
 
   useLayoutEffect(() => {
     const el = ref.current;
@@ -165,7 +173,7 @@ const FrameSlot = memo(function FrameSlot({ id }: { id: SessionId }) {
     };
   }, [id]);
 
-  const show = view === "frame" && !!nav?.url;
+  const show = engine === "frame" && view === "frame" && !!nav?.url;
   useEffect(() => {
     if (show) syncFrames();
   }, [show]);
