@@ -19,6 +19,7 @@
 //! - `diagnostics` host/webview/session resource attribution
 //! - `ports`       LISTENING TCP ports per session process tree
 //! - `browser`     browser panes: URL validation, embeddability probe, pop-out windows
+//! - `browser_view` native browser panes: one child webview per pane (Windows)
 //! - `skills`      Agent Skills: GitHub discovery (user-initiated), review, install into a project
 //! - `meter`       Claude Code cost & context meter: status line helper mode, `--settings` file, folder watch
 //! - `logging` / `redact` structured logs with secret redaction
@@ -28,6 +29,7 @@ pub mod accounts;
 pub mod adapters;
 pub mod app_menu;
 pub mod browser;
+pub mod browser_view;
 pub mod commands;
 pub mod diagnostics;
 pub mod git;
@@ -80,7 +82,7 @@ pub fn run() {
     // single-instance lock.
     if std::env::var_os("GRIDKEEPER_BENCH").is_none() && sandbox.is_none() {
         builder = builder.plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
-            if let Some(w) = app.get_webview_window(webview_guard::MAIN) {
+            if let Some(w) = webview_guard::main_window(app) {
                 // macOS: the main window may be hidden (⌘W).
                 #[cfg(target_os = "macos")]
                 let _ = w.show();
@@ -125,7 +127,7 @@ pub fn run() {
             }
             // Unix: stop sessions on SIGTERM/SIGINT/SIGHUP and on a main-thread panic (no-op on Windows).
             platform::install_exit_guards(app.handle());
-            if let Some(w) = app.get_webview_window(webview_guard::MAIN) {
+            if let Some(w) = webview_guard::main_webview(app.handle()) {
                 webview_guard::install(&w);
             }
             Ok(())
@@ -182,6 +184,17 @@ pub fn run() {
             commands::tools::browser_open_window,
             commands::tools::browser_close_window,
             commands::tools::browser_devtools,
+            browser_view::browser_view_supported,
+            browser_view::browser_view_create,
+            browser_view::browser_view_set_bounds,
+            browser_view::browser_view_navigate,
+            browser_view::browser_view_focus,
+            browser_view::browser_view_blur,
+            browser_view::browser_view_close,
+            browser_view::browser_view_retain,
+            browser_view::browser_view_snapshot,
+            browser_view::browser_view_set_shortcuts,
+            browser_view::browser_view_devtools,
             commands::skills::skills_search,
             commands::skills::skills_inspect,
             commands::skills::skills_file,

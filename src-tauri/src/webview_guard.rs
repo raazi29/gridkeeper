@@ -17,9 +17,33 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
 use parking_lot::Mutex;
-use tauri::{AppHandle, Manager, WebviewWindow};
+use tauri::{AppHandle, Manager, Webview, Window};
 
 pub const MAIN: &str = "main";
+
+/// The main window. Use this instead of `get_webview_window(MAIN)`: on Windows the window also
+/// hosts the native browser panes (child webviews, `browser_view.rs`), and Tauri's
+/// `get_webview_window` returns None for a window with more than one webview.
+#[cfg(windows)]
+pub fn main_window(app: &AppHandle) -> Option<Window> {
+    app.get_window(MAIN)
+}
+
+#[cfg(not(windows))]
+pub fn main_window(app: &AppHandle) -> Option<Window> {
+    app.get_webview_window(MAIN).map(|w| w.as_ref().window())
+}
+
+/// The main webview (the app's page), see `main_window`.
+#[cfg(windows)]
+pub fn main_webview(app: &AppHandle) -> Option<Webview> {
+    app.get_webview(MAIN)
+}
+
+#[cfg(not(windows))]
+pub fn main_webview(app: &AppHandle) -> Option<Webview> {
+    app.get_webview_window(MAIN).map(|w| w.as_ref().clone())
+}
 
 /// Set while the main window is being rebuilt, so destroying the dead one doesn't exit the app.
 static REBUILDING: AtomicBool = AtomicBool::new(false);
@@ -45,9 +69,9 @@ fn backoff() -> Duration {
 }
 
 #[cfg(windows)]
-pub fn install(window: &WebviewWindow) {
-    let app = window.app_handle().clone();
-    let res = window.with_webview(move |pw| {
+pub fn install(webview: &Webview) {
+    let app = webview.app_handle().clone();
+    let res = webview.with_webview(move |pw| {
         if let Err(e) = hook(&pw.controller(), app) {
             tracing::warn!(error = %e, "could not install the WebView2 crash handler");
         }
@@ -58,7 +82,7 @@ pub fn install(window: &WebviewWindow) {
 }
 
 #[cfg(not(windows))]
-pub fn install(_window: &WebviewWindow) {}
+pub fn install(_webview: &Webview) {}
 
 #[cfg(windows)]
 fn hook(
@@ -119,7 +143,7 @@ fn hook(
                     tauri::async_runtime::spawn(async move {
                         pause(delay).await;
                         tracing::warn!(delay_s = delay.as_secs(), "reloading the main page after a renderer failure");
-                        if let Some(w) = app.get_webview_window(MAIN) {
+                        if let Some(w) = main_webview(&app) {
                             let _ = w.reload();
                         }
                     });
@@ -145,13 +169,15 @@ fn rebuild(app: AppHandle) {
         pause(delay).await;
         tracing::warn!(delay_s = delay.as_secs(), "WebView2 browser process exited; rebuilding the main window");
         let mut geometry = None;
-        if let Some(old) = app.get_webview_window(MAIN) {
+        if let Some(old) = main_window(&app) {
             geometry = Some((old.outer_position().ok(), old.inner_size().ok(), old.is_maximized().unwrap_or(false)));
+            // Native browser panes are child webviews of this window and go with it.
             let _ = old.destroy();
         }
+        crate::browser_view::forget_all();
         // The label is free once the old window is gone from the manager.
         for _ in 0..50 {
-            if app.get_webview_window(MAIN).is_none() {
+            if main_window(&app).is_none() {
                 break;
             }
             pause(Duration::from_millis(100)).await;
@@ -178,7 +204,7 @@ fn rebuild(app: AppHandle) {
                         }
                     }
                 }
-                install(&w);
+                install(w.as_ref());
                 tracing::info!("main window rebuilt; the page re-attaches to running sessions");
             }
             Err(e) => tracing::error!(error = %e, "could not rebuild the main window"),

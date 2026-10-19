@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Capability for the main webview only. Targeted by webview label (not window label) so pop-out browser windows (browser-*) and any future child webview never inherit it.",
+  "description": "Capability for the main webview only. Targeted by webview label (not window label) so pop-out browser windows (browser-*) and native browser panes (bv-*, child webviews of the main window) never inherit it.",
   "webviews": [
     "main"
   ],
