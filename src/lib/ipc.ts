@@ -39,6 +39,8 @@ import type {
 import { EVT_MISSION_CHANGED, EVT_SESSION_ATTENTION, EVT_SESSION_METER, EVT_SESSION_STATE } from "./types";
 // Skills
 import type { InstallResult, InstalledSkill, RepoSkills, SkillFileText, SkillRepoPage, SkillSort, SkillTarget, SkillUpdateCheck } from "./types";
+// Phone alerts
+import type { PhoneAlert, PhoneAlertsView, PhoneConfig, PhoneSendResult } from "./types";
 
 export interface AppInfo {
   version: string;
@@ -160,6 +162,14 @@ export const ipc = {
   skillsRemove: (projectDir: string, targetDirRel: string) => invoke<void>("skills_remove", { projectDir, targetDirRel }),
   skillsCheckUpdate: (repo: string, skillPath: string, commitSha: string, treeSha: string | null) =>
     invoke<SkillUpdateCheck>("skills_check_update", { repo, skillPath, commitSha, treeSha }),
+  // Phone alerts (opt-in ntfy push; the token is write-only: the UI only learns `hasToken`).
+  phoneAlertsGet: () => invoke<PhoneAlertsView>("phone_alerts_get"),
+  phoneAlertsSet: (config: PhoneConfig) => invoke<PhoneAlertsView>("phone_alerts_set", { config }),
+  phoneAlertsNewTopic: () => invoke<PhoneAlertsView>("phone_alerts_new_topic"),
+  /** Non-empty saves it (Credential Manager on Windows, a 0600 file elsewhere); null removes it. */
+  phoneAlertsSetToken: (token: string | null) => invoke<PhoneAlertsView>("phone_alerts_set_token", { token }),
+  phoneAlertSend: (alert: PhoneAlert) => invoke<PhoneSendResult>("phone_alert_send", { alert }),
+  phoneAlertsTest: () => invoke<PhoneSendResult>("phone_alerts_test"),
   // Replay: mission recordings in <projectDir>/.gridkeeper/replay/*.jsonl and export saves.
   /** Append JSON-object lines (name `^[A-Za-z0-9._-]+\.jsonl$`). `full` = the 5 MB cap was hit; nothing written. */
   replayAppend: (projectDir: string, fileName: string, lines: string[]) =>

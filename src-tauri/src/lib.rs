@@ -20,6 +20,7 @@
 //! - `ports`       LISTENING TCP ports per session process tree
 //! - `browser`     browser panes: URL validation, embeddability probe, pop-out windows
 //! - `skills`      Agent Skills: GitHub discovery (user-initiated), review, install into a project
+//! - `phone`       opt-in phone alerts through ntfy (user-chosen server; curl; rate limited; generic text)
 //! - `meter`       Claude Code cost & context meter: status line helper mode, `--settings` file, folder watch
 //! - `logging` / `redact` structured logs with secret redaction
 //! - `webview_guard` reload / rebuild the main window when a WebView2 process dies
@@ -36,6 +37,7 @@ pub mod logging;
 pub mod meter;
 pub mod mission;
 pub mod persistence;
+pub mod phone;
 pub mod platform;
 pub mod ports;
 pub mod procs;
@@ -196,6 +198,12 @@ pub fn run() {
             commands::replay::replay_save_dialog,
             commands::replay::replay_save_file,
             commands::meter::meter_snapshot,
+            phone::phone_alerts_get,
+            phone::phone_alerts_set,
+            phone::phone_alerts_new_topic,
+            phone::phone_alerts_set_token,
+            phone::phone_alert_send,
+            phone::phone_alerts_test,
         ])
         .build(context)
         .unwrap_or_else(|e| fatal_startup_error(&e.to_string()))
