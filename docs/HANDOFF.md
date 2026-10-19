@@ -51,6 +51,7 @@ anything.
 | *(mission file)* | `mission_read` / `mission_write` (atomic, conflict check) / `mission_watch` (filesystem watch, no polling → `mission-changed`) for `<projectDir>/.gridkeeper/mission.md`. |
 | `ports.rs` | Listening TCP ports attributed to session trees: `GetExtendedTcpTable` (Windows), `/proc/net/tcp{,6}` + `/proc/<pid>/fd` (Linux), `lsof` (macOS). |
 | `browser.rs` | URL validation, `curl.exe` embed probe (`frame_verdict`, `html_title`), pop-out `WebviewWindow`s. |
+| `phone.rs` | Opt-in phone alerts through ntfy (ADR-020): `phone-alerts.json` settings, token in Credential Manager (0600 file on Unix), payload scrubbing, rate limiter, curl with the request on stdin (`-K -`), `phone_*` commands. |
 | `diagnostics.rs` | CPU/RAM attribution via one Toolhelp snapshot (host / WebView2 / session trees), export bundle. macOS / Linux: one sysinfo walk (`procs.rs`); the webview bucket is the WebKit helper processes, best effort. |
 | `gpu.rs` | GPU telemetry from PDH counters (engine utilization, GPU memory), opened lazily. Windows only ("unavailable" elsewhere). |
 | `platform.rs` | Per-OS bits: `os()` for `app_info`; `init_process_env` for macOS / Linux GUI launches (PATH from the login shell when `TERM` is unset, 5 s cap; tool folders appended; macOS `LANG`; Linux `WEBKIT_DISABLE_DMABUF_RENDERER=1` with the NVIDIA proprietary driver or in an AppImage); Unix termination guards (SIGTERM/SIGINT/SIGHUP → normal exit; main-thread panic → kill sessions). |
@@ -83,6 +84,7 @@ anything.
 | `terminal/registry.ts` | **Single owner of xterm.js instances**, outside React: attach generations, parking, WebGL budget, context-loss recovery. |
 | `terminal/webglBudget.ts` | `MAX_WEBGL` per platform (`maxWebglFor`: Windows 12, macOS 12, Linux 8) and the stable allocation algorithm. |
 | `terminal/terminalKeys.ts` | Terminal copy / paste keys and link modifier per platform (Ctrl on Windows / Linux, ⌘ on macOS; ⌃C always reaches the program on a Mac). |
+| `lib/phoneAlerts.ts`, `lib/qrcode.ts`, `components/settings/PhoneAlerts.tsx` | Phone alerts: event policy + generic text, proposal / mission-done watchers (`installPhoneAlerts`), offline QR encoder, the Settings section and the Diagnostics line. |
 | `lib/platform.ts` | `OS` / `isMac` / `isLinux` / `isWindows` from `navigator`, `shellLabel()`, `webviewLabel()`. Platform-dependent helpers take an explicit `os` so tests are host-independent. |
 | `lib/nativeMenu.ts` | macOS only: runs the native menu's custom items (`native-menu` events) through the command registry; drops a menu command a key binding ran within 500 ms. |
 | `terminal/ackBatcher.ts`, `writeChunks.ts`, `pasteGuard.ts`, `zoom.ts`, `findState.ts`, `menuBridge.ts`, `theme.ts` | Terminal plumbing. |

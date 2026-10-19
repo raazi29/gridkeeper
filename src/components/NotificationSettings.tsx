@@ -10,7 +10,7 @@ import { osNotificationName, shellLabel } from "../lib/platform";
 import type { NotificationSettings as Notif, NotifyDelivery, SoundSet } from "../lib/types";
 import { useApp } from "../store/appStore";
 import { IconBellOff } from "./MutedGlyph";
-import { PhoneAlertsSettings } from "./PhoneAlertsSettings";
+import { PhoneAlerts } from "./settings/PhoneAlerts";
 import { Button } from "./ui/Button";
 import { Segmented, Toggle } from "./ui/Field";
 import "../styles/attention.css";
@@ -259,7 +259,7 @@ export function NotificationSettings() {
         )}
       </Section>
 
-      <PhoneAlertsSettings />
+      <PhoneAlerts />
 
       <p className="hint attn-settings-note">
         Agents only ring the bell when asked to: for Claude Code set <span className="mono">preferredNotifChannel</span> to <span className="mono">terminal_bell</span>; for Codex set{" "}

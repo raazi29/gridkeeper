@@ -23,7 +23,6 @@ import {
   type FlightLogData,
 } from "../lib/flightlog";
 import type { MissionDoc, TeamMember } from "../lib/missionDoc";
-import { notifyPhone } from "../lib/phoneAlerts";
 import type { ReplayEvent } from "../replay/events";
 import { tapRecorder } from "../replay/recorder";
 import { currentSaberLevel } from "../theme/applyTheme";
@@ -160,10 +159,6 @@ function onDocs(byDir: Record<string, MissionEntry>, prev: Record<string, Missio
     const before = boards.get(key);
     if (next) boards.set(key, next);
     else boards.delete(key);
-    if (before && next && before !== next && missionFinished(before, next)) {
-      const folder = dir.split(/[\\/]/).filter(Boolean).pop();
-      void notifyPhone({ kind: "missionDone", key: `m:${key}`, workspaceName: folder, goal: next.goal });
-    }
     if (!before || !next || before === next || !useFlightLog.getState().data.enabled) continue;
     const done = newlyDone(before, next);
     const finished = done.length > 0 && missionFinished(before, next);

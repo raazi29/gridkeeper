@@ -10,6 +10,7 @@ import { selectActiveGroup, useApp } from "../store/appStore";
 import { webglOverBudget } from "../lib/pressure";
 import { MAX_WEBGL } from "../terminal/webglBudget";
 import { GpuSection } from "./GpuSection";
+import { PhoneAlertsDiagnostics } from "./settings/PhoneAlerts";
 import { actionToast, useUi } from "../store/uiStore";
 import { useDiagnosticsPoll, useRendererStatus } from "./hooks";
 import { Button } from "./ui/Button";
@@ -184,6 +185,7 @@ export function DiagnosticsPanel({ onClose }: { onClose: () => void }) {
         </div>
       </div>
       <GpuSection diag={diag} renderer={renderer} />
+      <PhoneAlertsDiagnostics />
       {overBudget && (
         <div className="callout is-warn pressure-note" role="status">
           {visibleInGroup} terminals are visible in this group. Only {MAX_WEBGL} use WebGL (the browser&apos;s GPU context budget); the rest are drawn by the slower DOM
