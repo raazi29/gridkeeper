@@ -456,6 +456,17 @@ pub struct MissionFile {
 /// Emitted with payload `MissionChanged` when the mission file of a watched project folder changes.
 pub const EVT_MISSION_CHANGED: &str = "mission-changed";
 
+/// macOS app menu: emitted to the main webview with payload `NativeMenuCommand` when a custom menu
+/// item is chosen (see `app_menu.rs`); the frontend runs that command from its registry.
+pub const EVT_NATIVE_MENU: &str = "native-menu";
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NativeMenuCommand {
+    /// Command id from `src/actions/commands.ts`, e.g. `view.settings`.
+    pub command: String,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct MissionChanged {

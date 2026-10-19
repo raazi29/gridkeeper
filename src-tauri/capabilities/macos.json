@@ -1,0 +1,14 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "macos",
+  "description": "macOS only: the Dock badge with the unread alert count. Like default.json, targeted by webview label so pop-out browser windows never get it.",
+  "platforms": [
+    "macOS"
+  ],
+  "webviews": [
+    "main"
+  ],
+  "permissions": [
+    "core:window:allow-set-badge-count"
+  ]
+}

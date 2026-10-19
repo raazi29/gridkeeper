@@ -2,7 +2,10 @@
 //!
 //! Module ownership:
 //! - `pty`         PTY sessions (ConPTY / Unix pty), output ring buffer, flow control, process containers
-//! - `platform`    per-OS bits: os name, macOS PATH/LANG, Unix termination guards
+//! - `platform`    per-OS bits: os name, GUI-launch PATH (login shell + tool folders), macOS LANG,
+//!               Linux WebKitGTK workaround, Unix termination guards
+//! - `app_menu`    the native macOS menu (App, Edit, View, Window, Help)
+//! - `selftest`    `--gk-self-test` / `--gk-self-test-gui`: smoke tests of the built binary (CI)
 //! - `procs`       Unix process table (sessions, trees, CPU/RAM) for containment and diagnostics
 //! - `adapters`    agent adapters (PowerShell, Claude Code, Codex, generic)
 //! - `profiles`    account records (`profiles.json`; historically Claude-only)
@@ -23,6 +26,7 @@
 
 pub mod accounts;
 pub mod adapters;
+pub mod app_menu;
 pub mod browser;
 pub mod commands;
 pub mod diagnostics;
@@ -40,6 +44,7 @@ pub mod pty;
 pub mod redact;
 pub mod replay;
 pub mod sandbox;
+pub mod selftest;
 pub mod skills;
 pub mod state;
 pub mod types;
@@ -49,8 +54,14 @@ use tauri::Manager;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    // macOS: launchd's minimal PATH / missing LANG (no-op elsewhere). Single-threaded here.
+    // macOS / Linux GUI launches: PATH from the login shell + tool folders, LANG, WebKitGTK
+    // workaround (no-op on Windows). Single-threaded here.
     platform::init_process_env();
+    // `--gk-self-test-gui`: runs as sandbox "self-test" unless one is set (before the sandbox is resolved).
+    let gui_self_test = selftest::gui_requested();
+    if gui_self_test {
+        selftest::prepare_gui();
+    }
     let mut context = tauri::generate_context!();
     // Sandbox (GRIDKEEPER_SANDBOX): resolved first, while the process is still single-threaded, because it
     // sets WEBVIEW2_USER_DATA_FOLDER before any window exists. An invalid name refuses to start.
@@ -62,25 +73,56 @@ pub fn run() {
             w.title = sandbox::window_title(&w.title, &s.name);
         }
     }
+    // Window self-test: hard deadline for the whole run (starts a thread; no env changes after this).
+    selftest::arm_gui_deadline();
     let mut builder = tauri::Builder::default();
     // Benchmark runs (GRIDKEEPER_BENCH) and sandboxes may run beside a normal instance, so they skip the
     // single-instance lock.
     if std::env::var_os("GRIDKEEPER_BENCH").is_none() && sandbox.is_none() {
         builder = builder.plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
             if let Some(w) = app.get_webview_window(webview_guard::MAIN) {
+                // macOS: the main window may be hidden (⌘W).
+                #[cfg(target_os = "macos")]
+                let _ = w.show();
                 let _ = w.unminimize();
                 let _ = w.set_focus();
             }
         }));
+    }
+    // macOS: the native menu (app_menu.rs), and ⌘W / the close button hide the main window instead
+    // of quitting with every agent (the Dock icon and Window › Main Window bring it back; ⌘Q quits).
+    #[cfg(target_os = "macos")]
+    {
+        builder = builder
+            .menu(|app| app_menu::build(app))
+            .on_menu_event(|app, event| app_menu::handle_event(app, &event))
+            .on_window_event(|window, event| {
+                if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                    if window.label() == webview_guard::MAIN {
+                        api.prevent_close();
+                        // Hiding a full-screen window would leave an empty Space: leave full screen first.
+                        if window.is_fullscreen().unwrap_or(false) {
+                            let _ = window.set_fullscreen(false);
+                        } else {
+                            let _ = window.hide();
+                        }
+                    }
+                }
+            });
     }
     builder
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_notification::init())
-        .setup(|app| {
+        .setup(move |app| {
             let ctx = state::AppCtx::init(app.handle())?;
             app.manage(ctx);
+            // What init_process_env changed (logging exists from AppCtx::init on).
+            platform::log_env_report();
+            if gui_self_test {
+                selftest::start_gui_watchdog(app.handle().clone());
+            }
             // Unix: stop sessions on SIGTERM/SIGINT/SIGHUP and on a main-thread panic (no-op on Windows).
             platform::install_exit_guards(app.handle());
             if let Some(w) = app.get_webview_window(webview_guard::MAIN) {
@@ -167,6 +209,9 @@ pub fn run() {
                     ctx.shutdown();
                 }
             }
+            // macOS: Dock icon clicked (or the app opened again) while the main window is hidden.
+            #[cfg(target_os = "macos")]
+            tauri::RunEvent::Reopen { has_visible_windows: false, .. } => app_menu::show_main(app),
             _ => {}
         });
 }
@@ -175,6 +220,11 @@ pub fn run() {
 /// another process). Tell the user instead of exiting silently.
 fn fatal_startup_error(message: &str) -> ! {
     tracing::error!(error = %redact::redact(message), "startup failed");
+    // The window self-test (CI) must never wait on a dialog.
+    if selftest::gui_mode() {
+        eprintln!("Gridkeeper could not start: {message}");
+        std::process::exit(1);
+    }
     #[cfg(windows)]
     {
         use windows_sys::Win32::UI::WindowsAndMessaging::{MessageBoxW, MB_ICONERROR, MB_OK};

@@ -61,6 +61,12 @@ export const EVT_SESSION_STATE = "session-state";
 export const EVT_SESSION_ATTENTION = "session-attention";
 /** Payload { projectDir } — the mission file of a watched project folder changed (see mission_watch). */
 export const EVT_MISSION_CHANGED = "mission-changed";
+/** macOS app menu: payload NativeMenuCommand — a custom menu item was chosen (see src-tauri/src/app_menu.rs). */
+export const EVT_NATIVE_MENU = "native-menu";
+export interface NativeMenuCommand {
+  /** Command id from src/actions/commands.ts, e.g. "view.settings". */
+  command: string;
+}
 export type AttentionKind = "bell" | "notify" | "status" | "idle" | "active";
 
 export interface SessionAttention {

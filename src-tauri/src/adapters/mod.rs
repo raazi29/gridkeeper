@@ -25,6 +25,8 @@ use crate::types::*;
 
 pub use claude::{transcript_exists as claude_transcript_exists, CLAUDE_IDENTITY_ENV};
 pub use discovery::Executable;
+#[cfg(unix)]
+pub use powershell::login_shell;
 
 /// What an adapter supports (surfaced to the UI via `detect` in future versions).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

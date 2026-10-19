@@ -23,7 +23,9 @@ anything.
 | Path | What lives there |
 |---|---|
 | `lib.rs` | App setup: plugins (single-instance, opener, dialog, clipboard, notification), `generate_handler![…]` (every IPC command), the `Exit` handler (`shutdown_all`). Sandbox mode (`GRIDKEEPER_SANDBOX`) skips the single-instance lock and uses its own data and WebView2 folders. |
-| `main.rs` | Entry point; calls `gridkeeper_lib::run()`. |
+| `main.rs` | Entry point: `--gk-statusline` (meter helper) and `--gk-self-test` are handled before Tauri starts; otherwise `gridkeeper_lib::run()`. |
+| `selftest.rs` | `--gk-self-test` (headless: env fix-up + login-shell PATH, data folder probe, default shell in a PTY answering a typed command, forced-stop containment of a tree with an orphaned grandchild; one line per check, exit 0/1) and `--gk-self-test-gui` (real window as sandbox `self-test`; passes when the frontend's boot calls `state_load`). Run by CI on the built binary (section 10). |
+| `app_menu.rs` | The native macOS menu (App, Edit, View, Window, Help) as plain data + a macOS-only builder. Edit items are native; custom items emit `native-menu` → `src/lib/nativeMenu.ts`. |
 | `state.rs` | `AppCtx`, the context shared by all commands (session manager, stores, paths). |
 | `types.rs` | **The IPC contract** (serde `camelCase`). Mirrored by `src/lib/types.ts`. |
 | `commands/session.rs` | `session_*`: start, attach/detach, write (text/binary), resize, ack, stop, list, output text/tail, clear buffer, remove. |
@@ -51,14 +53,14 @@ anything.
 | `browser.rs` | URL validation, `curl.exe` embed probe (`frame_verdict`, `html_title`), pop-out `WebviewWindow`s. |
 | `diagnostics.rs` | CPU/RAM attribution via one Toolhelp snapshot (host / WebView2 / session trees), export bundle. macOS / Linux: one sysinfo walk (`procs.rs`); the webview bucket is the WebKit helper processes, best effort. |
 | `gpu.rs` | GPU telemetry from PDH counters (engine utilization, GPU memory), opened lazily. Windows only ("unavailable" elsewhere). |
-| `platform.rs` | Per-OS bits: `os()` for `app_info`, macOS PATH/LANG fix-up at startup, Unix termination guards (SIGTERM/SIGINT/SIGHUP → normal exit; main-thread panic → kill sessions). |
+| `platform.rs` | Per-OS bits: `os()` for `app_info`; `init_process_env` for macOS / Linux GUI launches (PATH from the login shell when `TERM` is unset, 5 s cap; tool folders appended; macOS `LANG`; Linux `WEBKIT_DISABLE_DMABUF_RENDERER=1` with the NVIDIA proprietary driver or in an AppImage); Unix termination guards (SIGTERM/SIGINT/SIGHUP → normal exit; main-thread panic → kill sessions). |
 | `procs.rs` | Unix process table (one shared `sysinfo::System`): session membership for containment, trees and CPU/RAM for diagnostics. |
 | `webview_guard.rs` | WebView2 crash recovery (Windows only). |
 | `logging.rs`, `redact.rs` | JSON-lines logs with daily rotation; secret redaction at every sink. |
 | `src-tauri/tests/live_profiles.rs` | Optional live checks against real Claude profiles (`--ignored`). |
-| `src-tauri/capabilities/default.json` | IPC permissions, **scoped to webview `main`**. |
+| `src-tauri/capabilities/default.json` | IPC permissions, **scoped to webview `main`**. `macos.json` adds the Dock badge permission on macOS only (`"platforms": ["macOS"]`). |
 | `src-tauri/tauri.conf.json` | CSP, window `main`, NSIS per-user bundle, identifier `app.gridkeeper.desktop`. |
-| `src-tauri/tauri.macos.conf.json`, `tauri.linux.conf.json` | Platform overrides (merged by Tauri): bundle targets `app` + `dmg` (macOS 11+, ad-hoc signed) and `appimage` + `deb`. The Windows config is untouched. |
+| `src-tauri/tauri.macos.conf.json`, `tauri.linux.conf.json` | Platform overrides (merged by Tauri): bundle targets `app` + `dmg` (macOS 11+, ad-hoc signed; CI builds it `--target universal-apple-darwin`) and `appimage` + `deb`. The Windows config is untouched. |
 
 ### Frontend: `src/`
 
@@ -82,6 +84,7 @@ anything.
 | `terminal/webglBudget.ts` | `MAX_WEBGL` per platform (`maxWebglFor`: Windows 12, macOS 12, Linux 8) and the stable allocation algorithm. |
 | `terminal/terminalKeys.ts` | Terminal copy / paste keys and link modifier per platform (Ctrl on Windows / Linux, ⌘ on macOS; ⌃C always reaches the program on a Mac). |
 | `lib/platform.ts` | `OS` / `isMac` / `isLinux` / `isWindows` from `navigator`, `shellLabel()`, `webviewLabel()`. Platform-dependent helpers take an explicit `os` so tests are host-independent. |
+| `lib/nativeMenu.ts` | macOS only: runs the native menu's custom items (`native-menu` events) through the command registry; drops a menu command a key binding ran within 500 ms. |
 | `terminal/ackBatcher.ts`, `writeChunks.ts`, `pasteGuard.ts`, `zoom.ts`, `findState.ts`, `menuBridge.ts`, `theme.ts` | Terminal plumbing. |
 | `layout/GroupGrid.tsx`, `Pane.tsx`, `PaneHeader.tsx`, `BrowserPane.tsx`, `gridGeometry.ts`, `paneDrag.ts` | Grid, panes, headers, drag and drop. |
 | `browser/BrowserLayer.tsx`, `frameHosts.ts`, `nav.ts`, `OpenUrlDialog.tsx`, `PortsList.tsx` | Browser panes: one persistent iframe layer positioned over host boxes. |
@@ -103,7 +106,9 @@ anything.
 | `scripts/dev/sandbox.ps1`, `sandbox-stop.ps1` | Run / stop an isolated test instance next to the live app (section 6). `npm run sandbox`, `npm run sandbox:stop`. |
 | `scripts/dev/eol-merge.sh` | Re-run a conflicted merge with CRLF/LF normalized. |
 | `scripts/dev/unix-check.ps1` | Type-check the Rust crate for Linux and macOS from Windows (fake pkg-config / cc shims, nothing linked; section 10). |
-| `.github/workflows/ci.yml` | CI matrix `windows-latest` / `ubuntu-22.04` / `macos-latest`: `tsc`, `vitest`, `npm run build`, `cargo test`, `cargo clippy` (non-fatal); on `v*` tags (or a manual run with `installers: true`) also `tauri build` per OS → NSIS / dmg / AppImage + deb as workflow artifacts (no release is created). |
+| `.github/workflows/ci.yml` | CI matrix `windows-latest` / `ubuntu-22.04` / `macos-latest`: `tsc`, `vitest`, `npm run build`, `cargo test`, the debug binary's self-tests, `cargo clippy` (non-fatal); on `v*` tags (or a manual run with `installers: true`) also `tauri build` per OS → NSIS / universal dmg / AppImage + deb as workflow artifacts after the release binary's self-tests (no release is created). |
+| `appveyor.yml`, `scripts/ci/appveyor.{sh,ps1}` | The CI that runs while GitHub Actions is unavailable (AppVeyor free plan: one job at a time, 60 min each; images Visual Studio 2022, Ubuntu2204, macos-sonoma). Same steps as the workflow. |
+| `scripts/ci/self-test.sh` | Runs a built binary's `--gk-self-test`, then `--gk-self-test-gui` (Linux under Xvfb: required; macOS: optional; Windows: skipped; `GK_GUI_SELF_TEST` overrides). `dev` mode serves `dist/` with `vite preview` on the dev URL for debug builds. |
 | `<project>/.gridkeeper/mission.md` | Not in this repo: the shared task board Mission Control reads and writes in each project folder (`# Mission: <goal>`, `## Tasks`, `- [ ] text @owner`; `[~]` doing, `[x]` done, `[!]` blocked). Created with a self-ignoring `.gitignore`. |
 | `docs/assets/` | Hero banner, social preview, showcase media, `logo/` (brand guide + tools), `readme/` (animated crawl + saber dividers + `tools/gen-readme-art.mjs`). |
 | `docs/research-notes/` | Raw verified findings (CLI flags, terminal stack, market/agents). |
@@ -181,11 +186,16 @@ npm run tauri build                       # release + NSIS installer → src-tau
 **CI** (`.github/workflows/ci.yml`, matrix `windows-latest`, `ubuntu-22.04`, `macos-latest`, `fail-fast: false`) runs
 `npm ci`, `tsc --noEmit`, `vitest run`, `npm run build` (`generate_context!` needs `dist/`), `cargo test` (Windows:
 ConPTY tests with pwsh/cmd; macOS / Linux: `pty/tests_unix.rs` and the `pty/job.rs` containment tests with `sh`) and
-a non-fatal `cargo clippy` on every push to `main` and every PR. Ubuntu first installs `libwebkit2gtk-4.1-dev
+a non-fatal `cargo clippy` on every push to `main` and every PR, then builds the debug app binary and runs
+`scripts/ci/self-test.sh` on it (`--gk-self-test` on all three OSes; `--gk-self-test-gui` under Xvfb on Ubuntu,
+informational on macOS; section 10). AppVeyor (`appveyor.yml`, `scripts/ci/appveyor.{sh,ps1}`) runs the same steps
+while GitHub Actions is unavailable. Ubuntu first installs `libwebkit2gtk-4.1-dev
 libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev libssl-dev patchelf build-essential`. A `v*` tag, or a manual
 run (`workflow_dispatch` with `installers: true`, e.g. `gh workflow run ci.yml --ref <branch> -f installers=true`),
-additionally runs `tauri build` on each OS and uploads the NSIS installer, the dmg, and the AppImage + deb as workflow
-artifacts; it does **not** create a GitHub release. Live CDP e2e stays local (it needs a desktop session).
+additionally runs `tauri build` on each OS (macOS: `--target universal-apple-darwin`, one dmg for Apple Silicon and
+Intel), runs the same self-tests against the release binary, and uploads the NSIS installer, the dmg, and the
+AppImage + deb as workflow artifacts; it does **not** create a GitHub release. Live CDP e2e stays local (it needs a
+desktop session).
 
 **Live verification (always do this for UI or lifecycle changes), in a sandbox:**
 
@@ -358,9 +368,11 @@ from an agent at all when the memory guard would refuse.
 
 ## 10. Platforms: Windows, macOS, Linux
 
-Windows is the reference platform: everything in sections 1–9 was built and verified there. macOS and Linux build and
-run the unit and PTY tests in CI (section 5), but **nobody has driven the app on a Mac or a Linux desktop yet**: treat
-every Unix behaviour below as "implemented, CI-tested, not live-verified" until someone does.
+Windows is the reference platform: everything in sections 1–9 was built and verified there. macOS and Linux build,
+run the unit and PTY tests, and start the built binary in CI (section 5 and "What CI proves" below), but **nobody
+has driven the app on a Mac or a Linux desktop yet**: treat every Unix behaviour below as "implemented, CI-tested,
+not live-verified" until someone does. Research behind this section, with sources and a prioritized checklist:
+[research-notes/macos-linux-readiness.md](research-notes/macos-linux-readiness.md).
 
 | Area | Windows | macOS | Linux |
 |---|---|---|---|
@@ -370,7 +382,9 @@ every Unix behaviour below as "implemented, CI-tested, not live-verified" until 
 | Host crash | kernel kills the trees | agents can be orphaned (see below) | same as macOS |
 | Default terminal (`powershell` kind) | pwsh 7 → Windows PowerShell 5.1, `-NoLogo` | `$SHELL` → passwd → zsh → sh, started as a login shell (`-l`) | `$SHELL` → passwd → bash → zsh → sh, non-login |
 | PowerShell | built-in default | catalog preset `pwsh` when on PATH | catalog preset `pwsh` when on PATH |
-| Executable discovery | PATH + npm `.cmd` shim → `.exe`, `cmd.exe /d /c` fallback | PATH (`which`); host PATH extended with Homebrew / `~/.local/bin` / npm / bun / volta / cargo dirs at startup | PATH (`which`) |
+| Executable discovery | PATH + npm `.cmd` shim → `.exe`, `cmd.exe /d /c` fallback | PATH (`which`); at startup a GUI launch (no `TERM`) takes PATH from `$SHELL -i -l -c` (5 s cap), then Homebrew / `~/.local/bin` / npm / bun / volta / cargo / deno / asdf / mise / fnm / pnpm / nvm-default folders are appended | same as macOS (no Homebrew paths; Linuxbrew instead) |
+| App menu | none | native menu (`app_menu.rs`); ⌘W / close button hide the main window (Dock icon, Window › Main Window or a second launch show it), ⌘Q quits | none |
+| Unread count | title | title + Dock badge | title |
 | CPU / RAM diagnostics | Toolhelp + `GetProcessTimes` | sysinfo walk (`procs.rs`) | sysinfo walk |
 | WebView bucket | `msedgewebview2.exe` children | `com.apple.WebKit.*` XPC services attributed via `responsibility_get_pid_responsible_for_pid` (private API, looked up at runtime), best effort | `WebKitWebProcess` / `WebKitNetworkProcess` children, best effort |
 | GPU telemetry | PDH counters | unavailable (UI says so) | unavailable |
@@ -379,7 +393,8 @@ every Unix behaviour below as "implemented, CI-tested, not live-verified" until 
 | WebGL budget (`maxWebglFor`) | 12 | 12 (unmeasured) | 8 (unmeasured) |
 | Primary shortcut modifier | Ctrl | ⌘ (stored as `ctrl`; ⌃ is `meta`) | Ctrl |
 | Sandbox (`GRIDKEEPER_SANDBOX`) | own data + own WebView2 profile | own data, shared WebKit profile | own data, shared WebKit profile |
-| Bundle (`tauri build`) | NSIS per-user | `app` + `dmg`, macOS 11+, ad-hoc signed | AppImage + deb |
+| Bundle (`tauri build`) | NSIS per-user | `app` + universal `dmg` (arm64 + x86_64), macOS 11+, ad-hoc signed | AppImage + deb |
+| WebKit workarounds | — | — | `WEBKIT_DISABLE_DMABUF_RENDERER=1` set at startup with the NVIDIA proprietary driver or in an AppImage, unless already set |
 
 **Known Unix limitations (document them to users, fix them later):**
 
@@ -393,16 +408,21 @@ every Unix behaviour below as "implemented, CI-tested, not live-verified" until 
   session) escape the container, like a Job breakaway would.
 - No GPU telemetry; WebView figures are best effort (macOS relies on a private libsystem function; when it is missing
   the WebView row is just 0).
-- WebKit is not Chromium: the WebGL budget (`maxWebglFor`), the iframe sandbox / CSP behaviour of browser panes, IME and
-  clipboard paths, and xterm's WebGL renderer under WebKitGTK (some GPU drivers need
-  `WEBKIT_DISABLE_DMABUF_RENDERER=1`) must be re-measured on real machines.
+- WebKit is not Chromium: the WebGL budget (`maxWebglFor`; WebKit itself force-loses beyond 16 active contexts, like
+  Chromium), the iframe sandbox / CSP behaviour of browser panes, IME and clipboard paths, and xterm's WebGL renderer
+  under WebKitGTK must be re-measured on real machines.
+- macOS notifications go through the plugin's deprecated NSUserNotification path; whether they show for the ad-hoc
+  signed release on macOS 14 / 15 is unknown (in-app toasts, the title count and the Dock badge don't depend on it).
+- ⌘Q quits without asking even while agents run (Terminal.app asks); tao exposes no `applicationShouldTerminate`.
+- Linux AppImage: the AppImage's GTK variables (`GTK_PATH`, `GIO_MODULE_DIR`, `XDG_DATA_DIRS` prefix …) are inherited
+  by the shells in panes; the `.deb` is the recommended package. On Ubuntu 24.04 the AppImage needs `libfuse2t64`.
 - No renderer-crash recovery (a dead web process means reloading the page by hand).
 - The sandbox scripts (`scripts/dev/sandbox*.ps1`) and benchmarks are PowerShell/Windows tools; on Unix set
   `GRIDKEEPER_SANDBOX=<name>` yourself. A sandbox shares the WebKit profile (localStorage, so saved formations) with
   a normal instance.
-- macOS builds are ad-hoc signed, not notarized: Gatekeeper blocks the first launch (System Settings › Privacy &
-  Security › "Open Anyway", or right-click › Open; `xattr -dr com.apple.quarantine /Applications/Gridkeeper.app`
-  for a downloaded dmg).
+- macOS builds are ad-hoc signed, not notarized: Gatekeeper blocks the first launch. macOS 15: open once, then System
+  Settings › Privacy & Security › **Open Anyway** (offered for about an hour) + password; right-click › Open no longer
+  bypasses Gatekeeper on 15 (it still does on 14). Or `xattr -dr com.apple.quarantine /Applications/Gridkeeper.app`.
 - Hermes' Unix default home is assumed to be `~/.hermes` (unverified on a real install).
 
 **Type-checking Unix code on this Windows box (no WSL):** `pwsh -NoProfile -File scripts/dev/unix-check.ps1`
@@ -411,3 +431,24 @@ Linux and macOS without linking anything: the `*-sys` build scripts get a fake `
 (`PKG_CONFIG` + `PKG_CONFIG_ALLOW_CROSS=1`), and the few crates that compile C for macOS get a fake `cc` / `ar`. The
 first run takes ~15–20 minutes per target with 2 jobs (shared target folder, memory guard like the sandbox script) and
 catches cfg / API mistakes in `#[cfg(unix)]` code. It runs nothing; the CI matrix is still the real test.
+
+**What CI proves (every push to `main` / PR, and again on the release binary of a `v*` tag):**
+
+- `--gk-self-test`, all three OSes, fatal: the binary starts (on Linux the dynamic loader resolved WebKitGTK / GTK),
+  `init_process_env` runs, the login shell answers the PATH lookup (macOS / Linux), the data folder is writable, the
+  default terminal starts through `resolve_launch` in a real PTY and runs a typed command (its marker output is
+  checked), and a forced stop leaves no process of a tree with a background child and an orphaned grandchild.
+  On a Universal binary built on an Apple Silicon host with Rosetta, the Intel slice is checked too (not fatal).
+- `--gk-self-test-gui`, Ubuntu under Xvfb, fatal: GTK and WebKitGTK start, the main window and webview exist, the
+  frontend bundle loads (from `vite preview` for the debug binary, embedded for the release binary), `app_info`
+  returns to JS and `state_load` reaches Rust. The same step runs on macOS but only reports (it needs a GUI session
+  on the build machine; when it passes it also proves the native menu builds). `GK_GUI_SELF_TEST=required|optional|off`.
+- Run it locally: `gridkeeper --gk-self-test` (Windows release exe: `gridkeeper.exe --gk-self-test | Out-String`, it
+  is a GUI-subsystem binary). On this Windows box the run takes about 1.3 s.
+
+**What still needs a person with a Mac / a Linux desktop:** the first launch of the downloaded dmg (Gatekeeper,
+Open Anyway on 15), ⌘C / ⌘V / ⌘A / ⌘Z in text fields and terminals (exactly one paste), ⌘W → hidden → Dock click
+restores, ⌘Q stops the agents, the Dock badge, notifications, retina sharpness (`window.devicePixelRatio` should be 2)
+and WebGL with many terminals, the login-shell PATH with real dotfiles (nvm / fnm / asdf, Claude Code in
+`~/.local/bin`), IME input, App Nap while hidden, full screen; on Linux: NVIDIA (X11 and Wayland), the AppImage on
+Ubuntu 24.04, the `.deb` desktop entry and dock icon on GNOME / KDE, notifications.

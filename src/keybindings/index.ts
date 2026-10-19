@@ -46,6 +46,13 @@ export function isAppShortcut(e: KeyboardEvent): boolean {
   return commandForEvent(e) !== undefined;
 }
 
+let lastKeyRun: { id: string; at: number } | null = null;
+
+/** The command a key binding ran last, and when (macOS menu de-duplication, see lib/nativeMenu.ts). */
+export function lastKeyCommand(): { id: string; at: number } | null {
+  return lastKeyRun;
+}
+
 /** Install the single capture-phase keydown listener. Returns an uninstall function. */
 export function installKeybindings(): () => void {
   const onKeyDown = (e: KeyboardEvent) => {
@@ -55,6 +62,7 @@ export function installKeybindings(): () => void {
     e.preventDefault();
     e.stopPropagation();
     if (e.repeat && !id.startsWith("session.next") && !id.startsWith("session.prev") && id !== "terminal.zoomIn" && id !== "terminal.zoomOut") return;
+    lastKeyRun = { id, at: Date.now() };
     runCommand(id);
   };
   window.addEventListener("keydown", onKeyDown, true);

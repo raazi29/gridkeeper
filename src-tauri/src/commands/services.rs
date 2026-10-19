@@ -8,6 +8,8 @@ use crate::types::*;
 
 #[tauri::command]
 pub fn state_load(ctx: State<'_, AppCtx>) -> PersistedState {
+    // `--gk-self-test-gui` waits for this call (no-op otherwise).
+    crate::selftest::note_frontend_booted();
     ctx.store.get()
 }
 
@@ -228,7 +230,10 @@ pub async fn diagnostics_export(ctx: State<'_, AppCtx>, frontend: serde_json::Va
 pub fn log_frontend(level: String, message: String) {
     let message = crate::redact::redact(&message);
     match level.as_str() {
-        "error" => tracing::error!(target: "frontend", "{message}"),
+        "error" => {
+            crate::selftest::note_frontend_error();
+            tracing::error!(target: "frontend", "{message}")
+        }
         "warn" => tracing::warn!(target: "frontend", "{message}"),
         _ => tracing::info!(target: "frontend", "{message}"),
     }
