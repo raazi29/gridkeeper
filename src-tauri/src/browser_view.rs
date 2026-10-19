@@ -1017,9 +1017,11 @@ mod tests {
         let id = "3f2b8c1e-9a4d-4e6f-8b2a-1c3d5e7f9a0b";
         assert_eq!(view_label(id).as_deref(), Some("bv-3f2b8c1e-9a4d-4e6f-8b2a-1c3d5e7f9a0b"));
         assert_eq!(pane_of_label(&view_label(id).unwrap()), Some(id));
-        for bad in ["", "../x", "a b", "main", "x/y", "é", &"a".repeat(65)] {
+        for bad in ["", "../x", "a b", "x/y", "x:y", "é", &"a".repeat(65)] {
             assert!(view_label(bad).is_none(), "{bad:?}");
         }
+        // Any valid id gets the prefix, so a view label can never equal "main" or a pop-out label.
+        assert_eq!(view_label("main").as_deref(), Some("bv-main"));
         assert_eq!(pane_of_label("main"), None);
         assert_eq!(pane_of_label("browser-abc"), None);
         assert_eq!(pane_of_label("bv-"), None);
