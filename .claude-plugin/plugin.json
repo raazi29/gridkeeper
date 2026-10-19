@@ -1,10 +1,10 @@
 {
   "name": "agent-mission",
-  "description": "Coordinate several coding agents through one shared Markdown task board (.gridkeeper/mission.md).",
+  "description": "Coordinate several coding agents through one shared Markdown task board (.gridkeeper/mission.md), and turn a session into a 15-60 s recap video (MP4 / GIF) from git history.",
   "author": { "name": "raazi29" },
   "homepage": "https://github.com/raazi29/gridkeeper",
   "repository": "https://github.com/raazi29/gridkeeper",
   "license": "MIT",
-  "keywords": ["multi-agent", "orchestration", "task-board", "claude-code", "codex"],
-  "skills": ["./skills/agent-mission"]
+  "keywords": ["multi-agent", "orchestration", "task-board", "claude-code", "codex", "recap", "timelapse"],
+  "skills": ["./skills/agent-mission", "./skills/mission-recap"]
 }
