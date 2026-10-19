@@ -2,6 +2,8 @@
 // Mission Control — broadcasts, hand-offs, lead control deliveries, mission / lead briefs — and where the comet
 // starts and lands. Sources are a session (by name or slug), the mission board, the top of the canvas (you) or
 // the sign-off box (auto-review). Everything else is not a message and gets no comet.
+// Matches the English form of the messages and results: activity.ts keeps broadcast / mission messages and every
+// result code English (the UI language goes to `text`), so comets work in every UI language.
 
 import { slugify } from "../../lib/missionDoc";
 import type { SessionId } from "../../lib/types";

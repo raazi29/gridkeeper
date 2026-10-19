@@ -2,14 +2,22 @@
 // small inputs, body textarea; unknown front matter keys and the file's line endings are kept). Saves with the
 // conflict check: an agent's concurrent edit is never overwritten silently. Notes: edit / supersede… / forget;
 // inbox suggestions: approve / edit / discard.
+// Agent-facing: stays English (typed into agents / written to files): the `source: user` front matter value that
+// "supersede…" prefills.
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
+import { useT, type MessageKey } from "../../i18n";
 import { BRAIN_KINDS, editNote, formatTags, KIND_LABEL, KIND_MARK, noteFields, parseTags, today, type BrainKind } from "../../lib/brain";
 import { errorMessage, ipc } from "../../lib/ipc";
 import type { BrainIndex, BrainNoteFile } from "../../lib/types";
 import { approveSuggestion, discardSuggestion, forgetNote, openCompose, patchBrain, saveNote, type Selection } from "../../store/brain";
 import { confirmDialog } from "../../store/uiStore";
 import { copyText, revealPath } from "../util/pick";
+
+const CONFIDENCE_LABEL: Record<"confirmed" | "suggested", MessageKey> = {
+  confirmed: "brain.confidence.confirmed",
+  suggested: "brain.confidence.suggested",
+};
 
 interface Draft {
   title: string;
@@ -26,6 +34,7 @@ function draftOf(text: string, inbox: boolean): Draft {
 }
 
 export function NoteDetail({ dir, sel, index }: { dir: string; sel: Selection; index: BrainIndex | null }) {
+  const t = useT();
   const meta = (sel.inbox ? index?.inbox : index?.notes)?.find((n) => n.slug === sel.slug) ?? null;
   const [file, setFile] = useState<BrainNoteFile | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -53,9 +62,9 @@ export function NoteDetail({ dir, sel, index }: { dir: string; sel: Selection; i
 
   const changedOnDisk = editing && !!file && !!meta && meta.modifiedMs !== 0 && file.modifiedMs !== null && Math.abs(meta.modifiedMs - file.modifiedMs) > 1;
 
-  if (error) return <div className="br-detail"><div className="br-error">could not read the note: {error}</div></div>;
-  if (!file) return <div className="br-detail"><div className="br-muted br-pad">reading…</div></div>;
-  if (!file.exists) return <div className="br-detail"><div className="br-muted br-pad">this note is gone (deleted or approved meanwhile)</div></div>;
+  if (error) return <div className="br-detail"><div className="br-error">{t("brain.detail.readError", { error })}</div></div>;
+  if (!file) return <div className="br-detail"><div className="br-muted br-pad">{t("brain.reading")}</div></div>;
+  if (!file.exists) return <div className="br-detail"><div className="br-muted br-pad">{t("brain.detail.gone")}</div></div>;
 
   const f = noteFields(file.text, sel.inbox);
   const title = f.title || meta?.title || sel.slug;
@@ -88,7 +97,7 @@ export function NoteDetail({ dir, sel, index }: { dir: string; sel: Selection; i
     }
   };
   const cancel = async () => {
-    if (dirty && !(await confirmDialog({ title: "Discard your edits?", message: "The note stays as it is on disk.", confirmLabel: "Discard", danger: true }))) return;
+    if (dirty && !(await confirmDialog({ title: t("brain.detail.discardTitle"), message: t("brain.detail.discardMessage"), confirmLabel: t("brain.confirmDiscard"), danger: true }))) return;
     setDraft(null);
   };
   const reloadFromDisk = async () => {
@@ -102,9 +111,9 @@ export function NoteDetail({ dir, sel, index }: { dir: string; sel: Selection; i
   };
 
   return (
-    <div className="br-detail" aria-label={`Memory: ${title}`}>
+    <div className="br-detail" aria-label={t("brain.detail.aria", { title })}>
       <div className="br-box-label">
-        <span>{sel.inbox ? "suggestion · inbox" : "memory · notes"}</span>
+        <span>{t(sel.inbox ? "brain.detail.boxInbox" : "brain.detail.boxNotes")}</span>
         <span className="br-box-label-right">{sel.slug}.md</span>
       </div>
       {!editing ? (
@@ -116,22 +125,22 @@ export function NoteDetail({ dir, sel, index }: { dir: string; sel: Selection; i
             {title}
           </h3>
           <dl className="br-fields">
-            <dt>kind</dt>
-            <dd>{KIND_LABEL[f.kind]}</dd>
-            <dt>tags</dt>
-            <dd>{f.tags.length ? f.tags.map((t) => `#${t}`).join(" ") : <span className="br-muted">—</span>}</dd>
-            <dt>source</dt>
+            <dt>{t("brain.field.kind")}</dt>
+            <dd>{t(KIND_LABEL[f.kind])}</dd>
+            <dt>{t("brain.field.tags")}</dt>
+            <dd>{f.tags.length ? f.tags.map((tg) => `#${tg}`).join(" ") : <span className="br-muted">—</span>}</dd>
+            <dt>{t("brain.field.source")}</dt>
             <dd>{f.source || <span className="br-muted">—</span>}</dd>
-            <dt>dates</dt>
+            <dt>{t("brain.detail.dates")}</dt>
             <dd>
-              {f.created ? `created ${f.created}` : <span className="br-muted">no created date</span>}
-              {f.updated && f.updated !== f.created ? ` · updated ${f.updated}` : ""}
+              {f.created ? t("brain.detail.created", { date: f.created }) : <span className="br-muted">{t("brain.detail.noCreated")}</span>}
+              {f.updated && f.updated !== f.created ? ` · ${t("brain.detail.updated", { date: f.updated })}` : ""}
             </dd>
-            <dt>status</dt>
-            <dd className={f.confidence === "suggested" ? "is-suggested" : "is-confirmed"}>{f.confidence}</dd>
+            <dt>{t("brain.detail.status")}</dt>
+            <dd className={f.confidence === "suggested" ? "is-suggested" : "is-confirmed"}>{t(CONFIDENCE_LABEL[f.confidence])}</dd>
             {f.supersedes && (
               <>
-                <dt>replaces</dt>
+                <dt>{t("brain.detail.replaces")}</dt>
                 <dd>
                   <button type="button" className="link-btn mono" onClick={() => patchBrain({ selected: { slug: f.supersedes, inbox: false } })}>
                     {f.supersedes}
@@ -141,17 +150,17 @@ export function NoteDetail({ dir, sel, index }: { dir: string; sel: Selection; i
             )}
             {meta?.supersededBy && (
               <>
-                <dt>replaced by</dt>
+                <dt>{t("brain.detail.replacedBy")}</dt>
                 <dd>
                   <button type="button" className="link-btn mono" onClick={() => patchBrain({ selected: { slug: meta.supersededBy!, inbox: false } })}>
                     {meta.supersededBy}
                   </button>{" "}
-                  <span className="br-muted">(read that one instead)</span>
+                  <span className="br-muted">{t("brain.detail.readInstead")}</span>
                 </dd>
               </>
             )}
           </dl>
-          <pre className="br-text">{f.body || "(empty)"}</pre>
+          <pre className="br-text">{f.body || t("brain.detail.empty")}</pre>
         </>
       ) : (
         <div
@@ -170,90 +179,92 @@ export function NoteDetail({ dir, sel, index }: { dir: string; sel: Selection; i
         >
           {changedOnDisk && (
             <div className="br-warn" role="status">
-              The file changed on disk while you were editing (an agent may have updated it).{" "}
-              <button type="button" className="link-btn" onClick={() => void reloadFromDisk()}>
-                Load the latest version
-              </button>{" "}
-              (discards your edits).
+              {t.rich("brain.detail.changedOnDisk", {
+                reload: (c: ReactNode) => (
+                  <button type="button" className="link-btn" onClick={() => void reloadFromDisk()}>
+                    {c}
+                  </button>
+                ),
+              })}
             </div>
           )}
           <label className="br-field br-field-wide">
-            <span className="br-label">title</span>
+            <span className="br-label">{t("brain.field.title")}</span>
             <input className="br-input" value={draft.title} onChange={(e) => setDraft({ ...draft, title: e.target.value })} maxLength={120} spellCheck={false} autoFocus />
           </label>
           <label className="br-field">
-            <span className="br-label">kind</span>
+            <span className="br-label">{t("brain.field.kind")}</span>
             <select className="br-input" value={draft.kind} onChange={(e) => setDraft({ ...draft, kind: e.target.value as BrainKind })}>
               {BRAIN_KINDS.map((k) => (
                 <option key={k} value={k}>
-                  {KIND_LABEL[k]}
+                  {t(KIND_LABEL[k])}
                 </option>
               ))}
             </select>
           </label>
           <label className="br-field">
-            <span className="br-label">tags</span>
+            <span className="br-label">{t("brain.field.tags")}</span>
             <input className="br-input" value={draft.tags} onChange={(e) => setDraft({ ...draft, tags: e.target.value })} placeholder="auth, ci" spellCheck={false} />
           </label>
           <label className="br-field">
-            <span className="br-label">source</span>
+            <span className="br-label">{t("brain.field.source")}</span>
             <input className="br-input" value={draft.source} onChange={(e) => setDraft({ ...draft, source: e.target.value })} spellCheck={false} />
           </label>
           <label className="br-field">
-            <span className="br-label">supersedes</span>
-            <input className="br-input" value={draft.supersedes} onChange={(e) => setDraft({ ...draft, supersedes: e.target.value })} placeholder="slug of the note it replaces" spellCheck={false} />
+            <span className="br-label">{t("brain.field.supersedes")}</span>
+            <input className="br-input" value={draft.supersedes} onChange={(e) => setDraft({ ...draft, supersedes: e.target.value })} placeholder={t("brain.detail.supersedesPlaceholder")} spellCheck={false} />
           </label>
           <label className="br-field br-field-wide">
-            <span className="br-label">memory</span>
+            <span className="br-label">{t("brain.field.memory")}</span>
             <textarea className="br-input br-body" value={draft.body} onChange={(e) => setDraft({ ...draft, body: e.target.value })} rows={10} spellCheck={false} />
           </label>
-          <div className="br-hint">Ctrl+S saves · unknown front matter keys are kept · secret-looking values are masked on save</div>
+          <div className="br-hint">{t("brain.detail.hint")}</div>
         </div>
       )}
 
       <div className="br-actions">
-        <button type="button" className="link-btn mono br-path" title="Show the file" onClick={() => void revealPath(file.path)}>
+        <button type="button" className="link-btn mono br-path" title={t("brain.detail.showFile")} onClick={() => void revealPath(file.path)}>
           {file.path}
         </button>
         {editing ? (
           <>
             <button type="button" className="br-btn" onClick={() => void cancel()}>
-              cancel
+              {t("brain.detail.cancel")}
             </button>
             <button type="button" className="br-btn is-primary" disabled={busy || !dirty} onClick={() => void save()}>
-              {busy ? "saving…" : "save"}
+              {t(busy ? "brain.detail.saving" : "brain.detail.save")}
             </button>
           </>
         ) : sel.inbox ? (
           <>
             <button type="button" className="br-btn" onClick={() => setDraft(draftOf(file.text, true))}>
-              edit
+              {t("brain.detail.edit")}
             </button>
-            <button type="button" className="br-btn is-danger" onClick={() => void discardSuggestion(dir, sel.slug, title)} title="Delete this suggestion (Undo in the toast)">
-              discard
+            <button type="button" className="br-btn is-danger" onClick={() => void discardSuggestion(dir, sel.slug, title)} title={t("brain.detail.discardSuggestionTitle")}>
+              {t("brain.detail.discard")}
             </button>
-            <button type="button" className="br-btn is-primary" onClick={() => void approveSuggestion(dir, sel.slug)} title="Move it to notes/ as a confirmed memory">
-              approve
+            <button type="button" className="br-btn is-primary" onClick={() => void approveSuggestion(dir, sel.slug)} title={t("brain.detail.approveTitle")}>
+              {t("brain.detail.approve")}
             </button>
           </>
         ) : (
           <>
-            <button type="button" className="br-btn" onClick={() => void copyText(file.text, "Note copied")} title="Copy the Markdown">
-              copy
+            <button type="button" className="br-btn" onClick={() => void copyText(file.text, t("brain.detail.copied"))} title={t("brain.detail.copyTitle")}>
+              {t("brain.detail.copy")}
             </button>
             <button type="button" className="br-btn" onClick={() => setDraft(draftOf(file.text, false))}>
-              edit
+              {t("brain.detail.edit")}
             </button>
             <button
               type="button"
               className="br-btn"
-              title="Write a newer note that replaces this one (this one stays as history)"
+              title={t("brain.detail.supersedeTitle")}
               onClick={() => openCompose({ dir, title: f.title || title, kind: f.kind, tags: f.tags, body: f.body, source: "user", supersedes: sel.slug, target: "notes" })}
             >
-              supersede…
+              {t("brain.detail.supersede")}
             </button>
-            <button type="button" className="br-btn is-danger" onClick={() => void forgetNote(dir, sel.slug, title)} title="Delete this memory (Undo in the toast)">
-              forget
+            <button type="button" className="br-btn is-danger" onClick={() => void forgetNote(dir, sel.slug, title)} title={t("brain.detail.forgetTitle")}>
+              {t("brain.detail.forget")}
             </button>
           </>
         )}

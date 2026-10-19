@@ -21,18 +21,18 @@
   gap: 3px;
   padding: 5px 8px 6px 10px;
   border: 1px solid var(--mc-line);
-  border-left: 2px solid var(--rc);
+  border-inline-start: 2px solid var(--rc);
   border-radius: var(--radius-s);
   background: var(--bg-0);
   min-width: 0;
 }
 .so-card:hover {
   border-color: var(--text-2);
-  border-left-color: var(--rc);
+  border-inline-start-color: var(--rc);
 }
 .so-card.is-waiting {
   border-color: var(--accent);
-  border-left-color: var(--rc);
+  border-inline-start-color: var(--rc);
   box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 22%, transparent);
   animation: so-needs 2.4s ease-in-out infinite;
 }
@@ -101,7 +101,7 @@
   flex-wrap: wrap;
   align-items: baseline;
   row-gap: 1px;
-  padding-left: 12px;
+  padding-inline-start: 12px;
   color: var(--text-1);
   font-size: var(--mc-fs);
   line-height: 16px;
@@ -109,7 +109,7 @@
 }
 .so-evidence::before {
   content: "└";
-  margin-left: -12px;
+  margin-inline-start: -12px;
   width: 12px;
   color: var(--mc-line);
 }
@@ -211,7 +211,7 @@
   color: var(--text-2);
 }
 .so-handoff-note {
-  margin-right: auto;
+  margin-inline-end: auto;
   font-size: var(--fs-xs);
   color: var(--text-2);
 }
@@ -242,7 +242,7 @@
   color: var(--text-2);
   font-size: var(--fs-2xs);
   letter-spacing: 0.03em;
-  text-align: left;
+  text-align: start;
   cursor: pointer;
 }
 .changes-sub-head:hover {
@@ -250,7 +250,7 @@
   color: var(--text-1);
 }
 .changes-sub-head.is-static {
-  padding-left: 24px;
+  padding-inline-start: 24px;
   cursor: default;
 }
 .changes-sub-head.is-static:hover {
@@ -268,7 +268,7 @@
   color: var(--text-1);
 }
 .changes-sub-meta {
-  margin-left: auto;
+  margin-inline-start: auto;
   flex: 0 0 auto;
   white-space: nowrap;
 }

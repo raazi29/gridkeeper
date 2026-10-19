@@ -38,7 +38,7 @@ notify("info", t("command.toast.ports", { count: n })); // outside components: p
 - Components call `const t = useT()`; everything else imports `t`.
 - One key per **whole sentence**. Don't glue translated fragments together: word order differs between languages.
   Use separate keys, `{x, select, …}` or `{n, plural, …}` instead.
-- Rich text: `t.rich("settings.agents.costMeterHint", { code: (c) => <code>{c}</code> })` renders `<code>…</code>`
+- Rich text: `t.rich("settings.agents.costMeterDisclosure", { code: (c) => <code>{c}</code> })` renders `<code>…</code>`
   markers in the message. Plain `t()` strips the markers.
 - Numbers, dates: `formatNumber`, `formatDate`, or `intlLocale()` for `toLocale*String` calls.
 - Keys built at runtime: check with `isMessageKey(key)` first.
@@ -94,6 +94,7 @@ stay left-to-right. The pane grid keeps its left-to-right order (pane 1 top left
 right" expect); each pane's own header is right-to-left. Chevrons carry `icon-dir` and mirror. Arabic numbers use
 Western digits (0-9) so they match terminal output and version strings.
 
-Mission Control's stylesheets (`mission.css`, `missionBoard.css`, `leadControl.css`, `mcDrag.css`,
-`signoff.css`) still use physical `left` / `right` in places: they are converted together with the Mission Control
-strings.
+Mission Control: cards, lanes, panels and the board mirror like the rest of the shell. The canvas geometry stays
+physical on purpose (node positions come from the layout code, and the zoom controls, minimap and the resizable
+agent panel stay on the right, where their drag math expects them), as do the timeline's time axis and decorative
+animations.

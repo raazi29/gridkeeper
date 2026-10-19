@@ -60,6 +60,7 @@ export function contextText(now = Date.now()): string {
 }
 
 /** Open the "add memory" dialog prefilled from `text` (or the Mission Control context). */
+// Agent-facing: stays English (typed into agents / written to files): `source` is the note's front matter value.
 export function rememberText(text: string = contextText()): void {
   const draft = text.trim() ? draftFromText(text) : { title: "", kind: "fact" as const, body: "" };
   openCompose({ ...draft, source: text.trim() ? "Mission Control" : "user", target: "notes" });

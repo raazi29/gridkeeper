@@ -20,6 +20,7 @@ import { useShallow } from "zustand/react/shallow";
 import { confirmCloseSession, deleteGroupFlow, jumpToSession } from "../../actions/commands";
 import { closeSessions, messageSessions, restartSessions, restartTargets, stopSessions } from "../../actions/groupActions";
 import { closeSession, startSession } from "../../actions/sessions";
+import { t, useT, type MessageKey } from "../../i18n";
 import { commandForEvent } from "../../keybindings";
 import { chipText, dayKey, rankProgress, streakInfo } from "../../lib/flightlog";
 import { ipc } from "../../lib/ipc";
@@ -130,16 +131,16 @@ interface GroupRow {
 }
 
 function sessionName(id: SessionId): string {
-  return useApp.getState().persisted.sessions.find((m) => m.id === id)?.name ?? "session";
+  return useApp.getState().persisted.sessions.find((m) => m.id === id)?.name ?? t("command.sessionFallbackName");
 }
 
 /** Del on a card: always asks (a stopped session's definition is removed too). */
 async function confirmRemove(id: SessionId): Promise<void> {
   if (isLive(useApp.getState().runtime[id])) return confirmCloseSession(id);
   const ok = await confirmDialog({
-    title: `Close “${sessionName(id)}”?`,
-    message: "Removes the pane and its session definition. The process is not running.",
-    confirmLabel: "Close",
+    title: t("command.closeSession.title", { name: sessionName(id) }),
+    message: t("mc.remove.message"),
+    confirmLabel: t("common.close"),
     danger: true,
   });
   if (ok) await closeSession(id);
@@ -159,11 +160,13 @@ function metaOf(id: SessionId) {
 /** "“name” → Build, position 2 of 3" (position among the lane's visible cards: no leads, no browser panes). */
 function describePlace(id: SessionId): string {
   const loc = findGroupOf(id);
-  if (!loc) return `Moved “${sessionName(id)}”`;
+  if (!loc) return t("mc.move.moved", { name: sessionName(id) });
   const metas = new Map(useApp.getState().persisted.sessions.map((m) => [m.id, m]));
   const visible = processSessionIds(loc.group.sessionIds, metas).filter((x) => metas.get(x)?.role !== "lead");
   const pos = visible.indexOf(id);
-  return pos < 0 ? `Moved “${sessionName(id)}” to ${loc.group.name}` : `Moved “${sessionName(id)}” to ${loc.group.name}, position ${pos + 1} of ${visible.length}`;
+  return pos < 0
+    ? t("mc.move.movedTo", { name: sessionName(id), lane: loc.group.name })
+    : t("mc.move.movedToPosition", { name: sessionName(id), lane: loc.group.name, pos: pos + 1, count: visible.length });
 }
 
 /**
@@ -183,10 +186,10 @@ function moveCardToLane(id: SessionId, groupId: string, anchor: Anchor): string 
     app.updateSessionMeta(id, { role: null });
     actionToast({
       kind: "info",
-      message: `“${sessionName(id)}” is no longer the lead`,
-      detail: `moved to ${target.name}`,
+      message: t("mc.move.noLongerLead", { name: sessionName(id) }),
+      detail: t("mc.move.movedToDetail", { lane: target.name }),
       action: {
-        label: "Undo",
+        label: t("mc.move.undo"),
         run: () => {
           const a = useApp.getState();
           a.updateSessionMeta(id, { role: "lead" });
@@ -208,11 +211,11 @@ function makeLead(id: SessionId): string | null {
   if (old)
     actionToast({
       kind: "info",
-      message: `“${m.name}” is now the lead`,
-      detail: `was ${old}`,
-      action: { label: "Undo", run: () => useApp.getState().updateSessionMeta(id, { role: old }) },
+      message: t("mc.move.nowLead", { name: m.name }),
+      detail: t("mc.move.wasRole", { role: old }),
+      action: { label: t("mc.move.undo"), run: () => useApp.getState().updateSessionMeta(id, { role: old }) },
     });
-  return `“${m.name}” is now the lead`;
+  return t("mc.move.nowLead", { name: m.name });
 }
 
 /** New empty group "Lane N" at the end. The grid behind Mission Control keeps its active group. */
@@ -239,7 +242,7 @@ function moveLane(dragId: string, targetId: string, side: DropSide): string | nu
   if (useApp.getState().persisted === before) return null;
   const after = useApp.getState().persisted.workspaces.find((w) => w.id === ws.id);
   const at = after?.groups.findIndex((g) => g.id === dragId) ?? -1;
-  return `Moved lane “${ws.groups[from].name}” to position ${at + 1} of ${ws.groups.length}`;
+  return t("mc.move.laneMoved", { name: ws.groups[from].name, pos: at + 1, count: ws.groups.length });
 }
 
 /** Card nearest to the pointer inside a lane (the dragged card excluded) and the side the pointer is on. */
@@ -263,10 +266,10 @@ function headerMenu(projectDir: string | null, deck: MenuItem[] = []): MenuItem[
   const fl = useFlightLog.getState().data;
   const items: MenuItem[] = [];
   if (fl.enabled)
-    items.push({ label: "Flight log…", hint: chipText(streakInfo(fl.days, dayKey(Date.now())).current, rankProgress(fl.tasks).rank), onSelect: openFlightLog });
+    items.push({ label: t("mc.header.flightLog"), hint: chipText(streakInfo(fl.days, dayKey(Date.now())).current, rankProgress(fl.tasks).rank), onSelect: openFlightLog });
   items.push(
     {
-      label: rec ? "Stop recording the replay" : "Record a mission replay",
+      label: rec ? t("mc.header.replayStop") : t("mc.header.replayRecord"),
       disabled: !projectDir,
       onSelect: () => {
         if (!projectDir) return;
@@ -274,10 +277,10 @@ function headerMenu(projectDir: string | null, deck: MenuItem[] = []): MenuItem[
         else void startRecording(projectDir, { manual: true });
       },
     },
-    { label: "Replay…", onSelect: () => openReplay(projectDir) },
+    { label: t("mc.header.replay"), onSelect: () => openReplay(projectDir) },
     "separator",
-    { label: "Copy project path", disabled: !projectDir, onSelect: () => projectDir && void copyText(projectDir, "Project path copied") },
-    { label: `Show project folder in ${fileManagerName()}`, disabled: !projectDir, onSelect: () => projectDir && void revealPath(projectDir) },
+    { label: t("mc.header.copyPath"), disabled: !projectDir, onSelect: () => projectDir && void copyText(projectDir, t("mc.header.pathCopied")) },
+    { label: t("mc.header.showFolder", { app: fileManagerName() }), disabled: !projectDir, onSelect: () => projectDir && void revealPath(projectDir) },
   );
   if (deck.length) items.push("separator", ...deck);
   return items;
@@ -346,9 +349,15 @@ function escapeLayer(): boolean {
 }
 
 const VIEW_ICON: Record<McView, () => React.ReactNode> = { graph: () => <IcGraph />, board: () => <IcBoard />, timeline: () => <IcTimeline />, list: () => <IcList /> };
-const VIEW_HINT: Record<McView, string> = { graph: T.views.graphHint, board: T.views.boardHint, timeline: T.views.timelineHint, list: T.views.listHint };
+const VIEW_HINT: Record<McView, MessageKey> = {
+  graph: "mc.text.views.graphHint",
+  board: "mc.text.views.boardHint",
+  timeline: "mc.text.views.timelineHint",
+  list: "mc.text.views.listHint",
+};
 
 export function MissionControl() {
+  const t = useT();
   const close = useCallback(() => useMission.getState().toggle(false), []);
   const panel = useRef<HTMLDivElement>(null);
   const modalId = useRef(0);
@@ -694,9 +703,9 @@ export function MissionControl() {
   const onPin = useCallback(
     (id: SessionId) => {
       const on = togglePin(wsId, id);
-      say(`${on ? "Pinned" : "Unpinned"} “${sessionName(id)}”`);
+      say(t(on ? "mc.move.pinned" : "mc.move.unpinned", { name: sessionName(id) }));
     },
-    [wsId, say],
+    [wsId, say, t],
   );
   const spotAgent = useCallback((id: SessionId) => {
     const d = useDeck.getState();
@@ -706,9 +715,9 @@ export function MissionControl() {
     (v: McView) => {
       if (useDeck.getState().view === v) return;
       setDeck({ view: v });
-      say(`${T.views[v]} view`);
+      say(t("mc.header.viewAnnounce", { view: v }));
     },
-    [setDeck, say],
+    [setDeck, say, t],
   );
 
   // Rubber band (Shift+drag or the select tool on the empty canvas): cards under it are selected live.
@@ -745,13 +754,13 @@ export function MissionControl() {
   // Find (Ctrl/⌘+F): agents (name, role, lane, branch) and mission tasks.
   const findAgents = useMemo<FindAgent[]>(() => {
     const metas = useApp.getState().persisted.sessions;
-    const rows = [...model.leads.map((id) => ({ id, lane: "lead" })), ...model.lanes.flatMap((l) => l.ids.map((id) => ({ id, lane: l.name })))];
+    const rows = [...model.leads.map((id) => ({ id, lane: t("mc.leadLaneName") })), ...model.lanes.flatMap((l) => l.ids.map((id) => ({ id, lane: l.name })))];
     return rows.map(({ id, lane }) => {
       const m = metas.find((x) => x.id === id);
       return { id, name: m?.name ?? "", role: m?.role ?? null, lane, branch: m?.worktree ? (m.worktree.branch ?? null) : null };
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [model, names]);
+  }, [model, names, t]);
   const hits = useMemo<FindHit[]>(() => (findOpen ? findHits(findQuery, findAgents, tasks) : []), [findOpen, findQuery, findAgents, tasks]);
   const goHit = useCallback((h: FindHit) => {
     const v = useDeck.getState().view;
@@ -803,10 +812,10 @@ export function MissionControl() {
       actionToast({
         kind: "info",
         message: T.selection.moved(ids.length, name),
-        action: { label: "Undo", run: () => before.forEach((b) => useApp.getState().moveSessionToGroup(b.id, b.groupId, b.index)) },
+        action: { label: t("mc.move.undo"), run: () => before.forEach((b) => useApp.getState().moveSessionToGroup(b.id, b.groupId, b.index)) },
       });
     },
-    [wsId, say],
+    [wsId, say, t],
   );
   const assignSelection = useCallback(
     (t: Task) => {
@@ -880,7 +889,7 @@ export function MissionControl() {
   const keyboardMoveCard = (id: SessionId, key: string) => {
     const li = model.lanes.findIndex((l) => l.ids.includes(id));
     if (li < 0) {
-      say("Leads stay in the lead box. Drag the card onto a lane to move it there.");
+      say(t("mc.move.leadsStay"));
       return;
     }
     const lane = model.lanes[li];
@@ -890,7 +899,7 @@ export function MissionControl() {
       const pos = lane.ids.indexOf(id);
       const nb = lane.ids[left ? pos - 1 : pos + 1];
       if (!nb) {
-        say(`“${sessionName(id)}” is already ${left ? "first" : "last"} in ${lane.name}`);
+        say(t(left ? "mc.move.alreadyFirst" : "mc.move.alreadyLast", { name: sessionName(id), lane: lane.name }));
         return;
       }
       msg = moveCardToLane(id, lane.groupId, { id: nb, side: left ? "before" : "after" });
@@ -898,7 +907,7 @@ export function MissionControl() {
       const up = key === "ArrowUp";
       const target = model.lanes[up ? li - 1 : li + 1];
       if (!target) {
-        say(`No lane ${up ? "before" : "after"} ${lane.name}`);
+        say(t(up ? "mc.move.noLaneBefore" : "mc.move.noLaneAfter", { lane: lane.name }));
         return;
       }
       useMission.getState().toggleCollapsed(target.groupId, false);
@@ -912,7 +921,7 @@ export function MissionControl() {
     const li = model.lanes.findIndex((l) => l.groupId === groupId);
     const nb = model.lanes[left ? li - 1 : li + 1];
     if (li < 0 || !nb) {
-      say(`Lane is already ${left ? "first" : "last"}`);
+      say(t(left ? "mc.move.laneAlreadyFirst" : "mc.move.laneAlreadyLast"));
       return;
     }
     say(moveLane(groupId, nb.groupId, left ? "before" : "after"));
@@ -995,7 +1004,7 @@ export function MissionControl() {
           void startSession(selected, conv && m ? m.resumeOnRestore : { mode: "none" });
         }
       });
-    } else if (plain && selected && (e.key === "m" || e.key === "M") && !e.shiftKey) act(() => messageSessions([selected], `“${sessionName(selected)}”`));
+    } else if (plain && selected && (e.key === "m" || e.key === "M") && !e.shiftKey) act(() => messageSessions([selected], t("mc.whatSession", { name: sessionName(selected) })));
     else if (plain && selected && e.key === "Delete") act(() => void confirmRemove(selected));
     else if (plain && selected && e.key === "F2") act(() => requestRename(selected, "mission"));
     else if ((e.key === "ArrowRight" || e.key === "ArrowLeft") && e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey && selected) {
@@ -1070,8 +1079,8 @@ export function MissionControl() {
   const homeOf = useCallback((id: SessionId) => home.current(id), []);
   const laneList = useMemo(() => model.lanes.map((l) => ({ id: l.groupId, name: l.name })), [model]);
   const viewAgents = useMemo(
-    () => [...model.leads.map((id) => ({ id, lane: "lead", laneName: "lead" })), ...model.lanes.flatMap((l) => l.ids.map((id) => ({ id, lane: l.groupId, laneName: l.name })))],
-    [model],
+    () => [...model.leads.map((id) => ({ id, lane: "lead", laneName: t("mc.leadLaneName") })), ...model.lanes.flatMap((l) => l.ids.map((id) => ({ id, lane: l.groupId, laneName: l.name })))],
+    [model, t],
   );
   const laneNameOf = (id: SessionId) => viewAgents.find((a) => a.id === id)?.laneName ?? null;
   const openTasks = useMemo(() => tasks.filter((t) => t.state !== "done"), [tasks]);
@@ -1093,8 +1102,8 @@ export function MissionControl() {
     : spotlight.kind === "agent"
       ? sessionName(spotlight.id)
       : spotlight.id === "lead"
-        ? "lead box"
-        : `lane ${model.lanes.find((l) => l.groupId === spotlight.id)?.name ?? ""}`;
+        ? t("mc.leadBox.name")
+        : t("mc.deck.spotlightLane", { name: model.lanes.find((l) => l.groupId === spotlight.id)?.name ?? "" });
 
   return createPortal(
     <div className="mc-backdrop" onMouseDown={(e) => e.target === e.currentTarget && close()}>
@@ -1114,7 +1123,7 @@ export function MissionControl() {
           </span>
           <div className="mc-head-meta">
             <span className="mc-strong mc-ws" title={projectDir ? `${wsName}\n${projectDir}` : wsName}>
-              {wsName || "no workspace"}
+              {wsName || t("mc.header.noWorkspace")}
             </span>
             {projectDir && (
               <span className="mc-path" title={projectDir}>
@@ -1124,21 +1133,25 @@ export function MissionControl() {
             {git?.isRepo && (
               <span
                 className="mc-branch"
-                title={[`branch ${git.branch ?? "detached"}${git.dirty ? " (uncommitted changes)" : ""}`, git.root ?? "", git.worktrees.length > 1 ? `${git.worktrees.length} worktrees` : ""]
+                title={[
+                  t(git.dirty ? "mc.header.branchDirty" : "mc.header.branch", { branch: git.branch ?? t("mc.header.detached") }),
+                  git.root ?? "",
+                  git.worktrees.length > 1 ? t("mc.header.worktrees", { count: git.worktrees.length }) : "",
+                ]
                   .filter(Boolean)
                   .join("\n")}
               >
                 <span className="mc-branch-name">
-                  ⎇ {git.branch ?? "detached"}
+                  ⎇ {git.branch ?? t("mc.header.detached")}
                   {git.dirty ? " *" : ""}
                 </span>
-                {git.worktrees.length > 1 && <span className="mc-branch-wt">· {git.worktrees.length} worktrees</span>}
+                {git.worktrees.length > 1 && <span className="mc-branch-wt">· {t("mc.header.worktrees", { count: git.worktrees.length })}</span>}
               </span>
             )}
           </div>
           <div className="mc-views" role="tablist" aria-label={T.views.label}>
             {VIEWS.map((v, i) => (
-              <button key={v} type="button" role="tab" aria-selected={view === v} className={`mc-view-btn${view === v ? " is-on" : ""}`} title={VIEW_HINT[v]} onClick={() => setView(v)}>
+              <button key={v} type="button" role="tab" aria-selected={view === v} className={`mc-view-btn${view === v ? " is-on" : ""}`} title={t(VIEW_HINT[v])} onClick={() => setView(v)}>
                 {VIEW_ICON[v]()}
                 <span className="mc-view-label">{T.views[v]}</span>
                 <kbd className="mc-view-key">{i + 1}</kbd>
@@ -1146,16 +1159,16 @@ export function MissionControl() {
             ))}
           </div>
           <span className="mc-bracket mc-head-count">
-            agents [ <b>{model.counts.live}</b>/<b>{total}</b> ]
+            {t.rich("mc.statusLine.agents", { live: model.counts.live, total, b: (c) => <b>{c}</b> })}
           </span>
           {model.signoff.length > 0 && (
             <button
               type="button"
               className={`mc-btn mc-head-signoff${signoffNeeds ? " is-needs" : ""}`}
-              title="Scroll to the sign-off box: sessions that finished or wait for you"
+              title={t("mc.header.signoffTitle")}
               onClick={showSignoff}
             >
-              sign-off [ <b>{model.signoff.length}</b> ] ↓
+              {t.rich("mc.header.signoff", { count: model.signoff.length, b: (c) => <b>{c}</b> })}
             </button>
           )}
           <span className="mc-head-actions">
@@ -1166,30 +1179,30 @@ export function MissionControl() {
             ))}
             <FlightLogChip />
             <ReplayHeaderControls projectDir={projectDir} />
-            <button type="button" className="mc-btn" title="Brain: the team's long-term project memory (.gridkeeper/brain)" onClick={() => openBrain({ dir: projectDir })}>brain</button>
+            <button type="button" className="mc-btn" title={t("mc.header.brainTitle")} onClick={() => openBrain({ dir: projectDir })}>{t("mc.header.brain")}</button>
             <button
               type="button"
               className="mc-btn"
               disabled={model.counts.live === 0}
-              title="Type one line to several running sessions (nothing is sent until you press Send)"
-              onClick={() => messageSessions(allIds, "this workspace")}
+              title={t("mc.header.messageAllTitle")}
+              onClick={() => messageSessions(allIds, t("mc.whatThisWorkspace"))}
             >
-              message all…
+              {t("mc.header.messageAll")}
             </button>
             <button type="button" className="mc-btn is-primary" onClick={() => useMission.getState().openFormation()}>
-              launch formation…
+              {t("mc.launchFormation")}
             </button>
             <button
               type="button"
               className="mc-btn mc-btn-icon"
-              aria-label="More Mission Control actions"
+              aria-label={t("mc.header.moreLabel")}
               aria-haspopup="menu"
-              title="More: flight log, replay recording, project folder"
+              title={t("mc.header.moreTitle")}
               onClick={(e) =>
                 openMenu(
                   anchorOf(e.currentTarget),
                   headerMenu(projectDir, [
-                    { label: T.menu.minimap, hint: "Shift+M", checked: minimapOn, onSelect: () => setDeck({ minimap: !minimapOn }) },
+                    { label: T.menu.minimap, hint: `${t("keys.shift")}+M`, checked: minimapOn, onSelect: () => setDeck({ minimap: !minimapOn }) },
                     { label: T.menu.starfield, checked: starfield, onSelect: () => setDeck({ starfield: !starfield }) },
                     { label: T.menu.resetView, hint: "0", disabled: view !== "graph", onSelect: () => canvasApi.home() },
                     { label: T.menu.shortcuts, hint: "?", onSelect: () => setDeck({ sheetOpen: true }) },
@@ -1199,7 +1212,7 @@ export function MissionControl() {
             >
               ⋯
             </button>
-            <button type="button" className="mc-btn" aria-label="Close" title="Close (Esc)" onClick={close}>
+            <button type="button" className="mc-btn" aria-label={t("common.close")} title={t("ui.closeEsc")} onClick={close}>
               esc ✕
             </button>
           </span>
@@ -1303,39 +1316,39 @@ export function MissionControl() {
         <ActivityRiver sessions={riverSessions} still={still} roles={rolesPresent} />
         <SessionLog workspaceIds={wsIdSet} />
 
-        <footer className="mc-status" aria-label="Status">
+        <footer className="mc-status" aria-label={t("mc.statusLine.label")}>
           <span>
-            workspace [ <b>{wsName || "—"}</b> ]
+            {t.rich("mc.statusLine.workspace", { name: wsName || "—", b: (c) => <b>{c}</b> })}
           </span>
           <span>
-            agents [ <b>{model.counts.live}</b>/<b>{total}</b> ]
+            {t.rich("mc.statusLine.agents", { live: model.counts.live, total, b: (c) => <b>{c}</b> })}
           </span>
           <span className="is-working">
-            working [ <b>{model.counts.working}</b> ]
+            {t.rich("mc.statusLine.working", { count: model.counts.working, b: (c) => <b>{c}</b> })}
           </span>
           <span className={model.counts.needs ? "is-needs" : ""}>
-            needs-you [ <b>{model.counts.needs}</b> ]
+            {t.rich("mc.statusLine.needs", { count: model.counts.needs, b: (c) => <b>{c}</b> })}
           </span>
           {taskStats.total > 0 && (
-            <span title="Mission tasks done / total (.gridkeeper/mission.md)">
-              tasks [ <b>{taskStats.done}</b>/<b>{taskStats.total}</b> ]
+            <span title={t("mc.statusLine.tasksTitle")}>
+              {t.rich("mc.statusLine.tasks", { done: taskStats.done, total: taskStats.total, b: (c) => <b>{c}</b> })}
             </span>
           )}
-          <span title="Terminal output of this workspace's sessions (PTY bytes, not tokens)">
-            out [ <b>{formatRate(outTotal)}</b> ]
+          <span title={t("mc.statusLine.outTitle")}>
+            {t.rich("mc.statusLine.out", { rate: formatRate(outTotal), b: (c) => <b>{c}</b> })}
           </span>
           <WorkspaceCost ids={allIds} />
           {wsId && <SpendToday workspaceId={wsId} variant="mc" />}
           <CostMeterHint ids={allIds} variant="mc" />
           <span className="mc-spacer" />
           <span className="mc-keys" title={T.footer.keys}>
-            <kbd>click</kbd> select · <kbd>dbl-click</kbd>/<kbd>enter</kbd> jump · <kbd>ctrl/⇧ click</kbd> multi · <kbd>space+drag</kbd> pan · <kbd>ctrl+wheel</kbd> zoom · <kbd>F</kbd> fit · <kbd>1–4</kbd> views · <kbd>ctrl+F</kbd> find · <kbd>?</kbd> all keys
+            {t.rich("mc.statusLine.keys", { kbd: (c) => <kbd>{c}</kbd> })}
           </span>
         </footer>
         <div className="mc-sr" role="status" aria-live="polite" aria-atomic="true">
           {announce}
         </div>
-        {briefing && mission.doc && <Briefing doc={mission.doc} title={wsName || "Mission"} onClose={closeBriefing} />}
+        {briefing && mission.doc && <Briefing doc={mission.doc} title={wsName || t("mc.briefingFallback")} onClose={closeBriefing} />}
         {sheetOpen && <ShortcutSheet />}
       </div>
       {menu.element}
@@ -1388,10 +1401,11 @@ function spotLane(id: string) {
 
 /** One lamp per session: the one-line summary of a collapsed box. */
 function Lamps({ ids, lamps }: { ids: SessionId[]; lamps: Record<SessionId, FleetLamp> }) {
+  const t = useT();
   return (
     <span className="mc-lamps" aria-hidden="true">
       {ids.map((id) => (
-        <span key={id} className={`attn-lamp attn-lamp--${lamps[id] ?? "stopped"}`} title={`${sessionName(id)}: ${lamps[id] ?? "stopped"}`} />
+        <span key={id} className={`attn-lamp attn-lamp--${lamps[id] ?? "stopped"}`} title={t("mc.lampTitle", { name: sessionName(id), lamp: lamps[id] ?? "stopped" })} />
       ))}
     </span>
   );
@@ -1399,13 +1413,14 @@ function Lamps({ ids, lamps }: { ids: SessionId[]; lamps: Record<SessionId, Flee
 
 /** ▾ / ▸ in a box label: collapse to a one-line summary (Mission UI store, this run only). */
 function FoldToggle({ k, collapsed, what }: { k: string; collapsed: boolean; what: string }) {
+  const t = useT();
   return (
     <button
       type="button"
       className="mc-fold"
       aria-expanded={!collapsed}
-      aria-label={`${collapsed ? "Expand" : "Collapse"} ${what}`}
-      title={collapsed ? "Expand" : "Collapse to one line"}
+      aria-label={t(collapsed ? "mc.fold.expandWhat" : "mc.fold.collapseWhat", { what })}
+      title={t(collapsed ? "mc.fold.expand" : "mc.fold.collapse")}
       onClick={(e) => {
         e.stopPropagation();
         useMission.getState().toggleCollapsed(k);
@@ -1469,12 +1484,13 @@ function LeadNode({
   autopilot,
   ...deck
 }: CardProps & { leads: SessionId[]; lanes: LaneModel[]; allIds: SessionId[]; collapsed: boolean; autopilot: boolean }) {
+  const t = useT();
   const liveLeads = useApp((s) => leads.filter((id) => isLive(s.runtime[id])).length);
   const drop = useLeadDrop(onMoved);
   const dropCls = `${drop.over ? " is-drop-target" : ""}${autopilot ? " is-autopilot" : ""}${deck.spotlight?.kind === "lane" ? (deck.spotlight.id === "lead" ? " is-spot" : " is-dim") : ""}`;
   const phases = lanes.length > 0 && (
-    <div className="mc-lead-phases mc-micro" aria-label="Workflow phases">
-      <span>workflow</span>
+    <div className="mc-lead-phases mc-micro" aria-label={t("mc.leadBox.phasesLabel")}>
+      <span>{t("mc.leadBox.workflow")}</span>
       {lanes.map((l, i) => {
         const mark = phaseMark(l);
         const cls = mark === "✓" ? "is-done" : mark === "!" ? "is-needs" : mark === "●" ? "is-active" : "";
@@ -1491,9 +1507,9 @@ function LeadNode({
   if (leads.length === 0)
     return (
       <div data-node="lead" className={`mc-node mc-lead is-placeholder${dropCls}`} {...drop.handlers}>
-        <span className="mc-node-label">lead · orchestrator</span>
+        <span className="mc-node-label">{t("mc.leadBox.title")}</span>
         {phases}
-        <div>no lead yet — pick the session that coordinates the others, or drag its card here</div>
+        <div>{t("mc.leadBox.noLead")}</div>
         <AssignLead ids={allIds} />
         <LeadControl leads={leads} />
       </div>
@@ -1502,28 +1518,28 @@ function LeadNode({
     return (
       <div data-node="lead" className={`mc-node mc-lead is-solid is-collapsed${dropCls}`} {...drop.handlers}>
         <span className="mc-node-label mc-box-label">
-          <FoldToggle k={LEAD_BOX} collapsed what="lead box" />
-          lead · orchestrator
+          <FoldToggle k={LEAD_BOX} collapsed what={t("mc.leadBox.name")} />
+          {t("mc.leadBox.title")}
         </span>
-        <span className="mc-node-label mc-node-label-right">{leads.length === 1 ? "1 lead" : `${leads.length} leads`}</span>
+        <span className="mc-node-label mc-node-label-right">{t("mc.leadBox.count", { count: leads.length })}</span>
         <div className="mc-collapsed-line">
           <Lamps ids={leads} lamps={lamps} />
           <span>
-            {leads.map(sessionName).join(", ")} · {liveLeads} running
+            {t("mc.leadBox.collapsedLine", { names: leads.map(sessionName).join(", "), count: liveLeads })}
           </span>
-          {lanes.length > 0 && <span className="mc-bracket">· {lanes.length === 1 ? "1 lane" : `${lanes.length} lanes`}</span>}
+          {lanes.length > 0 && <span className="mc-bracket">· {t("mc.leadBox.laneCount", { count: lanes.length })}</span>}
         </div>
       </div>
     );
   return (
     <div data-node="lead" className={`mc-node mc-lead is-solid${dropCls}`} {...drop.handlers}>
       <span className="mc-node-label mc-box-label">
-        <FoldToggle k={LEAD_BOX} collapsed={false} what="lead box" />
-        <span className="mc-lane-name is-spotable" title={T.lane.spotlight("lead")} onClick={() => spotLane("lead")}>
-          lead · orchestrator
+        <FoldToggle k={LEAD_BOX} collapsed={false} what={t("mc.leadBox.name")} />
+        <span className="mc-lane-name is-spotable" title={T.lane.spotlight(t("mc.leadLaneName"))} onClick={() => spotLane("lead")}>
+          {t("mc.leadBox.title")}
         </span>
       </span>
-      <span className="mc-node-label mc-node-label-right">{leads.length === 1 ? "1 lead" : `${leads.length} leads`}</span>
+      <span className="mc-node-label mc-node-label-right">{t("mc.leadBox.count", { count: leads.length })}</span>
       <div className="mc-node-actions">
         {phases}
         <span className="mc-spacer" />
@@ -1531,10 +1547,10 @@ function LeadNode({
           type="button"
           className="mc-btn"
           disabled={liveLeads === 0}
-          title={liveLeads ? "Type a line to the lead (opens the composer; nothing is sent until you press Send)" : "The lead is not running"}
-          onClick={() => messageSessions(leads, "the lead")}
+          title={liveLeads ? t("mc.leadBox.messageTitle") : t("mc.leadBox.notRunning")}
+          onClick={() => messageSessions(leads, t("mc.whatTheLead"))}
         >
-          message lead…
+          {t("mc.leadBox.message")}
         </button>
       </div>
       <div className="mc-cards">
@@ -1562,6 +1578,7 @@ function LeadNode({
 
 /** "assign lead…": a menu of this workspace's sessions; picking one gives it the lead role. */
 function AssignLead({ ids }: { ids: SessionId[] }) {
+  const t = useT();
   const menu = useContextMenu();
   const options = useApp(
     useShallow((s) =>
@@ -1576,7 +1593,7 @@ function AssignLead({ ids }: { ids: SessionId[] }) {
     const [id, name, agent, live] = o.split(SEP);
     return {
       label: name,
-      hint: live ? "running" : undefined,
+      hint: live ? t("mc.leadBox.running") : undefined,
       icon: <AgentGlyph agent={agent as Parameters<typeof AgentGlyph>[0]["agent"]} size={11} />,
       onSelect: () => useApp.getState().updateSessionMeta(id, { role: "lead" }),
     };
@@ -1590,7 +1607,7 @@ function AssignLead({ ids }: { ids: SessionId[] }) {
         aria-expanded={menu.isOpen}
         onClick={(e) => menu.openAt(e.currentTarget, items)}
       >
-        assign lead… ▾
+        {t("mc.leadBox.assign")} ▾
       </button>
       {menu.element}
     </div>
@@ -1625,8 +1642,9 @@ function LaneNode({
   renaming: boolean;
   onRenaming: (groupId: string | null) => void;
 }) {
+  const t = useT();
   const progress = laneProgress(lane);
-  const what = `lane “${lane.name}”`;
+  const what = t("mc.laneBox.what", { name: lane.name });
   const canRestart = useApp((s) => restartTargets(lane.ids, s.persisted.sessions, s.runtime).length > 0);
   // "remove lane" only for a really empty group (no hidden lead / browser pane) that is not the last one.
   const removable = useApp((s) => {
@@ -1655,7 +1673,7 @@ function LaneNode({
       <span
         className="mc-grip"
         draggable={!renaming}
-        title="Drag to reorder lanes (or focus the lane and press Alt+←/→)"
+        title={t("mc.laneBox.gripTitle")}
         aria-hidden="true"
         onDragStart={(e) => {
           e.stopPropagation();
@@ -1675,11 +1693,11 @@ function LaneNode({
       ) : (
         <span
           className="mc-lane-name is-spotable"
-          title={`Lane ${index}: ${lane.name} — click: spotlight (the others dim) · double-click: rename (F2 on the lane)`}
+          title={t("mc.laneBox.nameTitle", { index, name: lane.name })}
           onClick={() => spotLane(lane.groupId)}
           onDoubleClick={() => onRenaming(lane.groupId)}
         >
-          lane {index} · {lane.name}
+          {t("mc.laneBox.label", { index, name: lane.name })}
         </span>
       )}
     </span>
@@ -1689,7 +1707,7 @@ function LaneNode({
     "data-lane-drop": drop.state?.kind === "lane" ? drop.state.side : undefined,
     className: cls,
     tabIndex: -1,
-    "aria-label": `Lane ${index}: ${lane.name}`,
+    "aria-label": t("mc.laneBox.aria", { index, name: lane.name }),
     onContextMenu: (e: React.MouseEvent) => {
       if ((e.target as HTMLElement).closest("[data-card], input, button")) return;
       laneMenu(e);
@@ -1700,15 +1718,15 @@ function LaneNode({
     return (
       <div {...box}>
         {label}
-        <span className="mc-node-label mc-node-label-right">{lane.total === 1 ? "1 agent" : `${lane.total} agents`}</span>
+        <span className="mc-node-label mc-node-label-right">{t("mc.laneBox.agentCount", { count: lane.total })}</span>
         <div className="mc-collapsed-line">
           <Lamps ids={lane.ids} lamps={lamps} />
-          <span>{progress ? progress.label : "empty"}</span>
-          {taskCount > 0 && <span>· {taskCount === 1 ? "1 task" : `${taskCount} tasks`}</span>}
+          <span>{progress ? progress.label : t("mc.laneBox.empty")}</span>
+          {taskCount > 0 && <span>· {t("mc.laneBox.taskCount", { count: taskCount })}</span>}
           <span className="mc-lane-stats">
-            {lane.working > 0 && <span className="is-working">{lane.working} working</span>}
-            {lane.needs > 0 && <span className="is-needs">{lane.needs} need you</span>}
-            {lane.errors > 0 && <span className="is-err">{lane.errors} error</span>}
+            {lane.working > 0 && <span className="is-working">{t("mc.laneBox.working", { count: lane.working })}</span>}
+            {lane.needs > 0 && <span className="is-needs">{t("mc.laneBox.needs", { count: lane.needs })}</span>}
+            {lane.errors > 0 && <span className="is-err">{t("mc.laneBox.errors", { count: lane.errors })}</span>}
           </span>
         </div>
       </div>
@@ -1716,50 +1734,50 @@ function LaneNode({
   return (
     <div {...box}>
       {label}
-      <span className="mc-node-label mc-node-label-right">{lane.total === 1 ? "1 agent" : `${lane.total} agents`}</span>
-      <div className="mc-lane-actions" role="toolbar" aria-label={`${lane.name} actions`}>
-        <QuickLaunchButton groupId={lane.groupId} variant="ghost" label="add" />
+      <span className="mc-node-label mc-node-label-right">{t("mc.laneBox.agentCount", { count: lane.total })}</span>
+      <div className="mc-lane-actions" role="toolbar" aria-label={t("mc.laneBox.actionsLabel", { name: lane.name })}>
+        <QuickLaunchButton groupId={lane.groupId} variant="ghost" label={t("mc.laneBox.add")} />
         {lane.total > 0 ? (
           <>
             <button
               type="button"
               className="mc-btn"
               disabled={lane.live === 0}
-              aria-label="Message lane"
-              title="Type one line to this lane's running sessions"
+              aria-label={t("mc.laneBox.messageLabel")}
+              title={t("mc.laneBox.messageTitle")}
               onClick={() => messageSessions(lane.ids, what)}
             >
-              message…
+              {t("mc.laneBox.message")}
             </button>
             <button
               type="button"
               className="mc-btn mc-lane-opt"
               disabled={!canRestart}
-              aria-label="Restart lane"
-              title="Restart every session of this lane (asks first)"
+              aria-label={t("mc.laneBox.restartLabel")}
+              title={t("mc.laneBox.restartTitle")}
               onClick={() => void restartSessions(lane.ids, what)}
             >
-              restart
+              {t("mc.laneBox.restart")}
             </button>
             <button
               type="button"
               className="mc-btn mc-lane-opt"
               disabled={lane.live === 0}
-              aria-label="Stop lane"
-              title="Stop this lane's running sessions (asks first)"
+              aria-label={t("mc.laneBox.stopLabel")}
+              title={t("mc.laneBox.stopTitle")}
               onClick={() => void stopSessions(lane.ids, what)}
             >
-              stop
+              {t("mc.laneBox.stop")}
             </button>
           </>
         ) : (
           <>
             <button type="button" className="mc-btn is-primary" onClick={() => useMission.getState().openFormation({ groupId: lane.groupId })}>
-              launch formation…
+              {t("mc.launchFormation")}
             </button>
             {removable && (
-              <button type="button" className="mc-btn" title="Remove this empty lane (its group)" onClick={() => void deleteGroupFlow(lane.groupId)}>
-                remove lane
+              <button type="button" className="mc-btn" title={t("mc.laneBox.removeTitle")} onClick={() => void deleteGroupFlow(lane.groupId)}>
+                {t("mc.laneBox.remove")}
               </button>
             )}
           </>
@@ -1768,9 +1786,9 @@ function LaneNode({
         <button
           type="button"
           className="mc-btn mc-btn-icon"
-          aria-label={`More actions for ${lane.name}`}
+          aria-label={t("mc.laneBox.moreLabel", { name: lane.name })}
           aria-haspopup="menu"
-          title="More lane actions"
+          title={t("mc.laneBox.moreTitle")}
           onClick={(e) => laneMenu(anchorOf(e.currentTarget))}
         >
           ⋯
@@ -1783,15 +1801,15 @@ function LaneNode({
             {lane.done > 0 && <i key={lane.done} className="mc-progress-sweep" aria-hidden="true" />}
           </span>
           <span>{progress.label}</span>
-          {taskCount > 0 && <span title="Mission tasks owned by this lane's sessions">· {taskCount === 1 ? "1 task" : `${taskCount} tasks`}</span>}
+          {taskCount > 0 && <span title={t("mc.laneBox.tasksTitle")}>· {t("mc.laneBox.taskCount", { count: taskCount })}</span>}
           <span className="mc-lane-stats">
-            {lane.working > 0 && <span className="is-working">{lane.working} working</span>}
-            {lane.needs > 0 && <span className="is-needs">{lane.needs} need you</span>}
-            {lane.errors > 0 && <span className="is-err">{lane.errors} error</span>}
+            {lane.working > 0 && <span className="is-working">{t("mc.laneBox.working", { count: lane.working })}</span>}
+            {lane.needs > 0 && <span className="is-needs">{t("mc.laneBox.needs", { count: lane.needs })}</span>}
+            {lane.errors > 0 && <span className="is-err">{t("mc.laneBox.errors", { count: lane.errors })}</span>}
           </span>
         </div>
       ) : (
-        <div className="mc-empty">empty group — add a session, launch a formation or drag a card here</div>
+        <div className="mc-empty">{t("mc.laneBox.emptyGroup")}</div>
       )}
       <div className="mc-cards">
         {lane.ids.map((id) => (
@@ -1873,12 +1891,13 @@ function useLaneDrop(lane: LaneModel, collapsed: boolean, onMoved: OnMoved) {
 
 /** Inline lane rename in the box label (same rules as a group tab: trimmed, unchanged / empty = no-op). */
 function LaneRename({ groupId, name, onDone }: { groupId: string; name: string; onDone: () => void }) {
+  const t = useT();
   const done = useRef(false);
   const finish = (value: string | null, input: HTMLInputElement) => {
     if (done.current) return;
     done.current = true;
-    const t = value?.trim();
-    if (t && t !== name) useApp.getState().renameGroup(groupId, t);
+    const next = value?.trim();
+    if (next && next !== name) useApp.getState().renameGroup(groupId, next);
     const box = input.closest<HTMLElement>("[data-node]");
     onDone();
     requestAnimationFrame(() => box?.isConnected && box.focus());
@@ -1890,7 +1909,7 @@ function LaneRename({ groupId, name, onDone }: { groupId: string; name: string; 
       autoFocus
       spellCheck={false}
       maxLength={64}
-      aria-label="Lane name"
+      aria-label={t("mc.laneBox.nameInput")}
       onFocus={(e) => e.currentTarget.select()}
       onClick={(e) => e.stopPropagation()}
       onDoubleClick={(e) => e.stopPropagation()}
@@ -1909,6 +1928,7 @@ function LaneRename({ groupId, name, onDone }: { groupId: string; name: string; 
  * a card is dragged, a drop zone under the lanes. Dropping a card on either creates "Lane N" with it.
  */
 function NewLaneDrop({ wsId, zone, onMoved, onRenaming }: { wsId: string | null; zone?: boolean; onMoved: OnMoved; onRenaming: (groupId: string | null) => void }) {
+  const t = useT();
   const dragging = useMcDragKind((s) => s.kind === "session");
   const [over, setOver] = useState(false);
   useEffect(() => {
@@ -1939,7 +1959,7 @@ function NewLaneDrop({ wsId, zone, onMoved, onRenaming }: { wsId: string | null;
     return (
       <div className="mc-row">
         <div className={`mc-newlane-zone${over ? " is-over" : ""}`} {...handlers}>
-          + drop here → new lane
+          {t("mc.laneBox.dropNew")}
         </div>
       </div>
     );
@@ -1947,29 +1967,30 @@ function NewLaneDrop({ wsId, zone, onMoved, onRenaming }: { wsId: string | null;
     <button
       type="button"
       className={`mc-newlane${dragging ? " is-armed" : ""}${over ? " is-over" : ""}`}
-      title="Add an empty lane (a new group in this workspace); drop a card here to move it into a new lane"
+      title={t("mc.laneBox.newTitle")}
       disabled={!wsId}
       onClick={() => {
         const gid = createLane(wsId);
         if (gid) onRenaming(gid);
-        onMoved(null, gid ? "New lane added" : null);
+        onMoved(null, gid ? t("mc.laneBox.added") : null);
       }}
       {...handlers}
     >
-      + new lane
+      {t("mc.laneBox.new")}
     </button>
   );
 }
 
 function EmptyMission({ groupId }: { groupId: string | undefined }) {
+  const t = useT();
   return (
     <div data-node="lead" className="mc-node mc-lead is-placeholder">
-      <span className="mc-node-label">team</span>
-      <div>No agents in this workspace yet.</div>
+      <span className="mc-node-label">{t("mc.emptyTeam.label")}</span>
+      <div>{t("mc.emptyTeam.text")}</div>
       <div className="mc-empty-actions">
-        {groupId && <QuickLaunchButton groupId={groupId} variant="ghost" label="Add session" />}
+        {groupId && <QuickLaunchButton groupId={groupId} variant="ghost" label={t("quickLaunch.addSession")} />}
         <button type="button" className="mc-btn is-primary" onClick={() => useMission.getState().openFormation({ groupId })}>
-          launch formation…
+          {t("mc.launchFormation")}
         </button>
       </div>
     </div>

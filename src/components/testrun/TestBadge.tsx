@@ -3,6 +3,7 @@
 // is active the elapsed time ticks once a second (only then; no timer otherwise).
 
 import { useEffect, useState, type MouseEvent } from "react";
+import { useT } from "../../i18n";
 import { ensureTestRuns, latestRunFor, openTestLog, useTestRuns } from "../../store/testrun";
 import { badgeText, badgeTitle, badgeTone, isActiveStatus } from "./format";
 import "../../styles/testrun.css";
@@ -20,6 +21,7 @@ export function useTicking(active: boolean, external?: number): number {
 }
 
 export function TestBadge({ path, now, className }: { path: string | null | undefined; now?: number; className?: string }) {
+  const t = useT();
   const run = useTestRuns((s) => latestRunFor(s, path));
   useEffect(() => {
     void ensureTestRuns();
@@ -36,7 +38,7 @@ export function TestBadge({ path, now, className }: { path: string | null | unde
       tabIndex={-1}
       className={`tr-badge is-${badgeTone(run.status)}${className ? ` ${className}` : ""}`}
       title={badgeTitle(run)}
-      aria-label={`${badgeText(run, clock)}: open the test log`}
+      aria-label={t("testrun.badge.aria", { badge: badgeText(run, clock) })}
       onMouseDown={(e) => e.preventDefault()}
       onClick={open}
     >

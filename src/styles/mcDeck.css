@@ -33,7 +33,7 @@
   cursor: pointer;
 }
 .mc-view-btn + .mc-view-btn {
-  border-left: 1px solid var(--mc-line);
+  border-inline-start: 1px solid var(--mc-line);
 }
 .mc-view-btn:hover {
   color: var(--text-0);
@@ -180,7 +180,7 @@
 }
 .mc-deck-seg-label {
   padding: 0 8px;
-  border-right: 1px solid var(--mc-line);
+  border-inline-end: 1px solid var(--mc-line);
   line-height: 20px;
 }
 .mc-deck-find {
@@ -355,7 +355,7 @@
   cursor: pointer;
 }
 .mc-zoom-seg button + button {
-  border-left: 1px solid var(--mc-line);
+  border-inline-start: 1px solid var(--mc-line);
 }
 .mc-zoom-seg button:hover:not(:disabled) {
   color: var(--text-0);
@@ -641,10 +641,10 @@
 .mc-selbar-count {
   color: var(--text-0);
   font-weight: 600;
-  margin-right: 4px;
+  margin-inline-end: 4px;
 }
 .mc-selbar-clear {
-  margin-left: 4px;
+  margin-inline-start: 4px;
 }
 @keyframes mc-bar-in {
   from {
@@ -738,7 +738,7 @@
   color: var(--text-1);
   font-family: var(--font-mono);
   font-size: var(--mc-fs);
-  text-align: left;
+  text-align: start;
   cursor: pointer;
 }
 .mc-find-hit:hover {

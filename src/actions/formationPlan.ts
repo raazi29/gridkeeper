@@ -1,7 +1,10 @@
 // Formations (team templates) — pure planning. A template (built-in or saved) plus the dialog's options
 // becomes a FormationPlan: the exact groups, sessions and `git worktree add` commands that WILL be run.
 // Nothing here touches the store or IPC (unit-tested in node); execution lives in actions/formations.ts.
+// Language: formation names / descriptions, plan errors, warnings and the plan text are in the UI language.
+// Group names, session names (agents address each other by them) and saved / exported template data stay English.
 
+import { t } from "../i18n";
 import type { AgentKind, LayoutPreset } from "../lib/types";
 import { normalizeRole } from "../lib/roles";
 import { defaultWorktreePath, isValidBranchName } from "../components/util/text";
@@ -57,10 +60,35 @@ export function roleKeyOf(role: string | null | undefined): string {
 }
 export const MAX_SCOUTS = 16;
 
-export const BUILTIN_FORMATIONS: { id: BuiltinFormationId; name: string; description: string }[] = [
-  { id: "pbv", name: "Plan · Build · Verify", description: "A Claude lead plans, N builders implement (each in its own worktree), a Codex reviewer (+ optional Claude verifier) checks." },
-  { id: "pair", name: "Pair", description: "One Claude builder and one Codex reviewer side by side, sharing one worktree." },
-  { id: "swarm", name: "Scout swarm", description: "N lightweight scouts exploring in parallel in the project folder (read-only by convention)." },
+/** Built-in formations; name and description are getters (translated when read). */
+export const BUILTIN_FORMATIONS: readonly { id: BuiltinFormationId; readonly name: string; readonly description: string }[] = [
+  {
+    id: "pbv",
+    get name() {
+      return t("formations.builtin.pbv.name");
+    },
+    get description() {
+      return t("formations.builtin.pbv.description");
+    },
+  },
+  {
+    id: "pair",
+    get name() {
+      return t("formations.builtin.pair.name");
+    },
+    get description() {
+      return t("formations.builtin.pair.description");
+    },
+  },
+  {
+    id: "swarm",
+    get name() {
+      return t("formations.builtin.swarm.name");
+    },
+    get description() {
+      return t("formations.builtin.swarm.description");
+    },
+  },
 ];
 
 const clampInt = (n: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, Math.round(Number.isFinite(n) ? n : lo)));
@@ -185,17 +213,15 @@ export function formationStamp(d: Date): string {
   return `${two(d.getMonth() + 1)}${two(d.getDate())}-${two(d.getHours())}${two(d.getMinutes())}`;
 }
 
-const SHARED_PROFILE_NOTE = "Concurrent token refreshes in one profile can force a re-login (Claude Code #91708).";
-
 export function buildFormationPlan(input: PlanInput): FormationPlan {
   const errors: string[] = [];
   const warnings: string[] = [];
   const projectDir = input.projectDir.trim();
-  if (!projectDir) errors.push("Choose a project folder.");
+  if (!projectDir) errors.push(t("formations.plan.noFolder"));
   const wantsWorktrees = input.useWorktrees && input.template.groups.some((g) => g.slots.some((s) => s.worktreeKey));
-  if (wantsWorktrees && !input.repoRoot) errors.push("Worktrees need the project folder to be a Git repository.");
+  if (wantsWorktrees && !input.repoRoot) errors.push(t("formations.plan.needsRepo"));
   const prefix = input.branchPrefix.trim();
-  if (prefix && /[\s~^:?*\[\\]|\.\.|@\{/.test(prefix)) errors.push(`Branch prefix “${prefix}” contains characters Git does not allow.`);
+  if (prefix && /[\s~^:?*\[\\]|\.\.|@\{/.test(prefix)) errors.push(t("formations.plan.badPrefix", { prefix }));
 
   // Session names: role, or role-N when the role occurs more than once.
   const roleTotals = new Map<string, number>();
@@ -217,7 +243,7 @@ export function buildFormationPlan(input: PlanInput): FormationPlan {
     if (choice === PROFILE_SAVED) {
       const id = slot.profileId ?? null;
       if (id && !input.profiles.some((p) => p.id === id)) {
-        warnings.push(`A saved Claude profile no longer exists; “${slot.name ?? role}” uses the default profile.`);
+        warnings.push(t("formations.plan.savedProfileGone", { name: slot.name ?? role }));
         return null;
       }
       return id;
@@ -235,7 +261,7 @@ export function buildFormationPlan(input: PlanInput): FormationPlan {
       const n = (roleSeen.get(role) ?? 0) + 1;
       roleSeen.set(role, n);
       const { agent, preset, command } = parseAgentKey(slot.agent);
-      if (agent === "generic" && !preset && !command) errors.push(`Unknown agent “${slot.agent}” for ${role}.`);
+      if (agent === "generic" && !preset && !command) errors.push(t("formations.plan.unknownAgent", { agent: slot.agent, role }));
       let worktreeKey: string | null = null;
       let cwd = projectDir;
       if (wantsWorktrees && input.repoRoot && slot.worktreeKey) {
@@ -245,9 +271,9 @@ export function buildFormationPlan(input: PlanInput): FormationPlan {
           const branch = formationBranch(prefix, input.stamp, worktreeKey);
           const path = defaultWorktreePath(input.repoRoot, branch);
           wt = { key: worktreeKey, branch, path, command: `git worktree add -b ${branch} "${path}"` };
-          if (!isValidBranchName(branch)) errors.push(`Invalid branch name “${branch}”.`);
-          if (existingBranches.has(branch)) errors.push(`Branch “${branch}” is already checked out in a worktree.`);
-          if (existingPaths.has(path.toLowerCase())) errors.push(`A worktree already exists at ${path}.`);
+          if (!isValidBranchName(branch)) errors.push(t("formations.plan.badBranch", { branch }));
+          if (existingBranches.has(branch)) errors.push(t("formations.plan.branchTaken", { branch }));
+          if (existingPaths.has(path.toLowerCase())) errors.push(t("formations.plan.pathTaken", { path }));
           wtByKey.set(worktreeKey, wt);
           worktrees.push(wt);
         }
@@ -290,7 +316,7 @@ export function buildFormationPlan(input: PlanInput): FormationPlan {
   const seenPath = new Set<string>();
   for (const w of worktrees) {
     const k = w.path.toLowerCase();
-    if (seenPath.has(k)) errors.push(`Two worktrees would use the same folder: ${w.path}`);
+    if (seenPath.has(k)) errors.push(t("formations.plan.samePath", { path: w.path }));
     seenPath.add(k);
   }
 
@@ -299,11 +325,11 @@ export function buildFormationPlan(input: PlanInput): FormationPlan {
   for (const g of groups) for (const s of g.sessions) if (s.agent === "claude") use.set(s.profileId ?? "", (use.get(s.profileId ?? "") ?? 0) + 1);
   for (const [id, planned] of use) {
     const total = planned + (input.liveProfileUse[id] ?? 0);
-    if (total > 1) warnings.push(`Claude profile “${profileName(id || null) ?? "default"}” would run in ${total} concurrent sessions. ${SHARED_PROFILE_NOTE}`);
+    if (total > 1) warnings.push(t("formations.plan.sharedProfile", { name: profileName(id || null) ?? t("formations.plan.defaultProfile"), count: total }));
   }
 
   const sessionCount = groups.reduce((n, g) => n + g.sessions.length, 0);
-  if (sessionCount === 0) errors.push("This formation has no sessions.");
+  if (sessionCount === 0) errors.push(t("formations.plan.empty"));
   return { name: input.template.name, repoRoot: input.repoRoot, groups, worktrees, warnings, errors, sessionCount };
 }
 
@@ -311,19 +337,24 @@ export function buildFormationPlan(input: PlanInput): FormationPlan {
 export function describePlan(plan: FormationPlan): string {
   const lines: string[] = [];
   if (plan.worktrees.length && plan.repoRoot) {
-    lines.push(`# ${plan.worktrees.length} new worktree${plan.worktrees.length === 1 ? "" : "s"} (run one by one; stops at the first failure)`);
+    lines.push(`# ${t("formations.plan.worktreesHeader", { count: plan.worktrees.length })}`);
     lines.push(`cd "${plan.repoRoot}"`);
     for (const w of plan.worktrees) lines.push(w.command);
     lines.push("");
   }
   for (const g of plan.groups) {
-    lines.push(`# group “${g.name}” (${g.layout})`);
+    lines.push(`# ${t("formations.plan.groupHeader", { name: g.name, layout: g.layout })}`);
     for (const s of g.sessions) {
       const agent = s.agent === "generic" ? (s.preset ?? s.command ?? "command") : s.agent;
       const bits = [`${s.name.padEnd(12)} ${agent}`];
-      if (s.profileName) bits.push(`account ${s.profileName}`);
-      bits.push(s.worktreeKey ? `in worktree ${plan.worktrees.find((w) => w.key === s.worktreeKey)?.branch ?? s.worktreeKey}` : `in ${s.cwd}`);
-      if (s.prompt) bits.push("starter prompt once it is idle");
+      // profileName is "default" (data) for Claude's default profile; shown in the UI language.
+      if (s.profileName) bits.push(t("formations.plan.account", { name: s.profileId ? s.profileName : t("formations.plan.defaultProfile") }));
+      bits.push(
+        s.worktreeKey
+          ? t("formations.plan.inWorktree", { branch: plan.worktrees.find((w) => w.key === s.worktreeKey)?.branch ?? s.worktreeKey })
+          : t("formations.plan.inFolder", { path: s.cwd }),
+      );
+      if (s.prompt) bits.push(t("formations.plan.starterPrompt"));
       lines.push(`  ${bits.join(" · ")}`);
     }
   }
@@ -343,7 +374,10 @@ export interface SnapshotSession {
   hasWorktree: boolean;
 }
 
-/** Template from an existing workspace layout (no prompts, no env, no conversation ids). */
+/**
+ * Template from an existing workspace layout (no prompts, no env, no conversation ids). Name fallback and description
+ * stay English: they are saved and exported with team templates (the dialog shows its own translated summary).
+ */
 export function templateFromWorkspace(name: string, groups: { name: string; layout: LayoutPreset; sessions: SnapshotSession[] }[], id: string): FormationTemplate {
   let wt = 0;
   return {

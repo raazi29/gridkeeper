@@ -1,6 +1,7 @@
 // Mission Control list view, pure (unit-tested): one row per agent and the column sort. Empty values (no data)
 // always sort last, whichever the direction; ties keep the cards' display order.
 
+import { intlLocale } from "../../i18n";
 import type { TaskState } from "../../lib/missionDoc";
 import type { SessionId } from "../../lib/types";
 import type { FleetLamp } from "../util/fleet";
@@ -67,7 +68,7 @@ export function sortRows(rows: readonly ListRow[], key: SortKey, dir: SortDir): 
     const va = valueOf(a, key);
     const vb = valueOf(b, key);
     if (va === null || vb === null) return va === vb ? a.order - b.order : va === null ? 1 : -1;
-    const c = typeof va === "number" && typeof vb === "number" ? va - vb : String(va).localeCompare(String(vb), undefined, { numeric: true });
+    const c = typeof va === "number" && typeof vb === "number" ? va - vb : String(va).localeCompare(String(vb), intlLocale(), { numeric: true });
     return c !== 0 ? c * sign : a.order - b.order;
   });
 }

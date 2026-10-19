@@ -2,6 +2,7 @@
 // stays flat; the peak is in the tooltip.
 
 import { memo } from "react";
+import { useT } from "../../i18n";
 import type { SessionId } from "../../lib/types";
 import { formatRate, useRates } from "../../store/rates";
 
@@ -24,12 +25,13 @@ export function sparkPath(values: number[], w = W, h = H, floor = FLOOR): { line
 }
 
 export const Sparkline = memo(function Sparkline({ id }: { id: SessionId }) {
+  const t = useT();
   const hist = useRates((s) => s.hist[id]);
-  if (!hist || hist.length < 2) return <span className="mc-spark-none">{hist ? "sampling…" : "no data"}</span>;
+  if (!hist || hist.length < 2) return <span className="mc-spark-none">{hist ? t("mcView.spark.sampling") : t("mcView.spark.noData")}</span>;
   const { line, area, peak } = sparkPath(hist);
   return (
-    <svg className="mc-spark" viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" role="img" aria-label={`Output rate, last 60 s, peak ${formatRate(peak)}`}>
-      <title>{`Terminal output, last ${Math.min(POINTS, hist.length)} s · peak ${formatRate(peak)}`}</title>
+    <svg className="mc-spark" viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" role="img" aria-label={t("mcView.spark.aria", { seconds: POINTS, peak: formatRate(peak) })}>
+      <title>{t("mcView.spark.title", { seconds: Math.min(POINTS, hist.length), peak: formatRate(peak) })}</title>
       <path d={area} fill="currentColor" opacity={0.14} />
       <path d={line} fill="none" stroke="currentColor" strokeWidth={1} vectorEffect="non-scaling-stroke" />
     </svg>

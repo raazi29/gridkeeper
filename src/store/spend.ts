@@ -18,12 +18,13 @@ import {
   normalizeGuard,
   parseLedger,
   pruneLedger,
+  spendNote,
   spentToday,
-  SPEND_NOTE,
   type SpendLedger,
 } from "../lib/spend";
 import type { SessionId, SessionMeter, SpendGuard } from "../lib/types";
 import { notify } from "../actions/notify";
+import { t } from "../i18n";
 import { useApp } from "./appStore";
 import { policyOf, setPolicy } from "./leadControl";
 import { useMeter } from "./meter";
@@ -98,7 +99,7 @@ async function osNotify(title: string, body: string): Promise<void> {
 /** The 100 % action. Returns the project folder whose Autopilot was paused (null: nothing paused). */
 function applyTrip(workspaceId: string, g: SpendGuard, spent: number): string | null {
   const ws = useApp.getState().persisted.workspaces.find((w) => w.id === workspaceId);
-  const name = ws?.name ?? "Workspace";
+  const name = ws?.name ?? t("spend.workspaceFallback");
   let pausedDir: string | null = null;
   if (g.action !== "warn" && ws?.projectDir) {
     const p = policyOf(ws.projectDir);
@@ -107,10 +108,9 @@ function applyTrip(workspaceId: string, g: SpendGuard, spent: number): string | 
       pausedDir = ws.projectDir;
     }
   }
-  const what = pausedDir ? " Autopilot is paused;" : "";
-  const msg = `${name}: today ~${formatUsd(spent)} reached the ${formatBudget(g.budgetUsd)} daily budget.${what} agents keep running. (${SPEND_NOTE})`;
-  notify("warn", msg, 12000);
-  if (g.action === "pauseNotify") void osNotify(`Spend guard: ${name}`, `Today ~${formatUsd(spent)} of ${formatBudget(g.budgetUsd)}.${what} Agents keep running.`);
+  const vals = { name, spent: formatUsd(spent), budget: formatBudget(g.budgetUsd) };
+  notify("warn", t(pausedDir ? "spend.toast.tripPaused" : "spend.toast.trip", { ...vals, note: spendNote() }), 12000);
+  if (g.action === "pauseNotify") void osNotify(t("spend.os.title", { name }), t(pausedDir ? "spend.os.bodyPaused" : "spend.os.body", vals));
   return pausedDir;
 }
 
@@ -126,8 +126,8 @@ export function evaluateGuards(workspaceIds: Iterable<string>, now = Date.now())
     if (trip) {
       l = markTripped(l, ws, g, now, applyTrip(ws, g, spent));
     } else if (warn) {
-      const name = useApp.getState().persisted.workspaces.find((w) => w.id === ws)?.name ?? "Workspace";
-      notify("warn", `${name}: today ~${formatUsd(spent)} of the ${formatBudget(g.budgetUsd)} daily budget (${g.warnPct}% reached; Claude Code's estimate).`, 8000);
+      const name = useApp.getState().persisted.workspaces.find((w) => w.id === ws)?.name ?? t("spend.workspaceFallback");
+      notify("warn", t("spend.toast.warn", { name, spent: formatUsd(spent), budget: formatBudget(g.budgetUsd), pct: g.warnPct }), 8000);
       l = markWarned(l, ws, g, now);
     }
   }

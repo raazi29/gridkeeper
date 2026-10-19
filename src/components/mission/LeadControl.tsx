@@ -10,6 +10,7 @@ import { useShallow } from "zustand/react/shallow";
 import { briefLeads, dismissProposal, sendProposal, setAutopilotPaused, setControlMode, setControlOptions } from "../../actions/leadControl";
 import { channelBriefText } from "../../actions/missionBrief";
 import { notify } from "../../actions/notify";
+import { t as translate, useT, type MessageKey } from "../../i18n";
 import type { SessionId } from "../../lib/types";
 import { isLive, selectActiveWorkspace, useApp } from "../../store/appStore";
 import { countAutopilot, countQueued, countWaiting, DEFAULT_POLICY, editProposal, useLeadControl, type ControlMode } from "../../store/leadControl";
@@ -18,23 +19,19 @@ import { dirKey } from "../../store/missionDoc";
 import { confirmDialog } from "../../store/uiStore";
 import "../../styles/leadControl.css";
 
-const MODES: { id: ControlMode; label: string; explain: string }[] = [
-  { id: "off", label: "off", explain: "The lead is only a label: .gridkeeper/outbox is ignored and no team file is written." },
-  { id: "advisor", label: "advisor", explain: "The lead sees the team in .gridkeeper/team.md; every instruction it writes waits here for your Send." },
-  { id: "autopilot", label: "autopilot", explain: "Messages and review requests are typed in when the target is idle; stop / restart still wait for you." },
+// Labels and explanations are catalog keys, translated at render.
+const MODES: { id: ControlMode; label: MessageKey; explain: MessageKey }[] = [
+  { id: "off", label: "lead.mode.off", explain: "lead.explain.off" },
+  { id: "advisor", label: "lead.mode.advisor", explain: "lead.explain.advisor" },
+  { id: "autopilot", label: "lead.mode.autopilot", explain: "lead.explain.autopilot" },
 ];
 
-const AUTOPILOT_DETAIL = [
-  "• message / review instructions from .gridkeeper/outbox/ are typed into the target and submitted with Enter — only while it is idle or done and not asking anything (never into a prompt or a permission question)",
-  "• at most 1 automatic delivery per agent every 20 s and 8 per minute; an item that finds no safe moment within 10 minutes comes back here for you",
-  "• stop / restart are never automatic: they stay here for you to confirm",
-  "• with auto-review on, a teammate's finished work is sent to the lead for review",
-  "• every automatic send is logged in the activity log",
-].join("\n");
+const AUTOPILOT_DETAIL: readonly MessageKey[] = ["lead.autopilot.detail1", "lead.autopilot.detail2", "lead.autopilot.detail3", "lead.autopilot.detail4", "lead.autopilot.detail5"];
 
-const SHARE_TIP =
-  "Adds the last 15 lines of each terminal to .gridkeeper/team.md so the lead can follow along. Output may contain secrets (Gridkeeper masks the ones it recognizes); team.md lives in the git-ignored .gridkeeper folder.";
-const REVIEW_TIP = "When a teammate finishes (new commits on its branch, or its task marked [x]), ask the lead to review it. Once per commit.";
+/** The confirmation's bullet list, one line per point. */
+function autopilotDetail(): string {
+  return AUTOPILOT_DETAIL.map((k) => translate(k)).join("\n");
+}
 
 function gridkeeperDir(dir: string): string {
   const sep = dir.includes("\\") || !dir.includes("/") ? "\\" : "/";
@@ -47,6 +44,7 @@ export interface LeadControlProps {
 }
 
 export function LeadControl({ leads }: LeadControlProps) {
+  const t = useT();
   const projectDir = useApp((s) => selectActiveWorkspace(s)?.projectDir ?? null);
   const key = projectDir ? dirKey(projectDir) : "";
   const mode = useLeadControl((s) => (s.policies[key] ?? DEFAULT_POLICY).mode);
@@ -58,8 +56,8 @@ export function LeadControl({ leads }: LeadControlProps) {
   const waiting = useLeadControl((s) => countWaiting(s, key));
   const liveLeads = useApp((s) => leads.filter((id) => isLive(s.runtime[id])).length);
 
-  const hint = leads.length === 0 && <div className="lc-hint">assign a lead to let it coordinate the team</div>;
-  if (!projectDir) return leads.length === 0 ? hint || null : <div className="lc-hint">lead control needs a project folder (see the mission board)</div>;
+  const hint = leads.length === 0 && <div className="lc-hint">{t("lead.assignHint")}</div>;
+  if (!projectDir) return leads.length === 0 ? hint || null : <div className="lc-hint">{t("lead.needsFolder")}</div>;
   if (leads.length === 0 && mode === "off") return hint || null;
 
   const current = MODES.find((m) => m.id === mode) ?? MODES[0];
@@ -70,10 +68,10 @@ export function LeadControl({ leads }: LeadControlProps) {
     if (next === "autopilot") {
       const pending = useLeadControl.getState().proposals.filter((p) => p.dirKey === key && p.status === "proposal" && (p.action === "message" || p.action === "review") && !p.edited).length;
       const ok = await confirmDialog({
-        title: "Turn on autopilot for this project?",
-        message: `Gridkeeper will deliver the lead's instructions without asking you first:${pending ? ` ${pending} waiting instruction${pending === 1 ? "" : "s"} will be delivered automatically too.` : ""} Pause any time here or in the status bar.`,
-        detail: AUTOPILOT_DETAIL,
-        confirmLabel: "Turn on autopilot",
+        title: t("lead.autopilot.confirmTitle"),
+        message: pending ? t("lead.autopilot.confirmMessagePending", { count: pending }) : t("lead.autopilot.confirmMessage"),
+        detail: autopilotDetail(),
+        confirmLabel: t("lead.autopilot.confirm"),
         danger: true,
       });
       if (!ok) return;
@@ -82,26 +80,31 @@ export function LeadControl({ leads }: LeadControlProps) {
   };
 
   const briefLead = async () => {
+    // Agent-facing: stays English (typed into agents / written to files). Shown as the dialog's detail.
     const text = channelBriefText("lead", `${gk}mission.md`);
     const ok = await confirmDialog({
-      title: "Tell the lead how to coordinate?",
-      message: "This line is typed into the running lead and submitted with Enter. A lead that is asking you something is skipped.",
+      title: t("lead.brief.title"),
+      message: t("lead.brief.message"),
       detail: text,
-      confirmLabel: "Send",
+      confirmLabel: t("lead.brief.send"),
     });
     if (!ok) return;
     const ids = leads.filter((id) => isLive(useApp.getState().runtime[id]));
     const r = await briefLeads(ids, text);
-    if (r.sent.length) notify(r.skipped.length ? "warn" : "info", `Lead briefed: ${r.sent.join(", ")}${r.skipped.length ? ` · skipped (asking something): ${r.skipped.join(", ")}` : ""}`);
-    else notify("warn", r.skipped.length ? `Not sent: ${r.skipped.join(", ")} is asking something — answer it first` : "No lead is running");
+    if (r.sent.length)
+      notify(
+        r.skipped.length ? "warn" : "info",
+        r.skipped.length ? t("lead.brief.sentSkipped", { names: r.sent.join(", "), skipped: r.skipped.join(", ") }) : t("lead.brief.sent", { names: r.sent.join(", ") }),
+      );
+    else notify("warn", r.skipped.length ? t("lead.brief.notSent", { names: r.skipped.join(", ") }) : t("lead.brief.noLead"));
   };
 
   return (
-    <div className={`lc is-${mode}${paused ? " is-paused" : ""}`} role="group" aria-label="Lead control">
+    <div className={`lc is-${mode}${paused ? " is-paused" : ""}`} role="group" aria-label={t("lead.aria")}>
       {hint}
       <div className="lc-row">
-        <span className="mc-micro lc-label">lead control</span>
-        <div className="lc-seg" role="radiogroup" aria-label="How much the lead may do">
+        <span className="mc-micro lc-label">{t("lead.label")}</span>
+        <div className="lc-seg" role="radiogroup" aria-label={t("lead.modeAria")}>
           {MODES.map((m) => (
             <button
               key={m.id}
@@ -109,60 +112,60 @@ export function LeadControl({ leads }: LeadControlProps) {
               role="radio"
               aria-checked={mode === m.id}
               className={`lc-seg-btn is-${m.id}${mode === m.id ? " is-on" : ""}`}
-              title={m.explain}
+              title={t(m.explain)}
               onClick={() => void choose(m.id)}
             >
-              {m.label}
+              {t(m.label)}
             </button>
           ))}
         </div>
-        <span className="lc-explain" title={current.explain}>
-          {mode === "autopilot" && paused ? "Autopilot is paused: every instruction waits here for your Send until you resume." : current.explain}
+        <span className="lc-explain" title={t(current.explain)}>
+          {mode === "autopilot" && paused ? t("lead.pausedExplain") : t(current.explain)}
         </span>
       </div>
       {mode !== "off" && (
         <div className="lc-row lc-options">
-          <label className="lc-check" title={REVIEW_TIP}>
+          <label className="lc-check" title={t("lead.reviewTip")}>
             <input type="checkbox" checked={autoReview} onChange={(e) => setControlOptions(projectDir, { autoReview: e.currentTarget.checked })} />
-            auto-review
+            {t("lead.autoReview")}
           </label>
-          <label className="lc-check" title={SHARE_TIP}>
+          <label className="lc-check" title={t("lead.shareTip")}>
             <input type="checkbox" checked={shareOutput} onChange={(e) => setControlOptions(projectDir, { shareOutput: e.currentTarget.checked })} />
-            share recent output with the lead
+            {t("lead.shareOutput")}
           </label>
           {mode === "autopilot" && (
             <button
               type="button"
               className={`mc-btn${paused ? " is-primary" : ""}`}
-              title={paused ? "Deliver automatically again" : "Stop automatic delivery (instructions wait for your Send) until you resume"}
+              title={paused ? t("lead.resumeTitle") : t("lead.pauseTitle")}
               onClick={() => setControlOptions(projectDir, { paused: !paused })}
             >
-              {paused ? "resume autopilot" : "pause"}
+              {paused ? t("lead.resumeAutopilot") : t("lead.pause")}
             </button>
           )}
           <span className="mc-spacer" />
-          <span className="lc-files" title={`${gk}team.md (generated) · ${gk}outbox\\ (instructions)`}>
+          <span className="lc-files" title={t("lead.filesTitle", { dir: gk })}>
             team.md · outbox
           </span>
           <button
             type="button"
             className="mc-btn"
             disabled={liveLeads === 0}
-            title={liveLeads ? "Type one line into the lead that explains team.md and the outbox (shows it first)" : "The lead is not running"}
+            title={liveLeads ? t("lead.briefTitle") : t("lead.notRunning")}
             onClick={() => void briefLead()}
           >
-            brief lead…
+            {t("lead.briefButton")}
           </button>
         </div>
       )}
       {keys.length > 0 ? (
-        <ul className="lc-props" aria-label="Instructions waiting">
+        <ul className="lc-props" aria-label={t("lead.props.aria")}>
           {keys.map((k) => (
             <ProposalRow key={k} pkey={k} />
           ))}
         </ul>
       ) : (
-        mode !== "off" && <div className="lc-empty">no instructions waiting — the lead writes them as files in .gridkeeper/outbox/</div>
+        mode !== "off" && <div className="lc-empty">{t("lead.empty")}</div>
       )}
       <HeaderBadge dir={projectDir} mode={mode} paused={paused} queued={queued} waiting={waiting} />
     </div>
@@ -170,6 +173,7 @@ export function LeadControl({ leads }: LeadControlProps) {
 }
 
 function ProposalRow({ pkey }: { pkey: string }) {
+  const t = useT();
   const p = useLeadControl((s) => s.proposals.find((x) => x.key === pkey));
   const [pending, setPending] = useState(false);
   if (!p) return null;
@@ -189,16 +193,16 @@ function ProposalRow({ pkey }: { pkey: string }) {
   return (
     <li className={`lc-prop is-${p.status}${busy ? " is-busy" : ""}`}>
       <div className="lc-prop-head">
-        <span className="lc-prop-from" title={p.source === "review" ? "Gridkeeper noticed finished work" : "Self-declared sender of the outbox file"}>
+        <span className="lc-prop-from" title={p.source === "review" ? t("lead.prop.fromReview") : t("lead.prop.fromOutbox")}>
           {fromText}
         </span>
         <span className="lc-arrow">→</span>
-        <span className="lc-prop-to" title={p.to.length ? `to: ${p.to.join(", ")}` : undefined}>
+        <span className="lc-prop-to" title={p.to.length ? t("lead.prop.toTitle", { names: p.to.join(", ") }) : undefined}>
           {p.targetLabel}
         </span>
-        <span className={`lc-action is-${p.action}`}>{p.action}</span>
-        {p.status === "queued" && <span className="lc-tag is-auto">autopilot · queued</span>}
-        {p.delivered.length > 0 && p.source === "outbox" && <span className="lc-tag">{p.delivered.length} delivered</span>}
+        <span className={`lc-action is-${p.action}`}>{t("lead.prop.action", { action: p.action })}</span>
+        {p.status === "queued" && <span className="lc-tag is-auto">{t("lead.prop.queued")}</span>}
+        {p.delivered.length > 0 && p.source === "outbox" && <span className="lc-tag">{t("lead.prop.delivered", { count: p.delivered.length })}</span>}
         <span className="mc-spacer" />
         {p.file && (
           <span className="lc-file" title={`.gridkeeper/outbox/${p.file}`}>
@@ -213,13 +217,12 @@ function ProposalRow({ pkey }: { pkey: string }) {
           rows={Math.min(6, Math.max(2, Math.ceil(p.text.length / 90)))}
           spellCheck={false}
           disabled={busy}
-          aria-label={`Instruction for ${p.targetLabel}`}
+          aria-label={t("lead.prop.textAria", { targets: p.targetLabel })}
           onChange={(e) => editProposal(p.key, e.target.value)}
         />
       ) : (
         <div className="lc-life">
-          {p.action === "stop" ? "Stop" : "Restart"} {p.targetLabel}
-          {p.text ? ` — “${p.text}”` : ""}. You confirm each one.
+          {p.text ? t("lead.prop.lifeReason", { action: p.action, targets: p.targetLabel, reason: p.text }) : t("lead.prop.life", { action: p.action, targets: p.targetLabel })}
         </div>
       )}
       {p.warnings.map((w, i) => (
@@ -228,29 +231,26 @@ function ProposalRow({ pkey }: { pkey: string }) {
         </div>
       ))}
       {p.reason && (
-        <div className="lc-reason">
-          {p.status === "queued" ? "waiting: " : "not sent: "}
-          {p.reason}
-        </div>
+        <div className="lc-reason">{p.status === "queued" ? t("lead.prop.waiting", { reason: p.reason }) : t("lead.prop.notSent", { reason: p.reason })}</div>
       )}
       <div className="lc-prop-actions">
         <button
           type="button"
           className="mc-btn is-primary"
           disabled={!canSend}
-          title={typed ? "Type it into the target and press Enter (refused while the target is asking something)" : `Asks you to confirm the ${p.action} of each target`}
+          title={typed ? t("lead.prop.sendTitle") : t("lead.prop.confirmTitle", { action: p.action })}
           onClick={() => void run(() => sendProposal(p.key), !typed)}
         >
-          {busy ? "sending…" : typed ? (p.status === "queued" ? "send now" : "send") : `${p.action}…`}
+          {busy ? t("lead.prop.sending") : typed ? (p.status === "queued" ? t("lead.prop.sendNow") : t("lead.prop.send")) : t("lead.prop.lifeButton", { action: p.action })}
         </button>
         <button
           type="button"
           className="mc-btn"
           disabled={busy}
-          title={p.file ? "Move the file to .gridkeeper/outbox/dismissed/ (nothing is sent)" : "Forget this review request"}
+          title={p.file ? t("lead.prop.dismissFileTitle") : t("lead.prop.dismissReviewTitle")}
           onClick={() => void run(() => dismissProposal(p.key), true)}
         >
-          dismiss
+          {t("lead.prop.dismiss")}
         </button>
       </div>
     </li>
@@ -263,6 +263,7 @@ function ProposalRow({ pkey }: { pkey: string }) {
  * layout effect runs).
  */
 function HeaderBadge({ dir, mode, paused, queued, waiting }: { dir: string; mode: ControlMode; paused: boolean; queued: number; waiting: number }) {
+  const t = useT();
   const marker = useRef<HTMLSpanElement>(null);
   const [slot, setSlot] = useState<HTMLElement | null>(null);
   useLayoutEffect(() => {
@@ -283,18 +284,16 @@ function HeaderBadge({ dir, mode, paused, queued, waiting }: { dir: string; mode
   const auto = mode === "autopilot";
   const badge = createPortal(
     <span className={`lc-head-badge${auto && !paused ? " is-auto" : ""}`} role="status">
-      {auto ? (
-        <>
-          ◆ autopilot{paused ? " paused" : ""}
-          {queued > 0 && ` · ${queued} queued`}
-          {waiting > 0 && ` · ${waiting} to review`}
-        </>
-      ) : (
-        <>◇ lead control · {waiting} to review</>
-      )}
+      {auto
+        ? [
+            paused ? t("lead.badge.autopilotPaused") : t("lead.badge.autopilot"),
+            ...(queued > 0 ? [t("lead.status.queued", { count: queued })] : []),
+            ...(waiting > 0 ? [t("lead.status.toReview", { count: waiting })] : []),
+          ].join(" · ")
+        : t("lead.badge.control", { count: waiting })}
       {auto && (
-        <button type="button" className="lc-head-btn" title={paused ? "Deliver automatically again" : "Stop automatic delivery until you resume"} onClick={() => setControlOptions(dir, { paused: !paused })}>
-          {paused ? "resume" : "pause"}
+        <button type="button" className="lc-head-btn" title={paused ? t("lead.resumeTitle") : t("lead.badge.pauseTitle")} onClick={() => setControlOptions(dir, { paused: !paused })}>
+          {paused ? t("lead.resume") : t("lead.pause")}
         </button>
       )}
     </span>,
@@ -310,6 +309,7 @@ function HeaderBadge({ dir, mode, paused, queued, waiting }: { dir: string; mode
 
 /** Status bar chip: visible while any controlled workspace is in autopilot (also with Mission Control closed). */
 export function AutopilotChip() {
+  const t = useT();
   const total = useLeadControl((s) => countAutopilot(s, false));
   const running = useLeadControl((s) => countAutopilot(s, true));
   const queued = useLeadControl((s) => countQueued(s));
@@ -332,19 +332,18 @@ export function AutopilotChip() {
       <button
         type="button"
         className={`sb-item sb-btn lc-sb${paused ? " is-paused" : " is-auto"}`}
-        title={`Lead control autopilot${paused ? " (paused)" : ""}: the lead's instructions are ${paused ? "waiting for your Send" : "delivered automatically when the target is idle"}. Click to open Mission Control.`}
+        title={paused ? t("lead.chip.titlePaused") : t("lead.chip.title")}
         onClick={open}
       >
         <span className="lc-sb-glyph">◆</span>
-        autopilot{paused ? " paused" : ""} · {queued} queued{waiting > 0 ? ` · ${waiting} to review` : ""}
+        {[
+          paused ? t("lead.chip.autopilotPaused") : t("lead.chip.autopilot"),
+          t("lead.status.queued", { count: queued }),
+          ...(waiting > 0 ? [t("lead.status.toReview", { count: waiting })] : []),
+        ].join(" · ")}
       </button>
-      <button
-        type="button"
-        className="sb-item sb-btn lc-sb-pause"
-        title={paused ? "Resume automatic delivery" : "Pause automatic delivery in every project (instructions wait for your Send)"}
-        onClick={() => setAutopilotPaused(!paused)}
-      >
-        {paused ? "resume" : "pause"}
+      <button type="button" className="sb-item sb-btn lc-sb-pause" title={paused ? t("lead.chip.resumeTitle") : t("lead.chip.pauseTitle")} onClick={() => setAutopilotPaused(!paused)}>
+        {paused ? t("lead.resume") : t("lead.pause")}
       </button>
       <span className="sb-div" />
     </>

@@ -3,8 +3,12 @@
 // error), broadcasts, formation launches, worktrees created and mission briefs. Separate zustand store so log churn
 // never re-renders app-store subscribers. Pure mapping helpers are unit-tested; `installActivity()`
 // wires the subscriptions and is called once at app level (MissionLayer), never at import time.
+// Language: lifecycle / attention / formation messages are written in the UI language when they happen (like
+// toasts). Broadcast and mission messages and every `result` stay English: Mission Control comets
+// (cometRoute.ts) and the mission replay recorder match them; the log shows `text` / activityResultText().
 
 import { create } from "zustand";
+import { t, type MessageKey } from "../i18n";
 import type { AgentKind, SessionId, SessionInfo } from "../lib/types";
 import { useApp } from "./appStore";
 import { useAttention, type AttnState, type SessionAttn } from "./attention";
@@ -26,7 +30,12 @@ export interface ActivityEvent {
   kind: ActivityKind;
   level: ActivityLevel;
   message: string;
-  /** Short right-aligned outcome, e.g. "exit 0", "sent", "3 sessions". */
+  /**
+   * The message in the UI language, for entries whose `message` must stay English (broadcast / mission messages
+   * are matched by the comets and the replay recorder). The log shows `text ?? message`.
+   */
+  text?: string;
+  /** Short right-aligned outcome code, e.g. "exit 0", "sent", "3 sessions" (English; shown via activityResultText). */
   result?: string;
   /**
    * Account id whose name was not known yet when the event was recorded (accounts load asynchronously at
@@ -79,13 +88,13 @@ export function mapAttentionTransition(prev: SessionAttn | undefined, next: Sess
   if (from === to) return null;
   switch (to) {
     case "working":
-      return { level: "info", message: "working", result: "active" };
+      return { level: "info", message: t("activity.msg.working"), result: "active" };
     case "waiting":
-      return { level: "needs", message: next.lastMessage ?? "Waiting for you", result: "needs you" };
+      return { level: "needs", message: next.lastMessage ?? t("attention.msg.waiting"), result: "needs you" };
     case "done":
-      return { level: "ok", message: next.lastMessage ?? "Done", result: "done" };
+      return { level: "ok", message: next.lastMessage ?? t("attention.msg.done"), result: "done" };
     case "error":
-      return { level: "error", message: next.lastMessage ?? "Error", result: "error" };
+      return { level: "error", message: next.lastMessage ?? t("activity.msg.error"), result: "error" };
     default:
       return null;
   }
@@ -107,8 +116,13 @@ export interface LifecycleTrack {
 
 // ---- account names ------------------------------------------------------------------------
 
-/** Placeholder in a "started" message while the account list is still loading. */
+/** Placeholder in a "started" message while the account list is still loading (English form; see pendingAccountText). */
 export const PENDING_ACCOUNT = "account …";
+
+/** The placeholder in the UI language ("account …" in English). */
+function pendingAccountText(): string {
+  return t("activity.msg.account", { name: "…" });
+}
 
 export interface NamedAccount {
   id: string;
@@ -129,7 +143,7 @@ export function resolveAccountName(
   accounts: readonly NamedAccount[],
   profiles: readonly NamedAccount[],
 ): { name: string; pendingId?: undefined } | { name: null; pendingId: string } | null {
-  if (!profileId) return agent && ACCOUNT_AGENTS.has(agent) ? { name: "Default" } : null;
+  if (!profileId) return agent && ACCOUNT_AGENTS.has(agent) ? { name: t("activity.account.default") } : null;
   const name = accounts.find((a) => a.id === profileId)?.name ?? profiles.find((p) => p.id === profileId)?.name;
   return name ? { name } : { name: null, pendingId: profileId };
 }
@@ -137,13 +151,15 @@ export function resolveAccountName(
 /** Fill in account names that were pending when their events were recorded. Returns null when nothing changed. */
 export function resolvePendingAccounts(events: readonly ActivityEvent[], nameOf: (id: string) => string | null | undefined): ActivityEvent[] | null {
   let changed = false;
+  const pending = pendingAccountText();
   const next = events.map((e) => {
     if (!e.pendingAccountId) return e;
     const name = nameOf(e.pendingAccountId);
     if (!name) return e;
     changed = true;
     const { pendingAccountId: _, ...rest } = e;
-    return { ...rest, message: e.message.replace(PENDING_ACCOUNT, `account ${name}`) };
+    const marker = e.message.includes(pending) ? pending : PENDING_ACCOUNT;
+    return { ...rest, message: e.message.replace(marker, t("activity.msg.account", { name })) };
   });
   return changed ? next : null;
 }
@@ -160,21 +176,63 @@ export function mapLifecycle(
 ): { level: ActivityLevel; message: string; result?: string } | null {
   const cur = info.state.state;
   if ((cur === "running" || cur === "starting") && info.startedAt && info.startedAt !== prev?.startedAt) {
-    const bits = [`started ${info.agent}`];
-    if (meta.profileName) bits.push(`account ${meta.profileName}`);
-    else if (meta.accountPending) bits.push(PENDING_ACCOUNT);
-    if (meta.worktreeBranch) bits.push(`worktree ${meta.worktreeBranch}`);
+    const bits = [t("activity.msg.started", { agent: info.agent })];
+    if (meta.profileName) bits.push(t("activity.msg.account", { name: meta.profileName }));
+    else if (meta.accountPending) bits.push(pendingAccountText());
+    if (meta.worktreeBranch) bits.push(t("activity.msg.worktree", { branch: meta.worktreeBranch }));
     return { level: "info", message: bits.join(" · "), result: info.pid ? `pid ${info.pid}` : "started" };
   }
   if (prev?.state === cur) return null;
   if (info.state.state === "exited") {
     const code = info.state.code;
-    if (prev?.state === "stopping") return { level: "info", message: "stopped by user", result: code === null ? "stopped" : `exit ${code}` };
-    if (code !== null && code !== 0) return { level: "error", message: `exited with code ${code}`, result: `exit ${code}` };
-    return { level: "ok", message: "exited", result: code === null ? "exit" : `exit ${code}` };
+    if (prev?.state === "stopping") return { level: "info", message: t("activity.msg.stoppedByUser"), result: code === null ? "stopped" : `exit ${code}` };
+    if (code !== null && code !== 0) return { level: "error", message: t("activity.msg.exitedCode", { code }), result: `exit ${code}` };
+    return { level: "ok", message: t("activity.msg.exited"), result: code === null ? "exit" : `exit ${code}` };
   }
-  if (info.state.state === "failed") return { level: "error", message: `failed to start: ${info.state.message}`, result: "failed" };
+  if (info.state.state === "failed") return { level: "error", message: t("activity.msg.failedToStart", { error: info.state.message }), result: "failed" };
   return null;
+}
+
+/** Result codes (ActivityEvent.result) shown in the UI language; unknown ones are shown as they are. */
+const RESULT_KEYS = new Map<string, MessageKey>([
+  ["active", "activity.result.active"],
+  ["needs you", "activity.result.needsYou"],
+  ["done", "activity.result.done"],
+  ["error", "activity.result.error"],
+  ["started", "activity.result.started"],
+  ["stopped", "activity.result.stopped"],
+  ["exit", "activity.result.exit"],
+  ["failed", "activity.result.failed"],
+  ["sent", "activity.result.sent"],
+  ["auto-sent", "activity.result.autoSent"],
+  ["handoff", "activity.result.handoff"],
+  ["created", "activity.result.created"],
+  ["saved", "activity.result.saved"],
+  ["merged", "activity.result.merged"],
+  ["removed", "activity.result.removed"],
+  ["skipped", "activity.result.skipped"],
+  ["held", "activity.result.held"],
+  ["dropped", "activity.result.dropped"],
+  ["gave up", "activity.result.gaveUp"],
+]);
+
+/** A result code for display ("exit 3", "pid 42", "3 sessions" and the known words are translated). */
+export function activityResultText(result: string | undefined): string {
+  if (!result) return "";
+  const key = RESULT_KEYS.get(result);
+  if (key) return t(key);
+  let m = /^exit (-?\d+)$/.exec(result);
+  if (m) return t("activity.result.exitCode", { code: m[1] });
+  m = /^pid (\d+)$/.exec(result);
+  if (m) return t("activity.result.pid", { pid: m[1] });
+  m = /^(\d+) sessions$/.exec(result);
+  if (m) return t("activity.result.sessions", { count: Number(m[1]) });
+  return result;
+}
+
+/** The log text of an entry in the UI language. */
+export function activityText(e: Pick<ActivityEvent, "message" | "text">): string {
+  return e.text ?? e.message;
 }
 
 // ---- store ----------------------------------------------------------------------------
@@ -198,23 +256,24 @@ export function recordActivity(input: ActivityInput) {
 
 export function sessionLabelOf(id: SessionId): SessionLabel {
   const m = useApp.getState().persisted.sessions.find((x) => x.id === id);
-  return { name: m?.name ?? "session", role: m?.role ?? null, agent: m?.agent ?? null };
+  return { name: m?.name ?? t("command.sessionFallbackName"), role: m?.role ?? null, agent: m?.agent ?? null };
 }
 
 /** Record one event per broadcast target (called from actions/broadcast.ts after sending). */
 export function recordBroadcast(text: string, targets: { id: SessionId; name: string }[], failedNames: string[]) {
   const preview = text.length > 80 ? `${text.slice(0, 79)}…` : text;
-  for (const t of targets) {
-    const failed = failedNames.some((f) => f.startsWith(`${t.name} (`));
-    const l = sessionLabelOf(t.id);
+  for (const target of targets) {
+    const failed = failedNames.some((f) => f.startsWith(`${target.name} (`));
+    const l = sessionLabelOf(target.id);
     recordActivity({
-      sessionId: t.id,
+      sessionId: target.id,
       sessionName: l.name,
       role: l.role,
       agent: l.agent,
       kind: "broadcast",
       level: failed ? "error" : "info",
-      message: `broadcast: ${preview}`,
+      message: `broadcast: ${preview}`, // English: matched by the comets and the replay recorder
+      text: t("activity.msg.broadcast", { text: preview }),
       result: failed ? "failed" : "sent",
     });
   }
@@ -251,7 +310,7 @@ export function installActivity(): () => void {
           agent: meta?.agent ?? info.agent,
           kind: "lifecycle",
           ...mapped,
-          ...(account?.pendingId && mapped.message.includes(PENDING_ACCOUNT) ? { pendingAccountId: account.pendingId } : {}),
+          ...(account?.pendingId && mapped.message.includes(pendingAccountText()) ? { pendingAccountId: account.pendingId } : {}),
         });
     }
     for (const id of track.keys()) if (!s.runtime[id]) track.delete(id);

@@ -3,21 +3,21 @@
 // Subscribes to one session's hook entry; nothing is polled.
 
 import { memo } from "react";
+import { useT } from "../i18n";
 import { hookChipLabel, hookWaiting } from "../lib/hookStatus";
 import type { SessionId } from "../lib/types";
 import { useAttention } from "../store/attention";
 import "../styles/meter.css";
 
-const HOOK_TITLE = "Exact status reported by Claude Code's hooks (Settings › Agents › Exact status for Claude panes).";
-
 export const HookChip = memo(function HookChip({ sessionId }: { sessionId: SessionId }) {
+  const t = useT();
   const hook = useAttention((s) => s.sessions[sessionId]?.hook);
   const label = hookChipLabel(hook);
   if (!hook || !label) return null;
   const tone = hookWaiting(hook) ? " is-needs" : hook.state === "stopped" ? " is-error" : "";
-  const extra = hookWaiting(hook) ? "\nAutopilot and hand-offs never type into this prompt; answer it in the pane." : "";
+  const title = hookWaiting(hook) ? `${t("hooks.chip.title")}\n${t("hooks.chip.waitingNote")}` : t("hooks.chip.title");
   return (
-    <span className={`pane-chip hook-chip${tone}`} title={`${HOOK_TITLE}${extra}`} aria-label={`Claude status: ${label}`} data-hook={hook.state}>
+    <span className={`pane-chip hook-chip${tone}`} title={title} aria-label={t("hooks.chip.aria", { label })} data-hook={hook.state}>
       {label}
     </span>
   );

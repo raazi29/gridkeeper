@@ -3,6 +3,7 @@
 // to every run (concurrent runs, time limit).
 
 import { useEffect, useState } from "react";
+import { useT } from "../../i18n";
 import { evidencePath } from "../../actions/handoff";
 import { errorMessage, ipc } from "../../lib/ipc";
 import { DEFAULT_TEST_RUN_SETTINGS, type TestDetection } from "../../lib/types";
@@ -31,6 +32,7 @@ function detectDirOf(d: CommandDialogState): string | null {
 }
 
 export function TestCommandDialog({ req }: { req: CommandDialogState }) {
+  const t = useT();
   const ws = useApp((s) => s.persisted.workspaces.find((w) => w.id === req.workspaceId));
   const group = ws?.groups.find((g) => g.id === req.groupId);
   const limits = useApp((s) => s.persisted.settings.testRuns ?? DEFAULT_TEST_RUN_SETTINGS);
@@ -70,15 +72,15 @@ export function TestCommandDialog({ req }: { req: CommandDialogState }) {
 
   return (
     <Modal
-      title={group ? `Test command · ${ws.name} › ${group.name}` : `Test command · ${ws.name}`}
+      title={group ? t("testrun.cmd.titleLane", { workspace: ws.name, lane: group.name }) : t("testrun.cmd.title", { workspace: ws.name })}
       onClose={closeTestCommandDialog}
       width={640}
       className="tr-cmd-dialog"
       footer={
         <>
-          <Button onClick={closeTestCommandDialog}>Cancel</Button>
+          <Button onClick={closeTestCommandDialog}>{t("common.cancel")}</Button>
           <Button variant="primary" disabled={!!wsProblem || !!laneProblem || (!!req.then && !effective)} onClick={save}>
-            {req.then ? "Save and run" : "Save"}
+            {req.then ? t("testrun.cmd.saveRun") : t("common.save")}
           </Button>
         </>
       }
@@ -87,47 +89,55 @@ export function TestCommandDialog({ req }: { req: CommandDialogState }) {
         {req.reason && <div className="callout tr-callout-warn">{req.reason}</div>}
         <div className="tr-detect">
           <div className="tr-detect-head">
-            Detected in <span className="mono tr-ellipsis" title={dir ?? undefined}>{dir ?? "(no folder)"}</span>
+            {t.rich("testrun.cmd.detectedIn", {
+              dir: (
+                <span className="mono tr-ellipsis" title={dir ?? undefined}>
+                  {dir ?? t("testrun.cmd.noFolder")}
+                </span>
+              ),
+            })}
           </div>
           {detError ? (
             <div className="tr-dim">{detError}</div>
           ) : !dir ? (
-            <div className="tr-dim">The workspace has no project folder or session folder to look in.</div>
+            <div className="tr-dim">{t("testrun.cmd.noDir")}</div>
           ) : !det ? (
-            <div className="tr-dim">reading…</div>
+            <div className="tr-dim">{t("testrun.cmd.reading")}</div>
           ) : det.candidates.length === 0 ? (
-            <div className="tr-dim">Nothing found (package.json "test" script, Cargo.toml, pytest config, go.mod, Makefile test target).</div>
+            <div className="tr-dim">{t("testrun.cmd.nothingFound")}</div>
           ) : (
             <ul className="tr-candidates">
               {det.candidates.map((c, i) => (
                 <li key={c.command}>
-                  <button type="button" className="tr-candidate" title={`Use “${c.command}”`} onClick={() => pick(c.command)}>
+                  <button type="button" className="tr-candidate" title={t("testrun.cmd.use", { command: c.command })} onClick={() => pick(c.command)}>
                     <span className="mono">{c.command}</span>
                   </button>
                   <span className="tr-dim">{c.source}</span>
-                  {i === 0 && <span className="tr-tag">auto</span>}
+                  {i === 0 && <span className="tr-tag">{t("testrun.cmd.auto")}</span>}
                 </li>
               ))}
             </ul>
           )}
         </div>
-        <Field label="Workspace command" hint="Empty: auto-detect in each folder that is tested." error={wsProblem}>
-          <input className="input mono" value={wsCmd} placeholder={det?.command ?? "auto-detect"} spellCheck={false} data-autofocus={group ? undefined : true} onChange={(e) => setWsCmd(e.target.value)} />
+        <Field label={t("testrun.cmd.workspace")} hint={t("testrun.cmd.workspaceHint")} error={wsProblem}>
+          <input className="input mono" value={wsCmd} placeholder={det?.command ?? t("testrun.cmd.autoDetect")} spellCheck={false} data-autofocus={group ? undefined : true} onChange={(e) => setWsCmd(e.target.value)} />
         </Field>
         {group && (
-          <Field label={`Lane override (${group.name})`} hint="Empty: the workspace command." error={laneProblem}>
-            <input className="input mono" value={laneCmd} placeholder={wsCmd.trim() || det?.command || "workspace command"} spellCheck={false} data-autofocus onChange={(e) => setLaneCmd(e.target.value)} />
+          <Field label={t("testrun.cmd.lane", { lane: group.name })} hint={t("testrun.cmd.laneHint")} error={laneProblem}>
+            <input className="input mono" value={laneCmd} placeholder={wsCmd.trim() || det?.command || t("testrun.cmd.lanePlaceholder")} spellCheck={false} data-autofocus onChange={(e) => setLaneCmd(e.target.value)} />
           </Field>
         )}
         <div className="tr-effective">
-          Runs: <span className="mono">{effective ?? "nothing (no command)"}</span>
-          <span className="tr-dim"> · in the session's worktree (or its folder), CI=true, below-normal priority</span>
+          {t.rich("testrun.cmd.runs", {
+            command: <span className="mono">{effective ?? t("testrun.cmd.noCommand")}</span>,
+            dim: (c) => <span className="tr-dim">{c}</span>,
+          })}
         </div>
         <div className="tr-limits">
-          <Field label="At most" inline hint="runs at once, all workspaces (the rest wait)">
+          <Field label={t("testrun.cmd.maxLabel")} inline hint={t("testrun.cmd.maxHint")}>
             <NumberInput value={maxConcurrent} min={1} max={8} onCommit={setMaxConcurrent} width={64} />
           </Field>
-          <Field label="Time limit" inline hint="minutes per run, then the run and everything it started are stopped">
+          <Field label={t("testrun.cmd.timeLabel")} inline hint={t("testrun.cmd.timeHint")}>
             <NumberInput value={timeoutMin} min={1} max={240} onCommit={setTimeoutMin} width={72} />
           </Field>
         </div>

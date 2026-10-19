@@ -3,6 +3,7 @@
 // drag the frame to pan). Both read the published view (once per frame), never the canvas per wheel tick.
 
 import { memo, useEffect, useLayoutEffect, useRef, useState, type PointerEvent as RPointerEvent } from "react";
+import { useT } from "../../i18n";
 import { useDeck } from "../../store/missionDeck";
 import { layoutRect } from "./layout";
 import { IcFit, IcHand, IcMinimap, IcSelect, IcZoomIn, IcZoomOut } from "./mcIcons";
@@ -11,6 +12,7 @@ import { useCanvasView, type CanvasApi } from "./useCanvas";
 import { centerOn, minimapScale, visibleRect, type Rect } from "./viewport";
 
 export const ZoomControls = memo(function ZoomControls({ api }: { api: CanvasApi }) {
+  useT(); // re-render on a language change (T reads the catalog)
   const k = useCanvasView((s) => s.view.k);
   const tool = useDeck((s) => s.tool);
   const minimap = useDeck((s) => s.minimap);
@@ -60,6 +62,7 @@ interface Block {
 
 /** Minimap of the canvas. `version` changes when boxes / cards / their states change (re-measure). */
 export const Minimap = memo(function Minimap({ api, version }: { api: CanvasApi; version: string }) {
+  useT(); // re-render on a language change (T reads the catalog)
   const view = useCanvasView((s) => s.view);
   const viewport = useCanvasView((s) => s.viewport);
   const inset = useCanvasView((s) => s.inset);

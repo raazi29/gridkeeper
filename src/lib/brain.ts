@@ -22,7 +22,12 @@
 // text, slugs, kind guessing, duplicate detection, scrubbing (the replay recorder's rules: no absolute paths,
 // e-mail addresses or secret-looking tokens), the brief line, and capture: turning mission board changes, review
 // outcomes and lead decisions into short suggested memories.
+//
+// Agent-facing: stays English (typed into agents / written to files). Note text, front matter values ("Untitled",
+// sources, captured titles and bodies) and the brief line go into the brain's files or into agents' briefs; only
+// KIND_LABEL is UI text (a message key, translated at render).
 
+import type { MessageKey } from "../i18n";
 import { scrubText } from "../replay/events";
 import { slugify, taskBlockEnd, type MissionDoc, type Task } from "./missionDoc";
 
@@ -31,13 +36,14 @@ export type BrainKind = "decision" | "convention" | "gotcha" | "howto" | "fact" 
 /** Display order (matches INDEX.md sections). */
 export const BRAIN_KINDS: readonly BrainKind[] = ["decision", "convention", "gotcha", "howto", "fact", "context"];
 
-export const KIND_LABEL: Record<BrainKind, string> = {
-  decision: "decision",
-  convention: "convention",
-  gotcha: "gotcha",
-  howto: "how-to",
-  fact: "fact",
-  context: "context",
+/** UI label of each kind (translate with `t(KIND_LABEL[k])`). The kind written to files is the BrainKind itself. */
+export const KIND_LABEL: Record<BrainKind, MessageKey> = {
+  decision: "brain.kind.decision",
+  convention: "brain.kind.convention",
+  gotcha: "brain.kind.gotcha",
+  howto: "brain.kind.howto",
+  fact: "brain.kind.fact",
+  context: "brain.kind.context",
 };
 
 /** One-character mark per kind for the terminal-style lists. */

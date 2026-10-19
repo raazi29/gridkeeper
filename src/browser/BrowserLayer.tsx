@@ -7,6 +7,7 @@
 import { memo, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useShallow } from "zustand/react/shallow";
 import { frameLoaded } from "../actions/browser";
+import { useT } from "../i18n";
 import { isBrowserMeta } from "../lib/browserPanes";
 import type { SessionId } from "../lib/types";
 import { FRAME_SANDBOX } from "../lib/url";
@@ -157,8 +158,9 @@ export function BrowserLayer() {
 
 const FrameSlot = memo(function FrameSlot({ id }: { id: SessionId }) {
   const ref = useRef<HTMLDivElement>(null);
+  const t = useT();
   const nav = useBrowserNav((s) => s.panes[id]);
-  const name = useApp((s) => s.persisted.sessions.find((m) => m.id === id)?.name ?? "Browser");
+  const name = useApp((s) => s.persisted.sessions.find((m) => m.id === id)?.name) ?? t("browser.defaultName");
   const engine = useBrowserEngine();
   const view = viewOf(nav, ownOrigin(), engine);
 

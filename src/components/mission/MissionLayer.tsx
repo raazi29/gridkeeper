@@ -5,6 +5,7 @@
 import { useEffect } from "react";
 import { installLeadControl } from "../../actions/leadControl";
 import { cancelAllStarterPrompts } from "../../actions/starterPrompt";
+import { useT } from "../../i18n";
 import { installActivity } from "../../store/activity";
 import { useMission } from "../../store/mission";
 import { installStateHistory } from "../../store/stateHistory";
@@ -15,6 +16,7 @@ import { FormationDialog } from "./Formations";
 import { MissionControl } from "./MissionControl";
 
 export function MissionLayer() {
+  const t = useT();
   const open = useMission((s) => s.open);
   const formationOpen = useMission((s) => s.formationOpen);
   useEffect(() => {
@@ -32,10 +34,10 @@ export function MissionLayer() {
   // the button / Ctrl+Shift+U / palette "stuck" on an error card.
   return (
     <>
-      <ErrorBoundary key={open ? "open" : "closed"} scope="Mission Control">
+      <ErrorBoundary key={open ? "open" : "closed"} scope={t("mc.scope.missionControl")}>
         {open && <MissionControl />}
       </ErrorBoundary>
-      <ErrorBoundary scope="Formations">{formationOpen && <FormationDialog />}</ErrorBoundary>
+      <ErrorBoundary scope={t("mc.scope.formations")}>{formationOpen && <FormationDialog />}</ErrorBoundary>
       <ReplayLayer />
       <FlightLogLayer />
     </>

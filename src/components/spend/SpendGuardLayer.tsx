@@ -1,9 +1,10 @@
 // Spend guard host (mounted once by Shell): installs the ledger / guard runtime (store/spend.ts) and shows the
 // persistent banner of each workspace whose daily budget is used up: "raise budget" / "resume". Never stops agents.
 
-import { memo, useEffect, useState } from "react";
+import { memo, useEffect, useState, type ReactNode } from "react";
 import { useShallow } from "zustand/react/shallow";
-import { bannerFor, formatBudget, formatUsd, normalizeGuard, spentToday, suggestRaise, SPEND_NOTE, type TripMark } from "../../lib/spend";
+import { useT } from "../../i18n";
+import { bannerFor, formatBudget, formatUsd, normalizeGuard, spendNote, spentToday, suggestRaise, type TripMark } from "../../lib/spend";
 import type { SpendGuard } from "../../lib/types";
 import { useApp } from "../../store/appStore";
 import { installSpendGuard, raiseBudget, resumeGuard, useSpend } from "../../store/spend";
@@ -18,7 +19,10 @@ interface BannerModel {
   trip: TripMark;
 }
 
+const bold = (c: ReactNode) => <b>{c}</b>;
+
 export function SpendGuardLayer() {
+  const t = useT();
   useEffect(() => installSpendGuard(), []);
   const ledger = useSpend((s) => s.ledger);
   const guards = useApp((s) => s.persisted.settings.spendGuards);
@@ -39,7 +43,7 @@ export function SpendGuardLayer() {
   useDayTick(banners.length > 0);
   if (banners.length === 0) return null;
   return (
-    <div className="spend-banners" role="region" aria-label="Spend guard">
+    <div className="spend-banners" role="region" aria-label={t("spend.banner.regionAria")}>
       {banners.map((b) => (
         <SpendBanner key={b.id} {...b} />
       ))}
@@ -48,6 +52,7 @@ export function SpendGuardLayer() {
 }
 
 const SpendBanner = memo(function SpendBanner({ id, name, spent, guard, trip }: BannerModel) {
+  const t = useT();
   const [raising, setRaising] = useState(false);
   const [value, setValue] = useState(() => String(suggestRaise(spent, guard)));
   const paused = !!trip.pausedDir;
@@ -59,10 +64,9 @@ const SpendBanner = memo(function SpendBanner({ id, name, spent, guard, trip }: 
     }
   };
   return (
-    <div className="spend-banner" role="alert" title={SPEND_NOTE}>
+    <div className="spend-banner" role="alert" title={spendNote()}>
       <span className="spend-banner-text">
-        <b>{name}</b>: today ~{formatUsd(spent)} reached the {formatBudget(guard.budgetUsd)} daily budget
-        {paused ? " · Autopilot paused" : ""} · agents keep running
+        {t.rich(paused ? "spend.banner.textPaused" : "spend.banner.text", { name, spent: formatUsd(spent), budget: formatBudget(guard.budgetUsd), b: bold })}
       </span>
       {raising ? (
         <form
@@ -80,26 +84,26 @@ const SpendBanner = memo(function SpendBanner({ id, name, spent, guard, trip }: 
               min={1}
               step={1}
               value={value}
-              aria-label={`New daily budget for ${name} in US dollars`}
+              aria-label={t("spend.banner.newBudgetAria", { name })}
               autoFocus
               onChange={(e) => setValue(e.currentTarget.value)}
               onKeyDown={(e) => e.key === "Escape" && setRaising(false)}
             />
           </label>
           <button type="submit" className="spend-banner-btn is-primary">
-            Save
+            {t("common.save")}
           </button>
           <button type="button" className="spend-banner-btn" onClick={() => setRaising(false)}>
-            Cancel
+            {t("common.cancel")}
           </button>
         </form>
       ) : (
         <button type="button" className="spend-banner-btn" onClick={() => setRaising(true)}>
-          Raise budget
+          {t("spend.banner.raise")}
         </button>
       )}
       <button type="button" className="spend-banner-btn is-primary" onClick={() => resumeGuard(id)}>
-        {paused ? "Resume Autopilot" : "Dismiss for today"}
+        {t(paused ? "spend.banner.resume" : "spend.banner.dismiss")}
       </button>
     </div>
   );

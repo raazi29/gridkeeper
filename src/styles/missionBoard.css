@@ -59,7 +59,7 @@
   max-height: clamp(140px, 32vh, 300px); /* a long board scrolls inside itself; short windows keep room for the lanes */
   overflow: auto;
   overscroll-behavior: contain;
-  padding-right: 2px;
+  padding-inline-end: 2px;
 }
 .mb-group-head {
   margin: 2px 0 2px;
@@ -266,7 +266,7 @@
   min-width: 80px;
   max-width: 220px;
   height: 18px;
-  margin-left: auto;
+  margin-inline-start: auto;
   padding: 0 6px;
   font-size: var(--mc-fs-micro);
 }
@@ -432,7 +432,7 @@
   display: flex;
   flex-direction: column;
   gap: 6px;
-  text-align: left;
+  text-align: start;
 }
 .mb-field {
   display: flex;

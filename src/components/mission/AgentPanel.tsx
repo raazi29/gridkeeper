@@ -8,6 +8,7 @@
 import { memo, useEffect, useRef, useState, type PointerEvent as RPointerEvent } from "react";
 import { useShallow } from "zustand/react/shallow";
 import { getCommand, focusSession, runCommand } from "../../actions/commands";
+import { useT } from "../../i18n";
 import { messageSessions } from "../../actions/groupActions";
 import { evidencePath, handoffMenuItems, handoffTargetCount, pathKey, refreshBranchSummary, useBranchSummaries } from "../../actions/handoff";
 import { startSession } from "../../actions/sessions";
@@ -127,6 +128,7 @@ export const AgentPanel = memo(function AgentPanel(p: AgentPanelProps) {
 });
 
 function AgentBody({ id, projectDir, tasks, team, board, lane, now, pinned, spotlit, onJump, onPin, onSpotlight }: AgentPanelProps & { id: SessionId }) {
+  const t = useT();
   const meta = useApp(
     useShallow((s) => {
       const m = s.persisted.sessions.find((x) => x.id === id);
@@ -159,13 +161,13 @@ function AgentBody({ id, projectDir, tasks, team, board, lane, now, pinned, spot
   if (!meta) return <div className="mc-panel-none">{T.panel.none}</div>;
   const st = sessionStatus(rt, a);
   const exitCode = rt?.state.state === "exited" ? rt.state.code : null;
-  const label = st.lamp === "exited" && exitCode !== null ? `exit ${exitCode}` : LAMP_TEXT[st.lamp];
+  const label = st.lamp === "exited" && exitCode !== null ? t("mcView.lamp.exitCode", { code: exitCode }) : LAMP_TEXT[st.lamp];
   const started = rt?.startedAt ? Date.parse(rt.startedAt) : Number.NaN;
   const since = st.live && !Number.isNaN(started) ? formatSince(now - (a && a.at >= started ? a.at : started)) : "";
   const uptime = rt?.startedAt ? formatUptime(rt.startedAt, rt.endedAt, now) : "";
   const conv = meta.agent === "claude" || meta.agent === "codex";
   const member = team.find((m) => m.id === id) ?? { id, name: meta.name, role: meta.role };
-  const owned = tasks.filter((t) => ownsTask(t, member));
+  const owned = tasks.filter((task) => ownsTask(task, member));
   const parts = summaryParts(entry?.summary, now);
   const tests = findTestAction(cardActions) ?? null;
   const testCmd = !tests ? (getCommand("session.runTests") ?? getCommand("tests.run") ?? null) : null;
@@ -220,7 +222,7 @@ function AgentBody({ id, projectDir, tasks, team, board, lane, now, pinned, spot
           <dt>{T.panel.cpu}</dt>
           <dd>
             {st.live && stats ? `${formatCpu(taskManagerCpu(stats.cpuPercent, cores))} · ${T.panel.ram} ${formatMb(stats.memoryBytes)}` : "—"}
-            {st.live && <span className="mc-panel-dim"> · out {formatRate(rate)}</span>}
+            {st.live && <span className="mc-panel-dim"> · {t("mcView.card.out", { rate: formatRate(rate) })}</span>}
           </dd>
           {hasData(meter) && (
             <>
@@ -238,13 +240,13 @@ function AgentBody({ id, projectDir, tasks, team, board, lane, now, pinned, spot
             <div className="mc-panel-dim">{T.panel.noTasks}</div>
           ) : (
             <ul className="mc-panel-tasks">
-              {owned.map((t) => (
-                <li key={`${t.line}:${t.text}`} className={`is-${t.state}`} data-task-line={t.line}>
-                  <button type="button" className="mb-box" title={`${STATE_WORD[t.state]} — click for the next state`} disabled={!projectDir} onClick={() => projectDir && void cycleTask(projectDir, t)}>
-                    {BOX[t.state]}
+              {owned.map((task) => (
+                <li key={`${task.line}:${task.text}`} className={`is-${task.state}`} data-task-line={task.line}>
+                  <button type="button" className="mb-box" title={t("mcView.panel.taskBoxTitle", { state: STATE_WORD[task.state] })} disabled={!projectDir} onClick={() => projectDir && void cycleTask(projectDir, task)}>
+                    {BOX[task.state]}
                   </button>
-                  <span className="mc-panel-task-text" title={t.text}>
-                    {t.text}
+                  <span className="mc-panel-task-text" title={task.text}>
+                    {task.text}
                   </span>
                 </li>
               ))}
@@ -256,10 +258,10 @@ function AgentBody({ id, projectDir, tasks, team, board, lane, now, pinned, spot
           <section className="mc-panel-sec">
             <h4 className="mc-micro">{T.panel.evidence}</h4>
             {!entry ? (
-              <div className="mc-panel-dim">⎇ reading git…</div>
+              <div className="mc-panel-dim">{t("mcView.panel.readingGit")}</div>
             ) : entry.error ? (
               <div className="mc-panel-dim" title={entry.error}>
-                git: {entry.error}
+                {t("mcView.panel.gitError", { error: entry.error })}
               </div>
             ) : parts.length === 0 ? (
               <div className="mc-panel-dim">{T.panel.noRepo}</div>

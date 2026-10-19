@@ -4,6 +4,7 @@
 
 import { memo } from "react";
 import { messageSessions, restartSessions, stopSessions } from "../../actions/groupActions";
+import { useT } from "../../i18n";
 import type { Task } from "../../lib/missionDoc";
 import type { SessionId } from "../../lib/types";
 import { useContextMenu, type MenuItem } from "../ui/Menu";
@@ -22,6 +23,7 @@ export interface SelectionBarProps {
 const short = (s: string) => (s.length > 56 ? `${s.slice(0, 55)}…` : s);
 
 export const SelectionBar = memo(function SelectionBar({ ids, lanes, openTasks, onMove, onAssign, onClear }: SelectionBarProps) {
+  useT(); // re-render on a language change (T reads the catalog)
   const menu = useContextMenu();
   const cardActions = useMcExtensions((s) => s.card);
   const extra = cardActions.filter((a) => a.bulk);

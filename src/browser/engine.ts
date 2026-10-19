@@ -6,6 +6,7 @@
 
 import { create } from "zustand";
 import { notify } from "../actions/notify";
+import { t } from "../i18n";
 import { OS, type Os } from "../lib/platform";
 import type { BrowserEngineSetting } from "../lib/types";
 import { useApp } from "../store/appStore";
@@ -48,5 +49,5 @@ export function useBrowserEngine(): BrowserEngine {
 export function markNativeFailed(reason: string) {
   if (useEngineState.getState().failed) return;
   useEngineState.setState({ failed: reason });
-  notify("error", `Native browser panes are unavailable (${reason}). Using embedded frames until restart.`);
+  notify("error", t("browser.engine.nativeFailed", { reason }));
 }

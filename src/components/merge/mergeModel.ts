@@ -1,6 +1,7 @@
 // Pure state of the merge dialog: default strategy and message, the test gate, why "Merge" is
 // disabled, the request sent to Rust, and the conflict hand-off line. (Rust re-checks every guard.)
 
+import { t } from "../../i18n";
 import { ownsTask, type Task } from "../../lib/missionDoc";
 import type { MergeConflict, MergePreview, MergeRequest, MergeStrategy, TestRunInfo } from "../../lib/types";
 
@@ -18,19 +19,19 @@ export interface StrategyOption {
 }
 
 export function strategyOptions(p: MergePreview | null): StrategyOption[] {
-  const base = p?.base ?? "base";
+  const base = p?.base ?? t("merge.baseFallback");
   const ff = !!p?.canFastForward;
   return [
-    { value: "fastForward", label: "Fast-forward", hint: ff ? `move ${base} to the branch tip; no new commit` : `not possible: ${base} has commits the branch lacks`, disabled: !ff },
-    { value: "mergeCommit", label: "Merge commit", hint: "one merge commit; the branch's commits stay as they are", disabled: false },
-    { value: "squash", label: "Squash", hint: "one new commit with all the changes; the branch stays unmerged in history", disabled: false },
+    { value: "fastForward", label: t("merge.strategyOption.fastForward"), hint: ff ? t("merge.strategyOption.fastForwardHint", { base }) : t("merge.strategyOption.fastForwardImpossible", { base }), disabled: !ff },
+    { value: "mergeCommit", label: t("merge.strategyOption.mergeCommit"), hint: t("merge.strategyOption.mergeCommitHint"), disabled: false },
+    { value: "squash", label: t("merge.strategyOption.squash"), hint: t("merge.strategyOption.squashHint"), disabled: false },
   ];
 }
 
 /** The member's task on the mission board: doing, else todo, else the last done one. */
 export function taskForMember(tasks: readonly Task[], m: { name: string; role: string | null }): Task | null {
-  const owned = tasks.filter((t) => ownsTask(t, m));
-  return owned.find((t) => t.state === "doing") ?? owned.find((t) => t.state === "todo") ?? owned.filter((t) => t.state === "done").pop() ?? null;
+  const owned = tasks.filter((k) => ownsTask(k, m));
+  return owned.find((k) => k.state === "doing") ?? owned.find((k) => k.state === "todo") ?? owned.filter((k) => k.state === "done").pop() ?? null;
 }
 
 function oneLine(s: string): string {
@@ -38,6 +39,7 @@ function oneLine(s: string): string {
 }
 
 /** "Merge <branch>: <mission task or last subject>" (one line, at most MESSAGE_MAX). */
+// Commit message: stays English (written to the repository's history, like other files).
 export function defaultMessage(branch: string | null, task: string | null | undefined, lastSubject: string | null | undefined): string {
   const what = oneLine(task ?? "") || oneLine(lastSubject ?? "");
   const msg = what ? `Merge ${branch ?? "branch"}: ${what}` : `Merge ${branch ?? "branch"}`;
@@ -62,28 +64,28 @@ export function testGate(p: MergePreview | null, run: TestRunInfo | undefined | 
   if (run.status === "queued" || run.status === "running") return { state: "running", run };
   if (run.status !== "passed") return { state: "failed", run };
   if (!run.headSha || run.headSha !== p?.branchSha)
-    return { state: "stale", run, reason: run.headSha ? `ran on ${short(run.headSha)}, the branch is at ${short(p?.branchSha)}` : "the branch changed while the tests ran" };
+    return { state: "stale", run, reason: run.headSha ? t("merge.gate.ranOn", { sha: short(run.headSha), branchSha: short(p?.branchSha) }) : t("merge.gate.branchChanged") };
   if (run.uncommitted !== 0)
-    return { state: "stale", run, reason: `the worktree had ${run.uncommitted ?? "unknown"} uncommitted or untracked file${run.uncommitted === 1 ? "" : "s"}, so the tests did not run on exactly the commit` };
+    return { state: "stale", run, reason: run.uncommitted == null ? t("merge.gate.dirtyUnknown") : t("merge.gate.dirty", { count: run.uncommitted }) };
   return { state: "ok", run };
 }
 
 export function gateText(g: TestGate): string {
   switch (g.state) {
     case "off":
-      return "not required";
+      return t("merge.gate.off");
     case "noCommand":
-      return "no test command (set one, or untick)";
+      return t("merge.gate.noCommand");
     case "missing":
-      return "not run yet on this commit";
+      return t("merge.gate.missing");
     case "running":
-      return "running…";
+      return t("merge.gate.running");
     case "failed":
-      return "the last run did not pass";
+      return t("merge.gate.failed");
     case "stale":
       return g.reason;
     case "ok":
-      return `passed on ${short(g.run.headSha)}`;
+      return t("merge.gate.ok", { sha: short(g.run.headSha) });
   }
 }
 
@@ -99,19 +101,19 @@ export interface MergeFormState {
 export function mergeDisabledReasons(f: MergeFormState): string[] {
   const out: string[] = [];
   const p = f.preview;
-  if (!p) return ["The preview is not loaded."];
-  if (f.busy) out.push("A merge is running.");
+  if (!p) return [t("merge.reason.notLoaded")];
+  if (f.busy) out.push(t("merge.reason.busy"));
   out.push(...p.blockers);
-  if (!p.branch || !p.base || !p.branchSha || !p.baseSha || !p.mainPath) out.push("The preview is incomplete.");
-  if (f.strategy === "fastForward" && !p.canFastForward) out.push("Fast-forward is not possible.");
+  if (!p.branch || !p.base || !p.branchSha || !p.baseSha || !p.mainPath) out.push(t("merge.reason.incomplete"));
+  if (f.strategy === "fastForward" && !p.canFastForward) out.push(t("merge.reason.noFastForward"));
   if (f.strategy !== "fastForward") {
     const m = f.message.trim();
-    if (!m) out.push("The commit message is empty.");
-    else if (m.length > MESSAGE_MAX) out.push(`The commit message is longer than ${MESSAGE_MAX} characters.`);
+    if (!m) out.push(t("merge.reason.emptyMessage"));
+    else if (m.length > MESSAGE_MAX) out.push(t("merge.reason.longMessage", { max: MESSAGE_MAX }));
     // eslint-disable-next-line no-control-regex
-    else if (/[\u0000-\u001f\u007f]/.test(m)) out.push("The commit message must be one line.");
+    else if (/[\u0000-\u001f\u007f]/.test(m)) out.push(t("merge.reason.multiline"));
   }
-  if (f.gate.state !== "off" && f.gate.state !== "ok") out.push(`Tests: ${gateText(f.gate)}.`);
+  if (f.gate.state !== "off" && f.gate.state !== "ok") out.push(t("merge.reason.tests", { gate: gateText(f.gate) }));
   return out;
 }
 
@@ -132,6 +134,7 @@ export function buildRequest(p: MergePreview | null, strategy: MergeStrategy, me
 }
 
 /** One line for the branch's agent listing the conflicting files (sent only after the user confirms). */
+// Agent-facing: stays English (typed into agents / written to files).
 export function conflictMessage(branch: string, base: string, conflicts: readonly MergeConflict[]): string {
   const n = conflicts.length;
   const files = conflicts

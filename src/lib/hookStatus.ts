@@ -1,6 +1,7 @@
 // Exact Claude status from Claude Code hooks (opt-in; Rust: src-tauri/src/meter/hooks.rs). Pure text helpers
 // for the attention store, pane header chip and Mission Control cards.
 
+import { t } from "../i18n";
 import type { HookState } from "./types";
 
 export interface HookInfo {
@@ -34,32 +35,32 @@ const humanize = (token: string) => token.replace(/[_-]+/g, " ").trim();
 
 /** What a waiting prompt is about (input state). */
 function inputText(tool: string | undefined): string {
-  if (tool === "AskUserQuestion") return "Asks you a question";
-  if (tool === "ExitPlanMode") return "Waiting for plan approval";
-  return "Needs your input";
+  if (tool === "AskUserQuestion") return t("hooks.msg.question");
+  if (tool === "ExitPlanMode") return t("hooks.msg.planApproval");
+  return t("hooks.msg.input");
 }
 
 /** Feed / card message for a hook state. */
 export function hookMessage(h: HookInfo, durationText?: string): string {
   switch (h.state) {
     case "permission":
-      return h.tool ? `Needs permission · ${toolLabel(h.tool)}` : "Needs permission";
+      return h.tool ? t("hooks.msg.permissionTool", { tool: toolLabel(h.tool) }) : t("hooks.msg.permission");
     case "input":
       return inputText(h.tool);
     case "tool":
-      return h.tool ? `Running ${toolLabel(h.tool)}` : "Running a tool";
+      return h.tool ? t("hooks.msg.runningTool", { tool: toolLabel(h.tool) }) : t("hooks.msg.running");
     case "working":
-      return "Working";
+      return t("hooks.msg.working");
     case "stopped":
-      if (h.reason === "interrupt") return "Interrupted";
-      if (h.reason) return `Stopped: ${humanize(h.reason)}`;
-      return durationText ? `Finished after ${durationText}` : "Finished";
+      if (h.reason === "interrupt") return t("hooks.msg.interrupted");
+      if (h.reason) return t("hooks.msg.stopped", { reason: humanize(h.reason) });
+      return durationText ? t("hooks.msg.finishedAfter", { duration: durationText }) : t("hooks.msg.finished");
     case "idle-prompt":
-      return "Waiting for your next prompt";
+      return t("hooks.msg.idlePrompt");
     case "ready":
-      return "Ready";
+      return t("hooks.msg.ready");
     case "ended":
-      return "Session ended";
+      return t("hooks.msg.ended");
   }
 }
 
@@ -68,13 +69,13 @@ export function hookChipLabel(h: HookInfo | undefined | null): string | null {
   if (!h) return null;
   switch (h.state) {
     case "permission":
-      return h.tool ? `needs permission · ${toolLabel(h.tool)}` : "needs permission";
+      return h.tool ? t("hooks.chip.permissionTool", { tool: toolLabel(h.tool) }) : t("hooks.chip.permission");
     case "input":
-      return h.tool === "AskUserQuestion" ? "question for you" : h.tool === "ExitPlanMode" ? "plan approval" : "needs input";
+      return t(h.tool === "AskUserQuestion" ? "hooks.chip.question" : h.tool === "ExitPlanMode" ? "hooks.chip.planApproval" : "hooks.chip.input");
     case "tool":
-      return h.tool ? `running · ${toolLabel(h.tool)}` : null;
+      return h.tool ? t("hooks.chip.runningTool", { tool: toolLabel(h.tool) }) : null;
     case "stopped":
-      return h.reason && h.reason !== "interrupt" ? `stopped · ${humanize(h.reason)}` : null;
+      return h.reason && h.reason !== "interrupt" ? t("hooks.chip.stopped", { reason: humanize(h.reason) }) : null;
     default:
       return null;
   }

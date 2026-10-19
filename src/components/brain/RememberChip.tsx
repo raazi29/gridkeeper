@@ -4,6 +4,7 @@
 
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
+import { useT } from "../../i18n";
 import { missionSelection, noteFocus, rememberText } from "./remember";
 
 interface Spot {
@@ -13,6 +14,7 @@ interface Spot {
 }
 
 export function RememberChip() {
+  const t = useT();
   const [spot, setSpot] = useState<Spot | null>(null);
 
   useEffect(() => {
@@ -51,14 +53,14 @@ export function RememberChip() {
       type="button"
       className="br-remember"
       style={{ left: spot.x, top: spot.y }}
-      title="Save the selected text as a memory in the project's brain (you can edit it first)"
+      title={t("brain.remember.title")}
       onMouseDown={(e) => e.preventDefault()}
       onClick={() => {
         rememberText(spot.text);
         setSpot(null);
       }}
     >
-      <span aria-hidden="true">◆</span> remember…
+      <span aria-hidden="true">◆</span> {t("brain.remember.label")}
     </button>,
     document.body,
   );

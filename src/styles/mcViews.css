@@ -136,7 +136,7 @@
 .bv-task::before {
   content: "";
   position: absolute;
-  left: -1px;
+  inset-inline-start: -1px;
   top: 4px;
   bottom: 4px;
   width: 2px;
@@ -321,12 +321,12 @@
   min-width: 0;
   padding: 0 10px 0 14px;
   border: 0;
-  border-right: 1px solid var(--border);
+  border-inline-end: 1px solid var(--border);
   background: transparent;
   color: var(--text-1);
   font-family: var(--font-mono);
   font-size: var(--mc-fs);
-  text-align: left;
+  text-align: start;
   cursor: pointer;
 }
 .tl-axis-label {
@@ -530,7 +530,7 @@
   padding: 0;
   border-bottom: 1px solid var(--border-strong);
   background: var(--bg-1);
-  text-align: left;
+  text-align: start;
   font-weight: 500;
   white-space: nowrap;
 }
@@ -574,7 +574,7 @@
   text-overflow: ellipsis;
 }
 .lv-table td.is-num {
-  text-align: right;
+  text-align: end;
   font-variant-numeric: tabular-nums;
 }
 .lv-table tbody tr {
@@ -604,10 +604,10 @@
   vertical-align: middle;
 }
 .lv-table td.lv-c-name .attn-lamp {
-  margin-right: 6px;
+  margin-inline-end: 6px;
 }
 .lv-table td.lv-c-name .mc-card-glyph {
-  margin-right: 6px;
+  margin-inline-end: 6px;
   vertical-align: middle;
 }
 .lv-name {

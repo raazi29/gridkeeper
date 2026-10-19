@@ -42,8 +42,10 @@ vi.mock("./uiStore", () => ({
   actionToast: (t: { message: string; action?: { run: () => void } }) => void undoToasts.push({ message: t.message, run: t.action!.run }),
 }));
 
-const { acquireMission, CONFLICT_MESSAGE, dirKey, editMission, reloadMission, resetMissionDocsForTests, UNDO_CONFLICT_MESSAGE, undoMission, updateTaskState, useMissionDocs, writeMission } =
+const { acquireMission, conflictMessage, dirKey, editMission, reloadMission, resetMissionDocsForTests, undoConflictMessage, undoMission, updateTaskState, useMissionDocs, writeMission } =
   await import("./missionDoc");
+const CONFLICT_MESSAGE = conflictMessage();
+const UNDO_CONFLICT_MESSAGE = undoConflictMessage();
 const { addTask, deleteTask, moveTask } = await import("../lib/missionDoc");
 
 const DIR = "D:\\proj";

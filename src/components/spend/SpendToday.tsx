@@ -1,18 +1,21 @@
 // Spend guard UI bits: `today ~$4.20 / $10` for the Mission Control status line and Fleet workspace headers, and
 // the day tick that re-renders them at local midnight (a single timer, only while mounted and visible).
 
-import { memo, useEffect, useState } from "react";
-import { dayKey, formatBudget, formatUsd, guardLevel, msUntilNextDay, normalizeGuard, spentToday, SPEND_NOTE, todayLabel } from "../../lib/spend";
+import { memo, useEffect, useState, type ReactNode } from "react";
+import { t as tr, useT, type MessageKey } from "../../i18n";
+import { dayKey, formatBudget, formatUsd, guardLevel, msUntilNextDay, normalizeGuard, spendNote, spentToday, todayLabel } from "../../lib/spend";
 import type { SpendGuard } from "../../lib/types";
 import { useApp } from "../../store/appStore";
 import { useSpend } from "../../store/spend";
 import "./spend.css";
 
-const ACTION_TEXT: Record<SpendGuard["action"], string> = {
-  warn: "warn only",
-  pause: "pause Autopilot",
-  pauseNotify: "pause Autopilot and notify",
+const ACTION_TEXT: Record<SpendGuard["action"], MessageKey> = {
+  warn: "spend.actionText.warn",
+  pause: "spend.actionText.pause",
+  pauseNotify: "spend.actionText.pauseNotify",
 };
+
+const bold = (c: ReactNode) => <b>{c}</b>;
 
 /** The local day; re-rendered at midnight while `active` and the window is visible (re-checked when it shows). */
 export function useDayTick(active = true): string {
@@ -37,15 +40,16 @@ export function useDayTick(active = true): string {
 }
 
 export function spendTitle(spent: number, g: SpendGuard | null): string {
-  const lines = [`Today (since local midnight) in this workspace's Claude panes: ~${formatUsd(spent)}.`];
-  if (g) lines.push(`Daily budget ${formatBudget(g.budgetUsd)}; warning at ${g.warnPct}%; at 100%: ${ACTION_TEXT[g.action]}. Agents are never stopped.`);
-  else lines.push("No daily budget set (Settings › Agents › Spend guard).");
-  lines.push(SPEND_NOTE);
+  const lines = [tr("spend.title.today", { spent: formatUsd(spent) })];
+  if (g) lines.push(tr("spend.title.budget", { budget: formatBudget(g.budgetUsd), pct: g.warnPct, action: tr(ACTION_TEXT[g.action]) }));
+  else lines.push(tr("spend.title.noBudget"));
+  lines.push(spendNote());
   return lines.join("\n");
 }
 
 /** `today [ ~$4.20 / $10 ]` (Mission Control) or a `today ~$4.20 / $10` chip (Fleet). Nothing without data. */
 export const SpendToday = memo(function SpendToday({ workspaceId, variant }: { workspaceId: string; variant: "mc" | "fleet" }) {
+  const t = useT();
   const enabled = useApp((s) => s.persisted.settings.costMeter ?? false);
   const rawGuard = useApp((s) => s.persisted.settings.spendGuards?.[workspaceId]);
   const ledger = useSpend((s) => s.ledger);
@@ -59,8 +63,9 @@ export const SpendToday = memo(function SpendToday({ workspaceId, variant }: { w
   if (variant === "mc") {
     return (
       <span className={`spend-today is-${level}`} title={title} data-spend={level}>
-        today [ <b>~{formatUsd(spent)}</b>
-        {g ? ` / ${formatBudget(g.budgetUsd)}` : ""} ]
+        {g
+          ? t.rich("spend.today.mcBudget", { spent: formatUsd(spent), budget: formatBudget(g.budgetUsd), b: bold })
+          : t.rich("spend.today.mc", { spent: formatUsd(spent), b: bold })}
       </span>
     );
   }

@@ -2,6 +2,7 @@
 // dim), the active spotlight, the board's column mode, find (Ctrl/⌘+F) and the shortcut sheet (?).
 
 import { memo } from "react";
+import { useT } from "../../i18n";
 import { isMac } from "../../lib/platform";
 import { roleInfo } from "../../lib/roles";
 import { useDeck } from "../../store/missionDeck";
@@ -21,6 +22,7 @@ export interface DeckBarProps {
 }
 
 export const DeckBar = memo(function DeckBar({ view, roles, roleCounts, stateCounts, spotlightLabel }: DeckBarProps) {
+  const t = useT();
   const filters = useDeck((s) => s.filters);
   const boardBy = useDeck((s) => s.boardBy);
   const set = useDeck((s) => s.set);
@@ -30,7 +32,7 @@ export const DeckBar = memo(function DeckBar({ view, roles, roleCounts, stateCou
       <span className="mc-micro mc-deck-label" title={T.deck.filters}>
         {T.deck.filter}
       </span>
-      <div className="mc-chips" role="group" aria-label="Roles">
+      <div className="mc-chips" role="group" aria-label={t("mc.deck.roles")}>
         {roles.map((r) => {
           const on = filters.roles.includes(r);
           return (
@@ -51,7 +53,7 @@ export const DeckBar = memo(function DeckBar({ view, roles, roleCounts, stateCou
         })}
       </div>
       <span className="mc-deck-sep" aria-hidden="true" />
-      <div className="mc-chips" role="group" aria-label="States">
+      <div className="mc-chips" role="group" aria-label={t("mc.deck.states")}>
         {STATE_CHIPS.map((st) => {
           const on = filters.states.includes(st);
           return (

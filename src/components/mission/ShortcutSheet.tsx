@@ -1,78 +1,84 @@
 // "?" in Mission Control: a compact sheet of every key and gesture, grouped. Esc, ? or a click outside closes it.
 
 import { useEffect, useRef } from "react";
+import { useT, type Translator } from "../../i18n";
 import { isMac } from "../../lib/platform";
 import { useDeck } from "../../store/missionDeck";
 import { T } from "./mcText";
 
-const MOD = isMac ? "⌘" : "Ctrl";
-
-const GROUPS: { title: string; rows: [string, string][] }[] = [
-  {
-    title: "select & move",
-    rows: [
-      ["← ↑ ↓ →", "select a card"],
-      ["Home / End", "first / last card"],
-      ["click", "select (opens the agent panel)"],
-      [`${MOD}+click`, "add / remove from the selection"],
-      ["Shift+click · Shift+← →", "select a range"],
-      [`${MOD}+A`, "select every card"],
-      ["Shift+drag · select tool", "box-select on the empty canvas"],
-      ["Enter · double-click", "jump to the pane"],
-      ["Alt+← →", "reorder the card in its lane"],
-      ["Alt+↑ ↓", "move the card to the previous / next lane"],
-    ],
-  },
-  {
-    title: "canvas",
-    rows: [
-      [`${MOD}+wheel · pinch`, "zoom around the pointer"],
-      ["+ / −", "zoom in / out"],
-      ["0", "100 %"],
-      ["F", "fit to screen"],
-      ["wheel · Space+drag", "pan"],
-      ["middle-drag · drag empty canvas", "pan"],
-      ["H / V", "hand / select tool"],
-      ["Shift+M", "minimap"],
-    ],
-  },
-  {
-    title: "act on the selected card",
-    rows: [
-      ["R", "restart"],
-      ["S", "stop / start"],
-      ["M", "message… (several selected: all of them)"],
-      ["Del", "close"],
-      ["F2", "rename"],
-      ["P", "pin to the top of its lane"],
-      ["Shift+F10", "menu"],
-    ],
-  },
-  {
-    title: "views & focus",
-    rows: [
-      ["1 · 2 · 3 · 4", "graph · board · timeline · list"],
-      [`${MOD}+F`, "find agents and tasks"],
-      [".", "spotlight the selected agent"],
-      ["click a lane name", "spotlight the lane"],
-      ["I", "agent panel"],
-      ["?", "this sheet"],
-      ["Esc", "clear find, selection, spotlight, then close"],
-    ],
-  },
-  {
-    title: "board view (on a task)",
-    rows: [
-      ["↑ ↓ ← →", "move between tasks"],
-      ["Space", "next state"],
-      ["Alt+← →", "give it to the neighbouring agent"],
-      ["Enter", "select its agent"],
-      ["drag", "reassign"],
-    ],
-  },
-];
+/** The sheet, built at render time: key names (Ctrl, Shift, Esc…) and gestures ("click", "drag") are translated. */
+function groups(t: Translator): { title: string; rows: [string, string][] }[] {
+  const mod = isMac ? "⌘" : t("keys.ctrl");
+  const shift = t("keys.shift");
+  const alt = t("keys.alt");
+  return [
+    {
+      title: t("mc.shortcuts.group.selectMove"),
+      rows: [
+        ["← ↑ ↓ →", t("mc.shortcuts.row.selectCard")],
+        [`${t("keys.home")} / ${t("keys.end")}`, t("mc.shortcuts.row.firstLast")],
+        [t("mc.shortcuts.key.click"), t("mc.shortcuts.row.selectOpensPanel")],
+        [t("mc.shortcuts.key.modClick", { mod }), t("mc.shortcuts.row.toggleSelection")],
+        [t("mc.shortcuts.key.shiftClick", { shift }), t("mc.shortcuts.row.selectRange")],
+        [`${mod}+A`, t("mc.shortcuts.row.selectAll")],
+        [t("mc.shortcuts.key.shiftDrag", { shift }), t("mc.shortcuts.row.boxSelect")],
+        [t("mc.shortcuts.key.enterDoubleClick", { enter: t("keys.enter") }), t("mc.shortcuts.row.jump")],
+        [`${alt}+← →`, t("mc.shortcuts.row.reorder")],
+        [`${alt}+↑ ↓`, t("mc.shortcuts.row.moveLane")],
+      ],
+    },
+    {
+      title: t("mc.shortcuts.group.canvas"),
+      rows: [
+        [t("mc.shortcuts.key.modWheel", { mod }), t("mc.shortcuts.row.zoomPointer")],
+        ["+ / −", t("mc.shortcuts.row.zoomInOut")],
+        ["0", "100 %"],
+        ["F", t("mc.shortcuts.row.fit")],
+        [t("mc.shortcuts.key.wheelSpace", { space: t("keys.space") }), t("mc.shortcuts.row.pan")],
+        [t("mc.shortcuts.key.middleDrag"), t("mc.shortcuts.row.pan")],
+        ["H / V", t("mc.shortcuts.row.tools")],
+        [`${shift}+M`, t("mc.shortcuts.row.minimap")],
+      ],
+    },
+    {
+      title: t("mc.shortcuts.group.actOnCard"),
+      rows: [
+        ["R", t("mc.shortcuts.row.restart")],
+        ["S", t("mc.shortcuts.row.stopStart")],
+        ["M", t("mc.shortcuts.row.message")],
+        [t("keys.delete"), t("mc.shortcuts.row.close")],
+        ["F2", t("mc.shortcuts.row.rename")],
+        ["P", t("mc.shortcuts.row.pin")],
+        [`${shift}+F10`, t("mc.shortcuts.row.menu")],
+      ],
+    },
+    {
+      title: t("mc.shortcuts.group.viewsFocus"),
+      rows: [
+        ["1 · 2 · 3 · 4", t("mc.shortcuts.row.views")],
+        [`${mod}+F`, t("mc.shortcuts.row.find")],
+        [".", t("mc.shortcuts.row.spotAgent")],
+        [t("mc.shortcuts.key.clickLaneName"), t("mc.shortcuts.row.spotLane")],
+        ["I", t("mc.shortcuts.row.panel")],
+        ["?", t("mc.shortcuts.row.sheet")],
+        [t("keys.escape"), t("mc.shortcuts.row.escape")],
+      ],
+    },
+    {
+      title: t("mc.shortcuts.group.boardTask"),
+      rows: [
+        ["↑ ↓ ← →", t("mc.shortcuts.row.taskMove")],
+        [t("keys.space"), t("mc.shortcuts.row.taskNext")],
+        [`${alt}+← →`, t("mc.shortcuts.row.taskGive")],
+        [t("keys.enter"), t("mc.shortcuts.row.taskAgent")],
+        [t("mc.shortcuts.key.drag"), t("mc.shortcuts.row.taskReassign")],
+      ],
+    },
+  ];
+}
 
 export function ShortcutSheet() {
+  const t = useT();
   const set = useDeck((s) => s.set);
   const root = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -105,12 +111,12 @@ export function ShortcutSheet() {
           </button>
         </div>
         <div className="mc-sheet-grid">
-          {GROUPS.map((g) => (
-            <section key={g.title} className="mc-sheet-group">
+          {groups(t).map((g, gi) => (
+            <section key={gi} className="mc-sheet-group">
               <h4 className="mc-micro">{g.title}</h4>
               <dl>
-                {g.rows.map(([k, v]) => (
-                  <div key={k} className="mc-sheet-row">
+                {g.rows.map(([k, v], ri) => (
+                  <div key={ri} className="mc-sheet-row">
                     <dt>
                       <kbd>{k}</kbd>
                     </dt>
