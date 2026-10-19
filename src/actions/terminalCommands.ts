@@ -5,9 +5,9 @@
 import type { SessionId } from "../lib/types";
 import { useFind } from "../store/findStore";
 import { zoomTerminal } from "../terminal/registry";
-import type { Command } from "./commands";
+import type { CommandDef } from "./commands";
 
-export function terminalCommands(target: () => SessionId | null): Command[] {
+export function terminalCommands(target: () => SessionId | null): CommandDef[] {
   const zoom = (dir: 1 | -1 | 0) => {
     const id = target();
     if (id) zoomTerminal(id, dir);
@@ -15,15 +15,14 @@ export function terminalCommands(target: () => SessionId | null): Command[] {
   return [
     {
       id: "terminal.find",
-      title: "Find in terminal…",
       category: "Session",
       run: () => {
         const id = target();
         if (id) useFind.getState().open(id);
       },
     },
-    { id: "terminal.zoomIn", title: "Zoom in (focused pane)", category: "Session", run: () => zoom(1) },
-    { id: "terminal.zoomOut", title: "Zoom out (focused pane)", category: "Session", run: () => zoom(-1) },
-    { id: "terminal.zoomReset", title: "Reset zoom (focused pane)", category: "Session", run: () => zoom(0) },
+    { id: "terminal.zoomIn", category: "Session", run: () => zoom(1) },
+    { id: "terminal.zoomOut", category: "Session", run: () => zoom(-1) },
+    { id: "terminal.zoomReset", category: "Session", run: () => zoom(0) },
   ];
 }

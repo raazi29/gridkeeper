@@ -10,6 +10,7 @@
 // waits 30 s for a dialog; the bytes then travel as a raw IPC body (`replay_save_file`) and are written
 // only to the path that dialog returned.
 
+import { t } from "../i18n";
 import { errorMessage, ipc } from "../lib/ipc";
 import type { ReplayExportKind } from "../lib/types";
 import { parseColor } from "../theme/themes";
@@ -74,7 +75,7 @@ const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 /** Render the whole replay in real time into a video. */
 export async function renderVideo(scene: ReplayScene, s: ExportSettings, signal: AbortSignal, onProgress: (p: ExportProgress) => void): Promise<{ bytes: Uint8Array; mime: string }> {
   const type = pickVideoType();
-  if (!type) throw new Error("This WebView cannot record video (MediaRecorder / canvas capture unavailable). Export a GIF instead.");
+  if (!type) throw new Error(t("replay.errNoVideo"));
   const { w: W, h: H } = ASPECTS[s.aspect];
   await loadReplayFonts();
   checkAbort(signal);
@@ -88,7 +89,7 @@ export async function renderVideo(scene: ReplayScene, s: ExportSettings, signal:
   const ctx = canvas.getContext("2d", { alpha: false });
   if (!ctx) {
     canvas.remove();
-    throw new Error("Could not create a 2D canvas");
+    throw new Error(t("replay.errCanvas"));
   }
   const opts: PaintOptions = { width: W, height: H, palette: s.palette, watermark: s.watermark };
   paintFrame(ctx, scene, 0, opts);
@@ -137,7 +138,7 @@ export async function renderVideo(scene: ReplayScene, s: ExportSettings, signal:
     await stopped;
     onProgress({ phase: "encode", fraction: 1 });
     const blob = new Blob(chunks, { type: type.mime });
-    if (blob.size === 0) throw new Error("The recorder produced no data");
+    if (blob.size === 0) throw new Error(t("replay.errNoData"));
     return { bytes: new Uint8Array(await blob.arrayBuffer()), mime: type.mime };
   } finally {
     if (rec.state !== "inactive") {
@@ -171,7 +172,7 @@ function gifCanvas(w: number, h: number): { ctx: Ctx2D; dispose: () => void } {
   c.width = w;
   c.height = h;
   const ctx = c.getContext("2d", { willReadFrequently: true, alpha: false });
-  if (!ctx) throw new Error("Could not create a 2D canvas");
+  if (!ctx) throw new Error(t("replay.errCanvas"));
   return { ctx, dispose: () => c.remove() };
 }
 
@@ -352,7 +353,7 @@ export async function exportReplay(
   if (kind === "gif") bytes = await renderGif(scene, s, signal, onProgress);
   else {
     const v = await renderVideo(scene, s, signal, onProgress);
-    if (!v.mime.includes(kind)) throw new Error(`This WebView records ${v.mime}, not ${kind}`);
+    if (!v.mime.includes(kind)) throw new Error(t("replay.errMime", { mime: v.mime, kind }));
     bytes = v.bytes;
   }
   checkAbort(signal);
@@ -361,6 +362,6 @@ export async function exportReplay(
     const path = await ipc.replaySaveFile(target.token, bytes);
     return { path, bytes: bytes.length };
   } catch (e) {
-    throw new Error(`Could not save the export: ${errorMessage(e)}`);
+    throw new Error(t("replay.errSave", { error: errorMessage(e) }));
   }
 }

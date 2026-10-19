@@ -4,6 +4,7 @@ import { memo } from "react";
 import { useToasts, type ToastKind } from "../actions/notify";
 import { useUi } from "../store/uiStore";
 import { IconClose, IconInfo, IconWarn } from "./icons";
+import { useT } from "../i18n";
 
 const KindIcon = ({ kind }: { kind: ToastKind }) =>
   kind === "info" ? <IconInfo size={14} /> : <IconWarn size={14} />;
@@ -21,6 +22,7 @@ const ToastRow = memo(function ToastRow({
   action?: { label: string; run: () => void };
   onDismiss: () => void;
 }) {
+  const t = useT();
   return (
     <div className={`toast is-${kind}`} role={kind === "error" ? "alert" : "status"}>
       <span className="toast-icon">
@@ -42,7 +44,7 @@ const ToastRow = memo(function ToastRow({
           {action.label}
         </button>
       )}
-      <button type="button" className="icon-btn icon-btn-sm toast-close" aria-label="Dismiss" onClick={onDismiss}>
+      <button type="button" className="icon-btn icon-btn-sm toast-close" aria-label={t("common.dismiss")} onClick={onDismiss}>
         <IconClose size={12} />
       </button>
     </div>

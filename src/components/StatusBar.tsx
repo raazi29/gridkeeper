@@ -1,6 +1,7 @@
 // Bottom status bar (24px): breadcrumb, running count, app vs agents resources, renderer status.
 
 import { APP_NAME } from "../lib/brand";
+import { useT } from "../i18n";
 import { cpuShareLabel, webviewLabel } from "../lib/platform";
 import { useApp, isLive, selectActiveGroup, selectActiveWorkspace } from "../store/appStore";
 import { useUi } from "../store/uiStore";
@@ -14,6 +15,7 @@ import { formatCpu, formatMb, taskManagerCpu } from "./util/text";
 import { stateLabel } from "./util/session";
 
 export function StatusBar() {
+  const t = useT();
   const wsName = useApp((s) => selectActiveWorkspace(s)?.name ?? "");
   const groupName = useApp((s) => selectActiveGroup(s)?.name ?? "");
   const focusedName = useApp((s) => {
@@ -40,7 +42,7 @@ export function StatusBar() {
   return (
     <footer className="statusbar" role="contentinfo">
       <div className="sb-left">
-        <span className="sb-item sb-crumbs" title="Workspace › group › focused session">
+        <span className="sb-item sb-crumbs" title={t("shell.status.crumbsTitle")}>
           <span>{wsName}</span>
           {groupName && <span className="sb-sep">›</span>}
           {groupName && <span>{groupName}</span>}
@@ -53,9 +55,9 @@ export function StatusBar() {
           )}
         </span>
         <span className="sb-div" />
-        <span className="sb-item" title="Live sessions across all workspaces">
+        <span className="sb-item" title={t("shell.status.runningTitle")}>
           {running > 0 && <span className="dot is-ok" />}
-          {running} running
+          {t("shell.status.running", { count: running })}
         </span>
         <span className="sb-div" />
         <ThemeChip />
@@ -71,7 +73,7 @@ export function StatusBar() {
         {scPalette && (
           <>
             <span className="sb-div" />
-            <button type="button" className="sb-item sb-btn" title="Command palette" onClick={() => useUi.getState().openPalette("all")}>
+            <button type="button" className="sb-item sb-btn" title={t("shell.status.palette")} onClick={() => useUi.getState().openPalette("all")}>
               <kbd className="kbd">{scPalette}</kbd>
             </button>
           </>
@@ -82,13 +84,14 @@ export function StatusBar() {
 }
 
 function ResourceItems({ onClick }: { onClick: () => void }) {
+  const t = useT();
   const diag = useUi((s) => s.diag);
   const diagError = useUi((s) => s.diagError);
   if (!diag) {
     return (
       <>
-        <button type="button" className="sb-item sb-btn" onClick={onClick} title={diagError ? `Diagnostics unavailable: ${diagError}` : "Collecting…"}>
-          App —
+        <button type="button" className="sb-item sb-btn" onClick={onClick} title={diagError ? t("shell.status.diagUnavailable", { error: diagError }) : t("shell.status.collecting")}>
+          {t("shell.status.appPending")}
         </button>
         <span className="sb-div" />
       </>
@@ -105,18 +108,18 @@ function ResourceItems({ onClick }: { onClick: () => void }) {
         type="button"
         className="sb-item sb-btn"
         onClick={onClick}
-        title={`${APP_NAME} app = host process + ${webviewLabel()} (${diag.host.processCount + diag.webview.processCount} processes)\n${cpuShareLabel()}: share of all ${cores} logical cores`}
+        title={t("shell.status.appTitle", { app: APP_NAME, webview: webviewLabel(), processes: diag.host.processCount + diag.webview.processCount, cpu: cpuShareLabel(), cores })}
       >
-        App CPU {formatCpu(appCpu)} · RAM {formatMb(appMem)}
+        {t("shell.status.appUsage", { cpu: formatCpu(appCpu), ram: formatMb(appMem) })}
       </button>
       <span className="sb-div" />
       <button
         type="button"
         className="sb-item sb-btn"
         onClick={onClick}
-        title={`All session process trees (${diag.sessionsTotal.processCount} processes): agents, shells, builds, git…`}
+        title={t("shell.status.agentsTitle", { processes: diag.sessionsTotal.processCount })}
       >
-        Agents CPU {formatCpu(agCpu)} · RAM {formatMb(agMem)}
+        {t("shell.status.agentsUsage", { cpu: formatCpu(agCpu), ram: formatMb(agMem) })}
       </button>
       <span className="sb-div" />
     </>
@@ -124,6 +127,7 @@ function ResourceItems({ onClick }: { onClick: () => void }) {
 }
 
 function RendererItem({ onClick, live }: { onClick: () => void; live: boolean }) {
+  const t = useT();
   const r = useRendererStatus();
   // GPU load only while the status bar holds the diagnostics poll (otherwise the figure could be stale).
   const diag = useUi((s) => (live ? s.diag : null));
@@ -131,15 +135,15 @@ function RendererItem({ onClick, live }: { onClick: () => void; live: boolean })
   let text: string;
   let title: string;
   if (r.webglActive > 0) {
-    text = `GPU: WebGL ×${r.webglActive}${load ? ` · ${load}` : ""}`;
+    text = load ? t("shell.status.gpuWebglLoad", { count: r.webglActive, load }) : t("shell.status.gpuWebgl", { count: r.webglActive });
     const gpuTip = diag?.gpu ? gpuTooltip(diag) : ""; // "" on macOS / Linux (no GPU telemetry there)
-    title = `${r.gpuRenderer ?? "GPU renderer string unavailable"}${r.domActive ? `\n${r.domActive} terminal(s) on DOM renderer` : ""}${r.contextLosses ? `\n${r.contextLosses} WebGL context loss(es)` : ""}${gpuTip ? `\n\n${gpuTip}` : ""}`;
+    title = `${r.gpuRenderer ?? t("shell.status.gpuRendererUnavailable")}${r.domActive ? `\n${t("shell.status.domTerminals", { count: r.domActive })}` : ""}${r.contextLosses ? `\n${t("shell.status.contextLosses", { count: r.contextLosses })}` : ""}${gpuTip ? `\n\n${gpuTip}` : ""}`;
   } else if (r.domActive > 0) {
-    text = "Renderer: DOM (software)";
-    title = r.webglSupported ? `WebGL available: ${r.gpuRenderer ?? "unknown GPU"}` : "WebGL unavailable in this WebView";
+    text = t("shell.status.rendererDom");
+    title = r.webglSupported ? t("shell.status.webglAvailable", { gpu: r.gpuRenderer ?? t("shell.status.unknownGpu") }) : t("shell.status.webglUnavailable");
   } else {
-    text = r.webglSupported ? "Renderer: WebGL ready" : "Renderer: —";
-    title = r.gpuRenderer ?? "No terminals open";
+    text = r.webglSupported ? t("shell.status.rendererReady") : t("shell.status.rendererNone");
+    title = r.gpuRenderer ?? t("shell.status.noTerminals");
   }
   return (
     <button type="button" className="sb-item sb-btn" onClick={onClick} title={title}>

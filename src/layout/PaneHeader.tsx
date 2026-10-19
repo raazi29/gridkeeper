@@ -27,13 +27,14 @@ import { usePorts } from "../store/ports";
 import { copyText } from "../components/util/pick";
 import { MeterChip } from "../components/MeterChip";
 import { IconGlobe } from "./icons";
+import { t, useT } from "../i18n";
 
 function browserStatus(view: BrowserView, loading: boolean): { cls: string; label: string } {
-  if (view === "start") return { cls: "idle", label: "Start page" };
+  if (view === "start") return { cls: "idle", label: t("pane.browser.startPage") };
   if (view === "refused" || view === "unreachable" || view === "blocked" || view === "invalid")
-    return { cls: "error", label: view === "unreachable" ? "Not reachable" : "Cannot show this page here" };
-  if (loading) return { cls: "pending", label: "Loading" };
-  return { cls: "running", label: view === "file" ? "Local file" : "Loaded" };
+    return { cls: "error", label: view === "unreachable" ? t("pane.browser.notReachable") : t("pane.browser.cannotShow") };
+  if (loading) return { cls: "pending", label: t("pane.browser.loading") };
+  return { cls: "running", label: view === "file" ? t("pane.browser.localFile") : t("pane.browser.loaded") };
 }
 
 export interface PaneHeaderProps {
@@ -79,19 +80,19 @@ function basename(p: string): string {
 function statusInfo(rt: RuntimeView): { cls: string; label: string } {
   switch (rt.state) {
     case "running":
-      return { cls: "running", label: rt.pid ? `Running · pid ${rt.pid}` : "Running" };
+      return { cls: "running", label: rt.pid ? t("pane.status.runningPid", { pid: rt.pid }) : t("session.state.running") };
     case "starting":
-      return { cls: "pending", label: "Starting" };
+      return { cls: "pending", label: t("session.state.starting") };
     case "stopping":
-      return { cls: "pending", label: "Stopping" };
+      return { cls: "pending", label: t("session.state.stopping") };
     case "exited":
       return rt.code !== null && rt.code !== 0
-        ? { cls: "error", label: `Exited with code ${rt.code}` }
-        : { cls: "idle", label: rt.code === null ? "Exited" : "Exited with code 0" };
+        ? { cls: "error", label: t("pane.status.exitedCode", { code: rt.code }) }
+        : { cls: "idle", label: rt.code === null ? t("session.state.exited") : t("pane.status.exitedCode", { code: 0 }) };
     case "failed":
-      return { cls: "error", label: rt.message ? `Failed: ${rt.message}` : "Failed" };
+      return { cls: "error", label: rt.message ? t("pane.status.failedMessage", { message: rt.message }) : t("session.state.failed") };
     default:
-      return { cls: "idle", label: "Not started" };
+      return { cls: "idle", label: t("session.state.notStarted") };
   }
 }
 
@@ -184,6 +185,7 @@ function PaneMenu({ anchor, items, onClose }: { anchor: HTMLElement; items: Menu
 // ---- header ---------------------------------------------------------------------------------
 
 export const PaneHeader = memo(function PaneHeader({ sessionId, groupId, index, count, maximized }: PaneHeaderProps) {
+  const t = useT();
   const meta = useApp(selectSessionMeta(sessionId));
   const rt = useRuntimeView(sessionId);
   const profileId = meta?.profileId ?? null;
@@ -230,10 +232,11 @@ export const PaneHeader = memo(function PaneHeader({ sessionId, groupId, index, 
   }, [groupId, maximized, sessionId]);
 
   const onRestart = useCallback(async () => {
-    if (live && !(await confirmAction(`Restart "${meta?.name ?? "session"}"? The running process will be stopped.`, { title: "Restart session", confirmLabel: "Restart" })))
+    const name = meta?.name ?? t("command.sessionFallbackName");
+    if (live && !(await confirmAction(t("pane.confirm.restartMessage", { name }), { title: t("pane.confirm.restartTitle"), confirmLabel: t("common.restart") })))
       return;
     void restartSession(sessionId);
-  }, [live, meta?.name, sessionId]);
+  }, [live, meta?.name, sessionId, t]);
 
   const onStopOrStart = useCallback(
     async (e: MouseEvent) => {
@@ -242,20 +245,22 @@ export const PaneHeader = memo(function PaneHeader({ sessionId, groupId, index, 
         return;
       }
       if (e.shiftKey) {
-        if (await confirmAction(`Force-stop "${meta?.name ?? "session"}"? The process tree is terminated immediately and unsaved work may be lost.`, { title: "Force stop", confirmLabel: "Force stop" }))
+        const name = meta?.name ?? t("command.sessionFallbackName");
+        if (await confirmAction(t("pane.confirm.forceStopMessage", { name }), { title: t("pane.confirm.forceStopTitle"), confirmLabel: t("command.forceStop.confirm") }))
           void stopSession(sessionId, true);
         return;
       }
       void stopSession(sessionId, false);
     },
-    [live, meta?.name, meta?.resumeOnRestore, sessionId],
+    [live, meta?.name, meta?.resumeOnRestore, sessionId, t],
   );
 
   const onClose = useCallback(async () => {
-    if (live && !(await confirmAction(`Close "${meta?.name ?? "session"}"? Its process is still running and will be stopped.`, { title: "Close session", confirmLabel: "Close" })))
+    const name = meta?.name ?? t("command.sessionFallbackName");
+    if (live && !(await confirmAction(t("pane.confirm.closeMessage", { name }), { title: t("pane.closeSession"), confirmLabel: t("common.close") })))
       return;
     void closeSession(sessionId);
-  }, [live, meta?.name, sessionId]);
+  }, [live, meta?.name, sessionId, t]);
 
   const closeMenu = useCallback(() => setMenuAnchor(null), []);
   const [portsAnchor, setPortsAnchor] = useState<HTMLElement | null>(null);
@@ -278,34 +283,34 @@ export const PaneHeader = memo(function PaneHeader({ sessionId, groupId, index, 
 
   const moveItems: MenuItem[] = [
     {
-      label: "Move left",
+      label: t("pane.menu.moveLeft"),
       separatorBefore: true,
       disabled: index <= 0,
       onSelect: () => useApp.getState().moveSession(groupId, index, index - 1),
     },
     {
-      label: "Move right",
+      label: t("pane.menu.moveRight"),
       disabled: index >= count - 1,
       onSelect: () => useApp.getState().moveSession(groupId, index, index + 1),
     },
   ];
   const browserItems: MenuItem[] = [
-    { label: "Rename", onSelect: () => setEditing(true) },
+    { label: t("common.rename"), onSelect: () => setEditing(true) },
     {
-      label: meta.titleAsName ? "✓ Name follows page title" : "Name follows page title",
+      label: meta.titleAsName ? `✓ ${t("pane.menu.titleAsName")}` : t("pane.menu.titleAsName"),
       onSelect: () => useApp.getState().updateSessionMeta(sessionId, { titleAsName: !meta.titleAsName }),
     },
-    { label: "Reload", separatorBefore: true, disabled: !browserState.url, onSelect: () => reload(sessionId) },
-    { label: "Open in pop-out window", disabled: !browserState.url, onSelect: () => void popOut(sessionId) },
-    { label: "Open in system browser", disabled: !browserState.url?.startsWith("http"), onSelect: () => openExternal(browserState.url) },
-    { label: "Copy address", disabled: !browserState.url, onSelect: () => void copyText(browserState.url ?? "", "Address copied") },
-    { label: "Start page", disabled: !browserState.url, onSelect: () => goHome(sessionId) },
+    { label: t("pane.menu.reload"), separatorBefore: true, disabled: !browserState.url, onSelect: () => reload(sessionId) },
+    { label: t("pane.menu.popOut"), disabled: !browserState.url, onSelect: () => void popOut(sessionId) },
+    { label: t("pane.menu.openExternal"), disabled: !browserState.url?.startsWith("http"), onSelect: () => openExternal(browserState.url) },
+    { label: t("pane.menu.copyAddress"), disabled: !browserState.url, onSelect: () => void copyText(browserState.url ?? "", t("pane.menu.addressCopied")) },
+    { label: t("pane.menu.startPage"), disabled: !browserState.url, onSelect: () => goHome(sessionId) },
     ...moveItems,
-    { label: "Close", separatorBefore: true, danger: true, onSelect: () => void closeSession(sessionId) },
+    { label: t("common.close"), separatorBefore: true, danger: true, onSelect: () => void closeSession(sessionId) },
   ];
 
   const portItems: MenuItem[] = (ports ?? []).map((p) => ({
-    label: `Open :${p.port} in a browser pane`,
+    label: t("pane.menu.openPort", { port: p.port }),
     onSelect: () => openPort(sessionId, p.port),
   }));
   const portLabel = isBrowser ? null : portChipLabel(ports);
@@ -344,8 +349,8 @@ export const PaneHeader = memo(function PaneHeader({ sessionId, groupId, index, 
       <div className="pane-title-area">
         <span className={`pane-dot pane-dot--${status.cls}`} title={status.label} aria-label={status.label} />
         {!isBrowser && <AttentionLamp sessionId={sessionId} />}
-        {muted && !isBrowser && <MutedGlyph title="Notifications muted for this session (alerts still reach Comms)" />}
-        <span className="pane-glyph" title={isBrowser ? "Browser pane" : meta.agent}>
+        {muted && !isBrowser && <MutedGlyph title={t("pane.mutedTitle")} />}
+        <span className="pane-glyph" title={isBrowser ? t("pane.browserPane") : meta.agent}>
           {isBrowser ? <IconGlobe /> : <AgentGlyph agent={meta.agent} />}
         </span>
         {editing ? (
@@ -369,7 +374,7 @@ export const PaneHeader = memo(function PaneHeader({ sessionId, groupId, index, 
         ) : (
           <span
             className="pane-name"
-            title={`${meta.name} — double-click to rename`}
+            title={t("pane.nameTitle", { name: meta.name })}
             onDoubleClick={(e) => {
               e.stopPropagation();
               setEditing(true);
@@ -384,7 +389,7 @@ export const PaneHeader = memo(function PaneHeader({ sessionId, groupId, index, 
           <button
             type="button"
             className="pane-chip pane-chip--port"
-            title={`Listening: ${(ports ?? []).map((p) => `:${p.port}`).join(", ")}\nClick to open in a browser pane`}
+            title={t("pane.portsTitle", { ports: (ports ?? []).map((p) => `:${p.port}`).join(", ") })}
             onClick={(e) => {
               if (ports && ports.length > 1) setPortsAnchor(portsAnchor ? null : e.currentTarget);
               else if (ports?.[0]) openPort(sessionId, ports[0].port);
@@ -398,16 +403,16 @@ export const PaneHeader = memo(function PaneHeader({ sessionId, groupId, index, 
             className={`pane-chip pane-chip--account${profileWarn ? " pane-chip--warn" : ""}`}
             title={
               profileWarn
-                ? `Account "${profile?.name}" may not be signed in`
-                : `Account: ${profile?.name ?? "Default"}`
+                ? t("pane.accountWarn", { name: profile?.name })
+                : t("pane.account", { name: profile?.name ?? t("pane.accountDefault") })
             }
           >
             {profile && <span className="pane-chip-dot" style={{ background: profile.color }} />}
-            <span className="pane-chip-text">{profile?.name ?? "Default"}</span>
+            <span className="pane-chip-text">{profile?.name ?? t("pane.accountDefault")}</span>
           </span>
         )}
         {branch && (
-          <span className="pane-chip pane-chip--branch" title={`Worktree branch ${branch}\n${meta.worktree?.path ?? ""}`}>
+          <span className="pane-chip pane-chip--branch" title={t("pane.branchTitle", { branch, path: meta.worktree?.path ?? "" })}>
             <IconBranch />
             <span className="pane-chip-text">{branch}</span>
           </span>
@@ -423,22 +428,22 @@ export const PaneHeader = memo(function PaneHeader({ sessionId, groupId, index, 
         <button
           type="button"
           className="pane-icon-btn"
-          title={maximized ? "Restore" : "Maximize"}
-          aria-label={maximized ? "Restore" : "Maximize"}
+          title={maximized ? t("pane.restore") : t("pane.maximize")}
+          aria-label={maximized ? t("pane.restore") : t("pane.maximize")}
           onClick={toggleMaximize}
         >
           {maximized ? <IconRestore /> : <IconMaximize />}
         </button>
         {!isBrowser && (
           <>
-            <button type="button" className="pane-icon-btn" title="Restart" aria-label="Restart" onClick={() => void onRestart()}>
+            <button type="button" className="pane-icon-btn" title={t("common.restart")} aria-label={t("common.restart")} onClick={() => void onRestart()}>
               <IconRestart />
             </button>
             <button
               type="button"
               className="pane-icon-btn"
-              title={live ? "Stop (Shift+click to force)" : "Start"}
-              aria-label={live ? "Stop" : "Start"}
+              title={live ? t("pane.stopTitle") : t("common.start")}
+              aria-label={live ? t("common.stop") : t("common.start")}
               onClick={(e) => void onStopOrStart(e)}
             >
               {live ? <IconStop /> : <IconPlay />}
@@ -448,8 +453,8 @@ export const PaneHeader = memo(function PaneHeader({ sessionId, groupId, index, 
         <button
           type="button"
           className={`pane-icon-btn${menuAnchor || appMenu.isOpen ? " is-active" : ""}`}
-          title="More"
-          aria-label="More actions"
+          title={t("pane.more")}
+          aria-label={t("pane.moreActions")}
           aria-haspopup="menu"
           aria-expanded={!!menuAnchor || appMenu.isOpen}
           onMouseDown={() => (appMenuWasOpen.current = appMenu.isOpen)}
@@ -464,8 +469,8 @@ export const PaneHeader = memo(function PaneHeader({ sessionId, groupId, index, 
         <button
           type="button"
           className="pane-icon-btn pane-icon-btn--close"
-          title={live ? "Close session (stops the process)" : "Close session"}
-          aria-label="Close session"
+          title={live ? t("pane.closeSessionLive") : t("pane.closeSession")}
+          aria-label={t("pane.closeSession")}
           onClick={() => void onClose()}
         >
           <IconClose />

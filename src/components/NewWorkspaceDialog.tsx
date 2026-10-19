@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { switchWorkspace } from "../actions/commands";
+import { useT } from "../i18n";
 import { ipc } from "../lib/ipc";
 import { folderPlaceholder } from "../lib/platform";
 import { useApp } from "../store/appStore";
@@ -13,13 +14,14 @@ import { pickFolder } from "./util/pick";
 import { basename } from "./util/text";
 
 export function NewWorkspaceDialog({ onClose }: { onClose: () => void }) {
+  const t = useT();
   const [name, setName] = useState("");
   const [dir, setDir] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
   const browse = async () => {
-    const d = await pickFolder("Choose project folder", dir || null);
+    const d = await pickFolder(t("newWorkspace.chooseFolder"), dir || null);
     if (d) {
       setDir(d);
       setError(null);
@@ -35,7 +37,7 @@ export function NewWorkspaceDialog({ onClose }: { onClose: () => void }) {
       try {
         const info = await ipc.pathInfo(folder);
         if (!info.exists || !info.isDir) {
-          setError("Folder not found");
+          setError(t("newWorkspace.folderNotFound"));
           setBusy(false);
           return;
         }
@@ -45,7 +47,7 @@ export function NewWorkspaceDialog({ onClose }: { onClose: () => void }) {
       }
       setBusy(false);
     }
-    const finalName = name.trim() || (normalized ? basename(normalized) : "") || "Workspace";
+    const finalName = name.trim() || (normalized ? basename(normalized) : "") || t("command.defaultWorkspaceName");
     const id = useApp.getState().createWorkspace(finalName, normalized);
     switchWorkspace(id);
     onClose();
@@ -53,14 +55,14 @@ export function NewWorkspaceDialog({ onClose }: { onClose: () => void }) {
 
   return (
     <Modal
-      title="New workspace"
+      title={t("newWorkspace.title")}
       onClose={onClose}
       width={480}
       footer={
         <>
-          <Button onClick={onClose}>Cancel</Button>
+          <Button onClick={onClose}>{t("common.cancel")}</Button>
           <Button variant="primary" onClick={() => void submit()} disabled={busy}>
-            Create workspace
+            {t("newWorkspace.create")}
           </Button>
         </>
       }
@@ -75,10 +77,10 @@ export function NewWorkspaceDialog({ onClose }: { onClose: () => void }) {
           }
         }}
       >
-        <Field label="Name" htmlFor="nw-name" hint="Defaults to the folder name">
-          <Input id="nw-name" value={name} onChange={(e) => setName(e.target.value)} placeholder={dir ? basename(dir) : "e.g. api-server"} data-autofocus />
+        <Field label={t("newWorkspace.name")} htmlFor="nw-name" hint={t("newWorkspace.nameHint")}>
+          <Input id="nw-name" value={name} onChange={(e) => setName(e.target.value)} placeholder={dir ? basename(dir) : t("newWorkspace.namePlaceholder")} data-autofocus />
         </Field>
-        <Field label="Project folder" htmlFor="nw-dir" error={error} hint="New sessions start here. Optional.">
+        <Field label={t("newWorkspace.projectFolder")} htmlFor="nw-dir" error={error} hint={t("newWorkspace.projectFolderHint")}>
           <div className="input-group">
             <Input
               id="nw-dir"
@@ -92,7 +94,7 @@ export function NewWorkspaceDialog({ onClose }: { onClose: () => void }) {
               placeholder={folderPlaceholder()}
             />
             <Button icon={<IconFolder size={13} />} onClick={() => void browse()}>
-              Browse…
+              {t("common.browse")}
             </Button>
           </div>
         </Field>

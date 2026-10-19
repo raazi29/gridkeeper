@@ -32,6 +32,7 @@ import { BrowserLayer } from "../browser/BrowserLayer";
 import { ChangesDrawer } from "./ChangesDrawer";
 import { installPortsWatch } from "../store/ports";
 import { installMeterWatch } from "../store/meter";
+import { useT } from "../i18n";
 import "../browser/browser.css";
 
 export function Shell() {
@@ -127,35 +128,35 @@ function GridArea() {
 }
 
 function NoWorkspace() {
+  const t = useT();
   const hasWorkspace = useApp((s) => s.persisted.workspaces.length > 0);
   return (
     <div className="empty-state">
-      <span>{hasWorkspace ? "This workspace has no groups." : "No workspace yet."}</span>
+      <span>{hasWorkspace ? t("shell.empty.noGroups") : t("shell.empty.noWorkspace")}</span>
       <Button
         variant="primary"
         onClick={() => {
           const ws = selectActiveWorkspace(useApp.getState());
-          if (ws) useApp.getState().createGroup(ws.id, "Main");
+          if (ws) useApp.getState().createGroup(ws.id, t("shell.defaultGroupName"));
           else useUi.getState().openDialog({ kind: "newWorkspace" });
         }}
       >
-        {hasWorkspace ? "Create group" : "Create workspace"}
+        {hasWorkspace ? t("shell.empty.createGroup") : t("shell.empty.createWorkspace")}
       </Button>
     </div>
   );
 }
 
 function LoadErrorBanner() {
+  const t = useT();
   const loadError = useApp((s) => s.loadError);
   const [dismissed, setDismissed] = useState<string | null>(null);
   if (!loadError || dismissed === loadError) return null;
   return (
     <div className="banner is-error" role="alert">
       <IconWarn size={14} />
-      <span className="banner-text">
-        Could not load saved workspaces: <span className="mono">{loadError}</span>. Changes in this run may overwrite the saved file.
-      </span>
-      <button type="button" className="icon-btn icon-btn-sm" aria-label="Dismiss" onClick={() => setDismissed(loadError)}>
+      <span className="banner-text">{t.rich("shell.loadError", { error: loadError, mono: (c) => <span className="mono">{c}</span> })}</span>
+      <button type="button" className="icon-btn icon-btn-sm" aria-label={t("common.dismiss")} onClick={() => setDismissed(loadError)}>
         <IconClose size={12} />
       </button>
     </div>

@@ -93,13 +93,15 @@ export const IconChevronDown = (p: P) => (
     <path d="M4.5 6.5L8 10l3.5-3.5" />
   </Svg>
 );
+// Directional icons carry `icon-dir`: mirrored in right-to-left layouts (src/styles/i18n.css).
+const dir = (p: P) => ({ ...p, className: p.className ? `icon-dir ${p.className}` : "icon-dir" });
 export const IconChevronRight = (p: P) => (
-  <Svg {...p}>
+  <Svg {...dir(p)}>
     <path d="M6.5 4.5L10 8l-3.5 3.5" />
   </Svg>
 );
 export const IconChevronLeft = (p: P) => (
-  <Svg {...p}>
+  <Svg {...dir(p)}>
     <path d="M9.5 4.5L6 8l3.5 3.5" />
   </Svg>
 );

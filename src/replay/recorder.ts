@@ -15,6 +15,7 @@
 //   terminal output, file contents, environment, paths or account e-mails.
 
 import { notify } from "../actions/notify";
+import { t } from "../i18n";
 import { evidencePath, pathKey, refreshBranchSummary, scheduleBranchSummary, useBranchSummaries } from "../actions/handoff";
 import { isTerminalMeta } from "../lib/browserPanes";
 import { errorMessage, ipc } from "../lib/ipc";
@@ -254,7 +255,7 @@ async function flush(rec: Rec): Promise<void> {
     const r = await ipc.replayAppend(rec.dir, file, batch.map(encodeEvent));
     rec.failures = 0;
     if (r.full) {
-      notify("warn", "Mission replay: the recording reached 5 MB and stopped. Start a new one from Mission Control.");
+      notify("warn", t("replay.recorderFull"));
       finish(rec, { userStop: false, writeEnd: false });
       return;
     }
@@ -265,7 +266,7 @@ async function flush(rec: Rec): Promise<void> {
   } catch (e) {
     rec.failures++;
     if (rec.failures >= MAX_FAILURES) {
-      notify("error", `Mission replay stopped: could not write the recording (${errorMessage(e)})`);
+      notify("error", t("replay.recorderFailed", { error: errorMessage(e) }));
       finish(rec, { userStop: false, writeEnd: false });
       return;
     }

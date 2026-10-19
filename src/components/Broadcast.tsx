@@ -14,6 +14,7 @@ import {
   type AgentFilter,
 } from "../actions/broadcast";
 import { notify } from "../actions/notify";
+import { useT } from "../i18n";
 import { AgentGlyph } from "../layout/icons";
 import type { SessionId } from "../lib/types";
 import { selectActiveGroup, useApp } from "../store/appStore";
@@ -26,6 +27,7 @@ import { AGENT_LABEL } from "./util/session";
 import "../styles/attention.css";
 
 export function BroadcastDialog() {
+  const t = useT();
   const close = () => useAttentionUi.getState().close();
   // Snapshot of live sessions when the composer opens (refreshes on state events).
   const runtime = useApp((s) => s.runtime);
@@ -68,10 +70,10 @@ export function BroadcastDialog() {
     const reason = confirmationReason(targets, useApp.getState().persisted.activeWorkspaceId);
     if (reason) {
       const ok = await confirmDialog({
-        title: `Send to ${targets.length} session${targets.length === 1 ? "" : "s"}?`,
-        message: `This line will be typed into each session and submitted with Enter (${reason}).`,
-        detail: `${line}\n\n→ ${targets.map((t) => `${t.name} (${t.workspaceName})`).join(", ")}`,
-        confirmLabel: "Send",
+        title: t("broadcast.confirmTitle", { count: targets.length }),
+        message: t("broadcast.confirmMessage", { reason }),
+        detail: `${line}\n\n→ ${targets.map((x) => `${x.name} (${x.workspaceName})`).join(", ")}`,
+        confirmLabel: t("broadcast.send"),
         danger: true,
       });
       if (!ok) return;
@@ -79,9 +81,9 @@ export function BroadcastDialog() {
     setBusy(true);
     const { sent, failed } = await sendBroadcast(line, targets);
     setBusy(false);
-    if (failed.length) notify("error", `Broadcast failed for ${failed.join(", ")}`);
+    if (failed.length) notify("error", t("broadcast.failed", { names: failed.join(", ") }));
     if (sent) {
-      notify("info", `Sent to ${sent} session${sent === 1 ? "" : "s"}`);
+      notify("info", t("broadcast.sent", { count: sent }));
       close();
     }
   };
@@ -98,21 +100,19 @@ export function BroadcastDialog() {
     <Modal
       title={
         <span className="attn-title-with-icon">
-          <IconBroadcast size={15} /> Broadcast
+          <IconBroadcast size={15} /> {t("broadcast.title")}
         </span>
       }
-      ariaLabel="Broadcast"
+      ariaLabel={t("broadcast.title")}
       onClose={close}
       width={560}
       className="attn-broadcast"
       footer={
         <>
-          <span className="attn-broadcast-summary">
-            {targets.length} of {candidates.length} live session{candidates.length === 1 ? "" : "s"} selected
-          </span>
-          <Button onClick={close}>Cancel</Button>
+          <span className="attn-broadcast-summary">{t("broadcast.summary", { selected: targets.length, count: candidates.length })}</span>
+          <Button onClick={close}>{t("common.cancel")}</Button>
           <Button variant="primary" disabled={busy || !line.trim() || targets.length === 0} onClick={() => void send()}>
-            {busy ? "Sending…" : `Send to ${targets.length}`}
+            {busy ? t("broadcast.sending") : t("broadcast.sendTo", { count: targets.length })}
           </Button>
         </>
       }
@@ -121,7 +121,7 @@ export function BroadcastDialog() {
         <input
           className="input mono"
           data-autofocus
-          placeholder="Line to send (Enter is added)"
+          placeholder={t("broadcast.placeholder")}
           value={line}
           spellCheck={false}
           onChange={(e) => setLine(e.target.value)}
@@ -133,23 +133,23 @@ export function BroadcastDialog() {
           }}
         />
         <div className="attn-broadcast-tools">
-          <div className="segmented segmented-sm" role="radiogroup" aria-label="Agent filter">
+          <div className="segmented segmented-sm" role="radiogroup" aria-label={t("broadcast.agentFilter")}>
             {agentsPresent.map((a) => (
               <button key={a} type="button" role="radio" aria-checked={agent === a} className={`segment${agent === a ? " is-selected" : ""}`} onClick={() => setAgent(a)}>
-                {a === "all" ? "All" : AGENT_LABEL[a]}
+                {a === "all" ? t("broadcast.filterAll") : AGENT_LABEL[a]}
               </button>
             ))}
           </div>
           <span className="attn-spacer" />
           <button type="button" className="chip" onClick={() => setMany(shown.map((c) => c.id), true)}>
-            Select shown
+            {t("broadcast.selectShown")}
           </button>
           <button type="button" className="chip" onClick={() => setMany(shown.map((c) => c.id), false)}>
-            Clear shown
+            {t("broadcast.clearShown")}
           </button>
         </div>
         <div className="attn-broadcast-list">
-          {candidates.length === 0 && <div className="attn-empty">No live sessions.</div>}
+          {candidates.length === 0 && <div className="attn-empty">{t("broadcast.empty")}</div>}
           {byWs.map((g) => (
             <div key={g.ws} className="attn-broadcast-ws">
               <div className="attn-broadcast-wsname">{g.items[0].workspaceName}</div>

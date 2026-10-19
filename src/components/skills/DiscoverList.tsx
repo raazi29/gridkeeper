@@ -2,6 +2,7 @@
 // opening the tab, paging, submitting a search (Rust caches answers for 10 minutes).
 
 import { memo, useEffect, useState } from "react";
+import { t as translate, useT } from "../../i18n";
 import { FEATURED_SKILL_REPOS, featuredEntry } from "../../lib/featuredSkills";
 import { formatStars, minutesUntil, pageKey, parseRepoInput, relativeTime, repoKey } from "../../lib/skills";
 import type { SkillRepo, SkillSort } from "../../lib/types";
@@ -14,6 +15,7 @@ function sortOf(tab: DiscoverTab, searchSort: "best" | "stars"): SkillSort {
 }
 
 export function DiscoverList({ tab }: { tab: DiscoverTab }) {
+  const t = useT();
   const page = useSkills((s) => s.pageByTab[tab]);
   const searchQuery = useSkills((s) => s.searchQuery);
   const searchSort = useSkills((s) => s.searchSort);
@@ -32,14 +34,14 @@ export function DiscoverList({ tab }: { tab: DiscoverTab }) {
       {tab === "search" && <SearchForm initial={searchQuery} sort={searchSort} />}
       <div className="skills-list" role="list">
         {tab === "trending" && page === 1 && <FeaturedRows />}
-        {!active && <div className="skills-empty">Search GitHub for skill repositories by keyword, or add your own qualifiers (topic:, user:, in:).</div>}
-        {entry?.status === "loading" && <div className="skills-empty">Loading from api.github.com…</div>}
+        {!active && <div className="skills-empty">{t("skills.searchEmpty")}</div>}
+        {entry?.status === "loading" && <div className="skills-empty">{t("skills.loadingGithub")}</div>}
         {entry?.status === "error" && (
           <div className="skills-note is-error" role="alert">
             <IconWarn size={13} />
             <span>{entry.error}</span>
             <button type="button" className="chip" onClick={() => void loadPage(sort, query, page, true)}>
-              Retry
+              {t("common.retry")}
             </button>
           </div>
         )}
@@ -47,39 +49,38 @@ export function DiscoverList({ tab }: { tab: DiscoverTab }) {
           <div className="skills-note is-warn" role="alert">
             <IconWarn size={13} />
             <span>
-              {entry.data.message ?? "GitHub's rate limit is used up."}{" "}
+              {entry.data.message ?? t("skills.rateLimited")}{" "}
               {(() => {
                 const m = minutesUntil(entry.data.resetAt, Date.now());
-                return m ? `Try again in about ${m} minute${m === 1 ? "" : "s"}.` : "Try again in a minute.";
+                return m ? t("skills.tryAgainIn", { minutes: m }) : t("skills.tryAgainSoon");
               })()}
             </span>
             <button type="button" className="chip" onClick={() => void loadPage(sort, query, page, true)}>
-              Retry
+              {t("common.retry")}
             </button>
           </div>
         )}
-        {entry?.status === "ok" && !entry.data.rateLimited && entry.data.items.length === 0 && <div className="skills-empty">No repositories found.</div>}
-        {entry?.status === "ok" && tab === "trending" && page === 1 && entry.data.items.length > 0 && <div className="skills-subhead">Trending: pushed in the last 30 days</div>}
+        {entry?.status === "ok" && !entry.data.rateLimited && entry.data.items.length === 0 && <div className="skills-empty">{t("skills.noRepos")}</div>}
+        {entry?.status === "ok" && tab === "trending" && page === 1 && entry.data.items.length > 0 && <div className="skills-subhead">{t("skills.trendingHead")}</div>}
         {entry?.status === "ok" && entry.data.items.map((r) => <RepoRow key={r.fullName} repo={r} />)}
       </div>
       {entry?.status === "ok" && !entry.data.rateLimited && (
         <div className="skills-list-foot">
-          <span className="skills-source" title={`Query: ${entry.data.query}`}>
-            fetched from api.github.com · {ago(entry.data.fetchedAtMs)}
-            {entry.data.cached ? " (cached)" : ""}
+          <span className="skills-source" title={t("skills.queryTitle", { query: entry.data.query })}>
+            {entry.data.cached ? t("skills.fetchedCached", { ago: ago(entry.data.fetchedAtMs) }) : t("skills.fetched", { ago: ago(entry.data.fetchedAtMs) })}
           </span>
           <span className="skills-spacer" />
-          <span className="skills-count">{entry.data.total.toLocaleString()} repos</span>
-          <button type="button" className="chip" disabled={page <= 1} onClick={() => setDiscoverPage(tab, page - 1)} aria-label="Previous page">
+          <span className="skills-count">{t("skills.repoCount", { count: entry.data.total })}</span>
+          <button type="button" className="chip" disabled={page <= 1} onClick={() => setDiscoverPage(tab, page - 1)} aria-label={t("skills.prevPage")}>
             ‹
           </button>
-          <span className="skills-count">p. {page}</span>
+          <span className="skills-count">{t("skills.pageN", { page })}</span>
           <button
             type="button"
             className="chip"
             disabled={entry.data.items.length < 30 || page * 30 >= Math.min(entry.data.total, 990)}
             onClick={() => setDiscoverPage(tab, page + 1)}
-            aria-label="Next page"
+            aria-label={t("skills.nextPage")}
           >
             ›
           </button>
@@ -91,10 +92,11 @@ export function DiscoverList({ tab }: { tab: DiscoverTab }) {
 
 function ago(ms: number): string {
   const mins = Math.floor(Math.max(0, Date.now() - ms) / 60_000);
-  return mins < 1 ? "just now" : `${mins} min ago`;
+  return mins < 1 ? translate("skills.justNow") : translate("skills.minAgo", { minutes: mins });
 }
 
 function SearchForm({ initial, sort }: { initial: string; sort: "best" | "stars" }) {
+  const t = useT();
   const [text, setText] = useState(initial);
   const submit = (nextSort = sort) => {
     if (text.trim()) submitSearch(text, nextSort);
@@ -111,17 +113,17 @@ function SearchForm({ initial, sort }: { initial: string; sort: "best" | "stars"
         <input
           className="input"
           data-autofocus
-          placeholder="Search skills (e.g. pdf, diagram, topic:mcp)"
+          placeholder={t("skills.searchPlaceholder")}
           value={text}
           maxLength={200}
           spellCheck={false}
           onChange={(e) => setText(e.target.value)}
         />
         <Button type="submit" size="sm" icon={<IconSearch size={13} />} disabled={!text.trim()}>
-          Search
+          {t("skills.searchButton")}
         </Button>
       </div>
-      <div className="segmented segmented-sm" role="radiogroup" aria-label="Sort">
+      <div className="segmented segmented-sm" role="radiogroup" aria-label={t("skills.sortAria")}>
         {(["best", "stars"] as const).map((s) => (
           <button
             key={s}
@@ -134,7 +136,7 @@ function SearchForm({ initial, sort }: { initial: string; sort: "best" | "stars"
               else useSkills.setState({ searchSort: s });
             }}
           >
-            {s === "best" ? "Best match" : "Most stars"}
+            {s === "best" ? t("skills.sortBest") : t("skills.sortStars")}
           </button>
         ))}
       </div>
@@ -143,10 +145,11 @@ function SearchForm({ initial, sort }: { initial: string; sort: "best" | "stars"
 }
 
 function FeaturedRows() {
+  const t = useT();
   const selectedKey = useSkills((s) => (s.selection ? repoKey(s.selection.repo, s.selection.ref) : null));
   return (
     <>
-      <div className="skills-subhead">Featured (curated starting points, not verified)</div>
+      <div className="skills-subhead">{t("skills.featuredHead")}</div>
       {FEATURED_SKILL_REPOS.map((f) => {
         const selected = selectedKey === repoKey(f.fullName, null);
         return (
@@ -160,7 +163,7 @@ function FeaturedRows() {
           >
             <span className="skills-row-head">
               <span className="skills-row-name">{f.fullName}</span>
-              <span className="chip chip-accent skills-chip">featured</span>
+              <span className="chip chip-accent skills-chip">{t("skills.featuredChip")}</span>
             </span>
             <span className="skills-row-desc">{f.description}</span>
           </button>
@@ -171,6 +174,7 @@ function FeaturedRows() {
 }
 
 const RepoRow = memo(function RepoRow({ repo }: { repo: SkillRepo }) {
+  const t = useT();
   const selected = useSkills((s) => s.selection !== null && repoKey(s.selection.repo, s.selection.ref) === repoKey(repo.fullName, null));
   const featured = featuredEntry(repo.fullName);
   const pushed = relativeTime(repo.pushedAt, Date.now());
@@ -184,29 +188,30 @@ const RepoRow = memo(function RepoRow({ repo }: { repo: SkillRepo }) {
     >
       <span className="skills-row-head">
         <span className="skills-row-name">{repo.fullName}</span>
-        {featured && <span className="chip chip-accent skills-chip">featured</span>}
+        {featured && <span className="chip chip-accent skills-chip">{t("skills.featuredChip")}</span>}
         <span className="skills-spacer" />
-        <span className="skills-stars" title={`${repo.stars.toLocaleString()} stars`}>
+        <span className="skills-stars" title={t("skills.starsTitle", { count: repo.stars })}>
           ★ {formatStars(repo.stars)}
         </span>
       </span>
       {repo.description && <span className="skills-row-desc">{repo.description}</span>}
       <span className="skills-row-meta">
         {repo.license && <span>{repo.license}</span>}
-        {pushed && <span>pushed {pushed}</span>}
-        {repo.archived && <span className="skills-warn-text">archived</span>}
+        {pushed && <span>{t("skills.pushed", { when: pushed })}</span>}
+        {repo.archived && <span className="skills-warn-text">{t("skills.archived")}</span>}
       </span>
     </button>
   );
 });
 
 export function PasteRepo() {
+  const t = useT();
   const [text, setText] = useState("");
   const [error, setError] = useState<string | null>(null);
   const open = () => {
     const parsed = parseRepoInput(text);
     if (!parsed) {
-      setError("Enter owner/repo or a github.com URL (optionally #branch, #tag or #commit).");
+      setError(t("skills.pasteInvalid"));
       return;
     }
     setError(null);
@@ -234,15 +239,12 @@ export function PasteRepo() {
             }}
           />
           <Button type="submit" size="sm" disabled={!text.trim()}>
-            Open
+            {t("common.open")}
           </Button>
         </div>
         {error && <div className="field-msg is-error">{error}</div>}
       </form>
-      <div className="skills-empty">
-        Any public GitHub repository with a SKILL.md works. The repository is read from api.github.com and pinned to one commit;
-        nothing is installed until you review a skill and press Install.
-      </div>
+      <div className="skills-empty">{t("skills.pasteExplain")}</div>
     </div>
   );
 }

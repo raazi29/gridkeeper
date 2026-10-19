@@ -7,6 +7,7 @@ import { isLive, useApp } from "../store/appStore";
 import { useAttentionUi } from "../store/attention";
 import { confirmDialog } from "../store/uiStore";
 import { notify } from "./notify";
+import { t } from "../i18n";
 import { closeSession, restartSession, stopSession } from "./sessions";
 
 type MetaLike = Pick<SessionMeta, "id"> & { kind?: string | null };
@@ -43,14 +44,12 @@ function snapshot() {
   return { metas: s.persisted.sessions as MetaLike[], runtime: s.runtime };
 }
 
-const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
-
 /** Open the Broadcast composer preselected with the live sessions among `ids`. Sends nothing by itself. */
-export function messageSessions(ids: readonly SessionId[], what = "this lane"): void {
+export function messageSessions(ids: readonly SessionId[], what = t("sessions.thisLane")): void {
   const { metas, runtime } = snapshot();
   const targets = liveTargets(ids, metas, runtime);
   if (targets.length === 0) {
-    notify("info", `No running sessions in ${what}`);
+    notify("info", t("sessions.noRunningIn", { what }));
     return;
   }
   useAttentionUi.getState().openBroadcast(targets);
@@ -60,16 +59,14 @@ export async function restartSessions(ids: readonly SessionId[], what: string): 
   const { metas, runtime } = snapshot();
   const targets = restartTargets(ids, metas, runtime);
   if (targets.length === 0) {
-    notify("info", `Nothing to restart in ${what}`);
+    notify("info", t("sessions.nothingToRestart", { what }));
     return;
   }
   const live = targets.filter((id) => isLive(runtime[id])).length;
   const ok = await confirmDialog({
-    title: `Restart ${plural(targets.length, "session")} in ${what}?`,
-    message:
-      (live ? `${plural(live, "running process", "running processes")} will be stopped and started again. ` : "") +
-      "Agents resume their conversation where they support it.",
-    confirmLabel: "Restart",
+    title: t("sessions.restartTitle", { count: targets.length, what }),
+    message: live ? t("sessions.restartMessageLive", { live }) : t("sessions.restartMessage"),
+    confirmLabel: t("common.restart"),
     danger: live > 0,
   });
   if (!ok) return;
@@ -80,13 +77,13 @@ export async function stopSessions(ids: readonly SessionId[], what: string): Pro
   const { metas, runtime } = snapshot();
   const targets = liveTargets(ids, metas, runtime);
   if (targets.length === 0) {
-    notify("info", `No running sessions in ${what}`);
+    notify("info", t("sessions.noRunningIn", { what }));
     return;
   }
   const ok = await confirmDialog({
-    title: `Stop ${plural(targets.length, "session")} in ${what}?`,
-    message: "Each process is asked to exit. The panes stay; start them again any time.",
-    confirmLabel: "Stop",
+    title: t("sessions.stopTitle", { count: targets.length, what }),
+    message: t("sessions.stopMessage"),
+    confirmLabel: t("common.stop"),
     danger: true,
   });
   if (!ok) return;
@@ -99,9 +96,9 @@ export async function closeSessions(ids: readonly SessionId[], what: string): Pr
   if (targets.length === 0) return;
   const live = targets.filter((id) => isLive(runtime[id])).length;
   const ok = await confirmDialog({
-    title: `Close ${plural(targets.length, "session")} in ${what}?`,
-    message: (live ? `${plural(live, "running process", "running processes")} will be stopped. ` : "") + "The panes and their session definitions are removed.",
-    confirmLabel: live ? "Stop and close" : "Close",
+    title: t("sessions.closeTitle", { count: targets.length, what }),
+    message: live ? t("sessions.closeMessageLive", { live }) : t("sessions.closeMessage"),
+    confirmLabel: live ? t("command.closeSession.confirm") : t("common.close"),
     danger: true,
   });
   if (!ok) return;

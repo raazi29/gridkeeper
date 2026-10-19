@@ -3,8 +3,20 @@
 // theme's CSS variables to itself, so it previews without touching the document.
 
 import { memo } from "react";
+import { isMessageKey, t as translate, useT } from "../i18n";
 import { themeScopeStyle } from "../theme/applyTheme";
 import type { Theme } from "../theme/themes";
+
+/** A theme's description in the UI language (`theme.description.<camelCaseId>`); the English text in themes.ts as fallback. */
+export function themeDescription(theme: Theme): string {
+  const key = `theme.description.${theme.id.replace(/-([a-z0-9])/g, (_, c: string) => c.toUpperCase())}`;
+  return isMessageKey(key) ? translate(key) : theme.description;
+}
+
+/** "dark" / "light" in the UI language. Theme names are names and stay as they are. */
+export function themeKindLabel(kind: Theme["kind"]): string {
+  return kind === "light" ? translate("theme.kindLight") : translate("theme.kindDark");
+}
 
 const PREVIEW_LINES = (t: Theme) => {
   const c = t.terminal;
@@ -41,6 +53,8 @@ export interface ThemeCardProps {
 }
 
 export const ThemeCard = memo(function ThemeCard({ theme, selected, onSelect, compact, onPreview, tabIndex }: ThemeCardProps) {
+  useT(); // re-render on a language change (description and kind are translated below)
+  const description = themeDescription(theme);
   return (
     <button
       type="button"
@@ -55,7 +69,7 @@ export const ThemeCard = memo(function ThemeCard({ theme, selected, onSelect, co
       onClick={onSelect}
       onMouseEnter={onPreview}
       onFocus={onPreview}
-      title={theme.description}
+      title={description}
     >
       <span className="tcp" aria-hidden="true">
         <span className="tcp-side">
@@ -85,9 +99,9 @@ export const ThemeCard = memo(function ThemeCard({ theme, selected, onSelect, co
       </span>
       <span className="theme-card-meta">
         <span className="theme-card-name">{theme.name}</span>
-        <span className="theme-card-kind">{theme.kind}</span>
+        <span className="theme-card-kind">{themeKindLabel(theme.kind)}</span>
       </span>
-      {!compact && <span className="theme-card-desc">{theme.description}</span>}
+      {!compact && <span className="theme-card-desc">{description}</span>}
     </button>
   );
 });

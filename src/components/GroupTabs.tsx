@@ -10,6 +10,7 @@ import { IconMaximize, IconPlus } from "./icons";
 import { QuickLaunchButton } from "./QuickLaunch";
 import { buildGroupMenu } from "./menus/containerMenus";
 import { useContextMenu } from "./ui/Menu";
+import { useT } from "../i18n";
 
 function findGroup(s: AppStore, groupId: string) {
   for (const w of s.persisted.workspaces) for (const g of w.groups) if (g.id === groupId) return g;
@@ -17,6 +18,7 @@ function findGroup(s: AppStore, groupId: string) {
 }
 
 export function GroupTabs() {
+  const t = useT();
   const wsId = useApp((s) => selectActiveWorkspace(s)?.id);
   const groupIds = useApp(useShallow((s) => selectActiveWorkspace(s)?.groups.map((g) => g.id) ?? []));
   const activeGroupId = useApp((s) => selectActiveGroup(s)?.id ?? null);
@@ -31,20 +33,20 @@ export function GroupTabs() {
   if (!wsId) return null;
 
   return (
-    <div className="group-tabs" role="tablist" aria-label="Terminal groups">
+    <div className="group-tabs" role="tablist" aria-label={t("shell.tabs.ariaLabel")}>
       {groupIds.map((gid) => (
         <GroupTab key={gid} workspaceId={wsId} groupId={gid} active={gid === activeGroupId} openMenu={menu.open} />
       ))}
-      <button type="button" className="tab-add" aria-label="New group" title={withShortcut("New group", scGroup)} onClick={() => runCommand("group.new")}>
+      <button type="button" className="tab-add" aria-label={t("shell.tabs.newGroup")} title={withShortcut(t("shell.tabs.newGroup"), scGroup)} onClick={() => runCommand("group.new")}>
         <IconPlus size={13} />
       </button>
-      <QuickLaunchButton variant="ghost" label="Session" />
+      <QuickLaunchButton variant="ghost" label={t("shell.tabs.session")} />
       <div className="group-tabs-spacer" />
       {maximizedName && (
         <button
           type="button"
           className="chip chip-accent"
-          title={withShortcut("Restore layout", scMax)}
+          title={withShortcut(t("shell.tabs.restoreLayout"), scMax)}
           onClick={() => activeGroupId && useApp.getState().updateLayout(activeGroupId, { maximized: null })}
         >
           <IconMaximize size={11} />
@@ -67,6 +69,7 @@ const GroupTab = memo(function GroupTab({
   active: boolean;
   openMenu: ReturnType<typeof useContextMenu>["open"];
 }) {
+  const t = useT();
   const name = useApp((s) => findGroup(s, groupId)?.name ?? "");
   const count = useApp((s) => findGroup(s, groupId)?.sessionIds.length ?? 0);
   const running = useApp((s) => {
@@ -79,8 +82,8 @@ const GroupTab = memo(function GroupTab({
 
   const commit = (v: string) => {
     setEditing(false);
-    const t = v.trim();
-    if (t && t !== name) useApp.getState().renameGroup(groupId, t);
+    const next = v.trim();
+    if (next && next !== name) useApp.getState().renameGroup(groupId, next);
   };
 
   const showMenu = (e: { clientX: number; clientY: number; preventDefault?: () => void }) =>
@@ -92,7 +95,7 @@ const GroupTab = memo(function GroupTab({
       aria-selected={active}
       tabIndex={active ? 0 : -1}
       className={`group-tab${active ? " is-active" : ""}`}
-      title={editing ? undefined : `${name} — ${count} session${count === 1 ? "" : "s"}${running ? `, ${running} running` : ""}\nDouble-click to rename`}
+      title={editing ? undefined : running ? t("shell.tabs.tabTitleRunning", { name, count, running }) : t("shell.tabs.tabTitle", { name, count })}
       onClick={() => !editing && activateGroup(workspaceId, groupId)}
       onDoubleClick={() => setEditing(true)}
       onContextMenu={showMenu}
@@ -106,7 +109,9 @@ const GroupTab = memo(function GroupTab({
           const r = e.currentTarget.getBoundingClientRect();
           showMenu({ clientX: r.left, clientY: r.bottom + 2 });
         } else if (e.key === "ArrowRight" || e.key === "ArrowLeft") {
-          const sib = (e.key === "ArrowRight" ? e.currentTarget.nextElementSibling : e.currentTarget.previousElementSibling) as HTMLElement | null;
+          // Visual direction: in a right-to-left layout the next tab is to the left.
+          const forward = (e.key === "ArrowRight") !== (document.documentElement.dir === "rtl");
+          const sib = (forward ? e.currentTarget.nextElementSibling : e.currentTarget.previousElementSibling) as HTMLElement | null;
           if (sib?.getAttribute("role") === "tab") {
             e.preventDefault();
             sib.click();

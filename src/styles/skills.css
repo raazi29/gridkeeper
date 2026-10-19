@@ -18,7 +18,7 @@
   min-width: 0;
 }
 .skills-title-sub {
-  margin-left: 6px;
+  margin-inline-start: 6px;
   color: var(--text-2);
   font-size: var(--fs-xs);
   font-weight: 400;
@@ -103,7 +103,7 @@
   display: flex;
   flex-direction: column;
   min-width: 0;
-  border-right: 1px solid var(--border);
+  border-inline-end: 1px solid var(--border);
 }
 .skills-right {
   flex: 1;
@@ -181,7 +181,7 @@
   border-radius: var(--radius-m);
   background: none;
   color: var(--text-1);
-  text-align: left;
+  text-align: start;
   cursor: pointer;
   transition:
     background-color var(--dur) var(--ease),
@@ -334,7 +334,7 @@
   border: 0;
   background: none;
   color: var(--accent-fg);
-  text-align: left;
+  text-align: start;
   cursor: pointer;
   word-break: break-all;
 }
@@ -423,7 +423,7 @@
   padding: 10px 12px;
   border-radius: var(--radius-m);
   border: 1px solid var(--warn-line);
-  border-left-width: 3px;
+  border-inline-start-width: 3px;
   background: var(--warn-soft);
   color: var(--text-0);
   font-size: var(--fs-s);
@@ -494,7 +494,7 @@
   border-bottom: 1px solid var(--border);
   background: none;
   color: var(--text-1);
-  text-align: left;
+  text-align: start;
   cursor: pointer;
 }
 .skills-file:last-child {

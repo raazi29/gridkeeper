@@ -1,6 +1,8 @@
 // Paste guard decision (pure; unit-tested). Large pastes into a program that has not enabled bracketed
 // paste arrive as if typed: every newline is Enter, so a shell would run each line as a command.
 
+import { t } from "../i18n";
+
 /** Byte threshold (UTF-8). */
 export const PASTE_MAX_BYTES = 64 * 1024;
 /** Line threshold: more than this many lines asks first. */
@@ -42,9 +44,7 @@ export function checkPaste(text: string, opts: { bracketed: boolean; enabled: bo
 }
 
 export function pasteTitle(check: PasteCheck, sessionName: string): string {
-  const what =
-    check.lines > PASTE_MAX_LINES || check.bytes <= PASTE_MAX_BYTES
-      ? `${check.lines.toLocaleString("en-US")} lines`
-      : `${Math.round(check.bytes / 1024).toLocaleString("en-US")} KiB`;
-  return `Paste ${what} into ${sessionName}?`;
+  return check.lines > PASTE_MAX_LINES || check.bytes <= PASTE_MAX_BYTES
+    ? t("terminal.pasteTitleLines", { lines: check.lines, name: sessionName })
+    : t("terminal.pasteTitleKib", { kib: Math.round(check.bytes / 1024), name: sessionName });
 }

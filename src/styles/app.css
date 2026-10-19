@@ -285,7 +285,7 @@ button.chip-accent:hover {
   transition: color var(--dur) var(--ease);
 }
 .link-btn.push-right {
-  margin-left: auto;
+  margin-inline-start: auto;
   align-self: center;
 }
 .link-btn:hover {
@@ -335,7 +335,7 @@ button.chip-accent:hover {
   box-shadow: 0 0 0 3px var(--err-soft);
 }
 .select {
-  padding-right: 4px;
+  padding-inline-end: 4px;
   cursor: pointer;
 }
 .select option {
@@ -343,7 +343,7 @@ button.chip-accent:hover {
   color: var(--text-0);
 }
 input[type="number"].input {
-  padding-right: 2px;
+  padding-inline-end: 2px;
 }
 .check {
   display: inline-flex;
@@ -421,7 +421,7 @@ input[type="number"].input {
 }
 .warn-inline svg {
   vertical-align: -2px;
-  margin-right: 4px;
+  margin-inline-end: 4px;
 }
 .row-end {
   display: flex;
@@ -477,7 +477,7 @@ input[type="number"].input {
 }
 .confirm-list {
   list-style: none;
-  padding-left: 22px;
+  padding-inline-start: 22px;
   white-space: normal;
 }
 .confirm-list li {
@@ -489,7 +489,7 @@ input[type="number"].input {
 .confirm-list li::before {
   content: "•";
   position: absolute;
-  left: -12px;
+  inset-inline-start: -12px;
   color: var(--text-2);
 }
 .code-inline {
@@ -594,7 +594,7 @@ input[type="number"].input {
 .switch-knob {
   position: absolute;
   top: 2px;
-  left: 2px;
+  inset-inline-start: 2px;
   width: 10px;
   height: 10px;
   border-radius: calc(var(--radius-s) - 1px);
@@ -768,7 +768,7 @@ input[type="number"].input {
   width: var(--sidebar-w);
   flex: none;
   background: var(--bg-1);
-  border-right: 1px solid var(--border);
+  border-inline-end: 1px solid var(--border);
   min-height: 0;
 }
 .sidebar.is-collapsed {
@@ -864,7 +864,7 @@ input[type="number"].input {
 .ws-row.is-active::before {
   content: "";
   position: absolute;
-  left: 4px;
+  inset-inline-start: 4px;
   top: 9px;
   bottom: 9px;
   width: 2px;
@@ -943,7 +943,7 @@ input[type="number"].input {
   color: var(--text-2);
   font-size: var(--fs-s);
   cursor: pointer;
-  text-align: left;
+  text-align: start;
   transition:
     background-color var(--dur) var(--ease),
     color var(--dur) var(--ease),
@@ -996,7 +996,7 @@ input[type="number"].input {
 }
 .rail-dot {
   position: absolute;
-  right: 3px;
+  inset-inline-end: 3px;
   bottom: 3px;
   width: 5px;
   height: 5px;
@@ -1027,7 +1027,7 @@ input[type="number"].input {
   color: var(--text-1);
   font-size: var(--fs-s);
   cursor: pointer;
-  text-align: left;
+  text-align: start;
   transition:
     background-color var(--dur) var(--ease),
     color var(--dur) var(--ease);
@@ -1074,7 +1074,7 @@ input[type="number"].input {
   text-overflow: ellipsis;
   white-space: nowrap;
   direction: rtl; /* keep the end of long paths visible */
-  text-align: left;
+  text-align: start;
   border: 0;
   background: none;
   padding: 2px 5px;
@@ -1108,7 +1108,7 @@ input[type="number"].input {
   text-overflow: ellipsis;
 }
 .ws-header-actions {
-  margin-left: auto;
+  margin-inline-start: auto;
   display: flex;
   align-items: center;
   gap: 2px;
@@ -1233,7 +1233,7 @@ input[type="number"].input {
   justify-content: center;
   width: 22px;
   height: 22px;
-  margin-left: 2px;
+  margin-inline-start: 2px;
   border: 0;
   border-radius: var(--radius-s);
   background: transparent;
@@ -1262,7 +1262,7 @@ input[type="number"].input {
   display: flex;
   flex-direction: column;
   min-height: 0;
-  border-left: 1px solid var(--border);
+  border-inline-start: 1px solid var(--border);
   background: var(--bg-1);
 }
 .inspector-head {
@@ -1299,7 +1299,7 @@ input[type="number"].input {
   border: 0;
   background: none;
   padding: 0;
-  text-align: left;
+  text-align: start;
   font-size: var(--fs-m);
   font-weight: 600;
   color: var(--text-0);
@@ -1366,7 +1366,7 @@ input[type="number"].input {
 }
 .kv-path {
   direction: rtl;
-  text-align: left;
+  text-align: start;
 }
 .kv-block {
   flex-direction: column;
@@ -1530,7 +1530,7 @@ input[type="number"].input {
   content: "";
   position: absolute;
   top: 0;
-  left: 16px;
+  inset-inline-start: 16px;
   width: 28px;
   height: 2px;
   border-radius: 0 0 1px 1px;
@@ -1576,7 +1576,7 @@ input[type="number"].input {
   flex: none;
 }
 .footer-note {
-  margin-right: auto;
+  margin-inline-end: auto;
   font-size: var(--fs-xs);
   color: var(--text-2);
 }
@@ -1614,7 +1614,7 @@ input[type="number"].input {
   background: transparent;
   color: var(--text-0);
   font-size: var(--fs-s);
-  text-align: left;
+  text-align: start;
   cursor: pointer;
   outline: none;
 }
@@ -1654,7 +1654,7 @@ input[type="number"].input {
 /* ---------- toasts ---------- */
 .toasts {
   position: fixed;
-  right: 12px;
+  inset-inline-end: 12px;
   bottom: calc(var(--statusbar-h) + 10px);
   z-index: var(--z-toast);
   display: flex;
@@ -1685,7 +1685,7 @@ input[type="number"].input {
 .toast::before {
   content: "";
   position: absolute;
-  left: 0;
+  inset-inline-start: 0;
   top: 0;
   bottom: 0;
   width: 2px;
@@ -1751,7 +1751,7 @@ input[type="number"].input {
   font-variant-numeric: tabular-nums;
 }
 .table th {
-  text-align: left;
+  text-align: start;
   font-family: var(--font-mono);
   font-weight: 500;
   font-size: var(--fs-2xs);
@@ -1770,7 +1770,7 @@ input[type="number"].input {
   text-overflow: ellipsis;
 }
 .table .num {
-  text-align: right;
+  text-align: end;
   font-family: var(--font-mono);
   font-size: 11.5px;
 }
@@ -1868,7 +1868,7 @@ input[type="number"].input {
 .palette-item.is-selected::before {
   content: "";
   position: absolute;
-  left: 0;
+  inset-inline-start: 0;
   top: 8px;
   bottom: 8px;
   width: 2px;
@@ -1904,7 +1904,7 @@ input[type="number"].input {
 }
 .palette-item .kbd {
   flex: none;
-  margin-left: auto;
+  margin-inline-start: auto;
 }
 
 /* ---------- new session dialog bits ---------- */
@@ -2056,7 +2056,7 @@ input[type="number"].input {
   flex-direction: column;
   gap: 1px;
   padding: 10px 8px;
-  border-right: 1px solid var(--border);
+  border-inline-end: 1px solid var(--border);
   background: color-mix(in srgb, var(--bg-0) 40%, var(--bg-1));
 }
 .settings-tab {
@@ -2068,7 +2068,7 @@ input[type="number"].input {
   background: transparent;
   color: var(--text-1);
   font-size: var(--fs-s);
-  text-align: left;
+  text-align: start;
   cursor: pointer;
   transition:
     background-color var(--dur) var(--ease),
@@ -2086,7 +2086,7 @@ input[type="number"].input {
 .settings-tab.is-active::before {
   content: "";
   position: absolute;
-  left: 0;
+  inset-inline-start: 0;
   top: 8px;
   bottom: 8px;
   width: 2px;
@@ -2128,7 +2128,7 @@ input[type="number"].input {
   border-radius: var(--radius-l);
   background: var(--bg-1);
   color: var(--text-0);
-  text-align: left;
+  text-align: start;
   cursor: pointer;
   overflow: hidden;
   font-family: var(--font-ui);
@@ -2164,7 +2164,7 @@ input[type="number"].input {
   flex-direction: column;
   gap: 4px;
   background: var(--bg-1);
-  border-right: 1px solid var(--border);
+  border-inline-end: 1px solid var(--border);
 }
 .tcp-side i {
   display: block;
@@ -2379,7 +2379,7 @@ input[type="number"].input {
   background: var(--bg-1);
   box-shadow: var(--bevel);
   color: var(--text-0);
-  text-align: left;
+  text-align: start;
   cursor: pointer;
   overflow: hidden;
   transition:
@@ -2392,7 +2392,7 @@ input[type="number"].input {
   content: "";
   position: absolute;
   top: 10px;
-  right: 10px;
+  inset-inline-end: 10px;
   width: 6px;
   height: 6px;
   border-radius: 1.5px;
@@ -2576,7 +2576,7 @@ input[type="number"].input {
 
 .quick-launch--ghost {
   height: 22px;
-  margin-left: 2px;
+  margin-inline-start: 2px;
   color: var(--text-1);
 }
 .quick-launch--ghost:hover {

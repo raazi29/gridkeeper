@@ -9,12 +9,16 @@ import { autoStartable, isBrowserMeta } from "../lib/browserPanes";
 import { dropNav, getNav } from "../browser/nav";
 import { notify } from "./notify";
 import { shellLabel } from "../lib/platform";
+import { t } from "../i18n";
 
-const AGENT_LABEL: Record<AgentKind, string> = {
+/** Default session names ("Claude Code 2"): product names stay; "Command" follows the UI language (getter). */
+const AGENT_LABEL: Readonly<Record<AgentKind, string>> = {
   powershell: shellLabel(),
   claude: "Claude Code",
   codex: "Codex",
-  generic: "Command",
+  get generic() {
+    return t("sessions.defaultNameCommand");
+  },
 };
 
 export function defaultResume(agent: AgentKind, presetResumes = false): ResumeMode {
@@ -118,7 +122,8 @@ export function maybeAutoRetry(info: SessionInfo) {
   const upMs = Date.parse(info.endedAt) - Date.parse(info.startedAt);
   if (!(upMs >= 0 && upMs < STARTUP_FAIL_WINDOW_MS) || retried.has(info.id)) return;
   retried.add(info.id);
-  writeLocalNotice(info.id, `[startup failed after ${Math.round(upMs / 1000)} s — retrying once in 3 s]`);
+  // Local notice drawn in the pane only (never sent to the program), so it follows the UI language.
+  writeLocalNotice(info.id, t("sessions.startupRetry", { seconds: Math.round(upMs / 1000) }));
   window.setTimeout(() => {
     const cur = useApp.getState().runtime[info.id];
     if (cur && !isLive(cur) && useApp.getState().persisted.sessions.some((m) => m.id === info.id))
@@ -196,7 +201,7 @@ export async function startSession(
       ...useApp.getState().runtime[id],
       state: { state: "failed", message },
     });
-    notify("error", `${meta.name}: ${message}`);
+    notify("error", t("sessions.startFailed", { name: meta.name, error: message }));
     return false;
   }
 }
@@ -272,7 +277,7 @@ export async function copyOutput(id: SessionId) {
   try {
     const text = await ipc.sessionOutputText(id);
     await writeText(text);
-    notify("info", `Copied ${text.length.toLocaleString()} characters`);
+    notify("info", t("sessions.copiedChars", { count: text.length }));
   } catch (e) {
     notify("error", errorMessage(e));
   }

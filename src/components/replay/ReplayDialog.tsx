@@ -6,6 +6,7 @@
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { notify } from "../../actions/notify";
+import { formatDate, t as translate, useT } from "../../i18n";
 import { errorMessage, ipc } from "../../lib/ipc";
 import { dayKey, statusLine } from "../../lib/flightlog";
 import type { ReplayExportKind, ReplayInfo } from "../../lib/types";
@@ -99,7 +100,7 @@ function fmtDate(ms: number | null): string {
   if (!ms) return "—";
   const d = new Date(ms);
   const today = new Date().toDateString() === d.toDateString();
-  return today ? `today ${formatClock(ms)}` : `${d.toLocaleDateString(undefined, { month: "short", day: "numeric" })} ${formatClock(ms)}`;
+  return today ? translate("replay.todayAt", { time: formatClock(ms) }) : `${formatDate(d, { month: "short", day: "numeric" })} ${formatClock(ms)}`;
 }
 
 const fmtSec = (ms: number) => `${Math.floor(ms / 60000)}:${String(Math.floor((ms % 60000) / 1000)).padStart(2, "0")}`;
@@ -107,6 +108,7 @@ const fmtSec = (ms: number) => `${Math.floor(ms / 60000)}:${String(Math.floor((m
 // ---- dialog -------------------------------------------------------------------------------------------
 
 export function ReplayDialog() {
+  const t = useT();
   const dir = useReplay((s) => s.dialog.dir);
   const version = useReplay((s) => s.version);
   const auto = useReplay((s) => s.auto);
@@ -311,12 +313,12 @@ export function ReplayDialog() {
       if (out)
         actionToast({
           kind: "info",
-          message: `Mission replay saved (${formatBytes(out.bytes)})`,
+          message: t("replay.saved", { size: formatBytes(out.bytes) }),
           detail: out.path,
-          action: { label: "Show in folder", run: () => void revealPath(out.path) },
+          action: { label: t("replay.showInFolder"), run: () => void revealPath(out.path) },
         });
     } catch (e) {
-      if (!(e instanceof ExportCancelled)) notify("error", `Export failed: ${errorMessage(e)}`);
+      if (!(e instanceof ExportCancelled)) notify("error", t("replay.exportFailed", { error: errorMessage(e) }));
     } finally {
       setExp(null);
     }
@@ -326,10 +328,12 @@ export function ReplayDialog() {
     if (!dir || !current) return;
     const live = rec?.file === current.info.name;
     const ok = await confirmDialog({
-      title: "Delete this recording?",
-      message: `${current.loaded?.summary.goal ?? current.info.name}${live ? " — it is still recording; recording stops first." : ""}`,
+      title: t("replay.deleteTitle"),
+      message: live
+        ? t("replay.deleteMessageLive", { goal: current.loaded?.summary.goal ?? current.info.name })
+        : (current.loaded?.summary.goal ?? current.info.name),
       detail: current.info.name,
-      confirmLabel: "Delete",
+      confirmLabel: t("common.delete"),
       danger: true,
     });
     if (!ok) return;
@@ -340,7 +344,7 @@ export function ReplayDialog() {
       setSelected(null);
       useReplay.setState((s) => ({ version: s.version + 1 }));
     } catch (e) {
-      notify("error", `Could not delete the recording: ${errorMessage(e)}`);
+      notify("error", t("replay.deleteFailed", { error: errorMessage(e) }));
     }
   };
 
@@ -364,37 +368,35 @@ export function ReplayDialog() {
   const expLabel = !exp
     ? ""
     : exp.progress.phase === "save"
-      ? "Saving…"
+      ? t("replay.saving")
       : exp.progress.phase === "encode"
         ? exp.kind === "gif"
-          ? "Finishing the GIF…"
-          : "Finishing the video…"
+          ? t("replay.finishingGif")
+          : t("replay.finishingVideo")
         : exp.kind === "gif"
-          ? `Encoding GIF… ${pct}%`
-          : `Recording in real time… ${fmtSec(exp.progress.fraction * total)} / ${fmtSec(total)}`;
+          ? t("replay.encodingGif", { percent: pct })
+          : t("replay.recordingRealtime", { elapsed: fmtSec(exp.progress.fraction * total), total: fmtSec(total) });
 
   const recordingBox = dir && (
     <div className="rp-recbox">
       {rec ? (
         <div className="rp-recline">
           <span className="rp-rec-dot is-on" aria-hidden="true" />
-          <span>
-            Recording since {formatClock(rec.startedAt)} · {rec.events} events
-          </span>
+          <span>{t("replay.recordingSince", { time: formatClock(rec.startedAt), count: rec.events })}</span>
           <Button size="sm" onClick={() => stopRecording(dir)}>
-            Stop
+            {t("common.stop")}
           </Button>
         </div>
       ) : (
         <div className="rp-recline">
           <span className="rp-rec-dot" aria-hidden="true" />
-          <span className="rp-dim">Not recording this project</span>
+          <span className="rp-dim">{t("replay.notRecording")}</span>
           <Button size="sm" onClick={() => void startRecording(dir, { manual: true })}>
-            Record
+            {t("replay.record")}
           </Button>
         </div>
       )}
-      <Toggle checked={auto} onChange={setAutoRecord} label="Record automatically" hint="While Mission Control shows a mission for this project." />
+      <Toggle checked={auto} onChange={setAutoRecord} label={t("replay.autoRecord")} hint={t("replay.autoRecordHint")} />
     </div>
   );
 
@@ -402,7 +404,7 @@ export function ReplayDialog() {
 
   return (
     <Modal
-      title="Mission replay"
+      title={t("replay.title")}
       onClose={onClose}
       width={1180}
       className="rp-modal"
@@ -413,19 +415,19 @@ export function ReplayDialog() {
               <span style={{ width: `${pct}%` }} />
             </span>
             <span className="rp-progress-label">{expLabel}</span>
-            <Button onClick={() => exp.abort.abort()}>Cancel</Button>
+            <Button onClick={() => exp.abort.abort()}>{t("common.cancel")}</Button>
           </div>
         ) : (
           <>
             <Button variant="danger" disabled={!current} onClick={() => void remove()}>
-              Delete recording
+              {t("replay.deleteRecording")}
             </Button>
-            <span className="rp-footnote">{video ? `Video renders in real time: a ${prefs.length} s video takes ${prefs.length} s. Keep this window visible.` : "Video export is not available in this WebView; GIF works."}</span>
+            <span className="rp-footnote">{video ? t("replay.realtimeNote", { seconds: prefs.length }) : t("replay.noVideo")}</span>
             <Button disabled={!scene} onClick={() => void runExport("gif")}>
-              Export GIF
+              {t("replay.exportGif")}
             </Button>
             <Button variant="primary" disabled={!scene || !video} title={video ? `MediaRecorder: ${video.mime}` : undefined} onClick={() => video && void runExport(video.ext)}>
-              Export {video ? video.ext.toUpperCase() : "video"}
+              {video ? t("replay.exportFormat", { format: video.ext.toUpperCase() }) : t("replay.exportVideo")}
             </Button>
           </>
         )
@@ -433,28 +435,22 @@ export function ReplayDialog() {
     >
       {!dir ? (
         <div className="rp-empty">
-          <p>This workspace has no project folder, so it has no mission file to record.</p>
-          <p className="rp-dim">Set a project folder for the workspace, open Mission Control and create a mission; replays record from there.</p>
+          <p>{t("replay.noProject")}</p>
+          <p className="rp-dim">{t("replay.noProjectHint")}</p>
         </div>
       ) : empty ? (
         <div className="rp-empty">
           {listError && <div className="callout is-error">{listError}</div>}
-          <h3>No recordings yet</h3>
-          <p>
-            A mission replay is recorded from what Gridkeeper already sees while your agents work: the mission goal and task board (<code>.gridkeeper/mission.md</code>), each agent&rsquo;s
-            state (working, needs you, done), branch stats (commits, files, lines) and short messages between agents (briefs, hand-offs, broadcasts).
-          </p>
-          <p className="rp-dim">
-            It never records terminal output, file contents, environment variables, paths or account e-mails. Recordings are small JSON-lines files in <code>.gridkeeper/replay/</code> next to the
-            mission file (ignored by git). Recording starts automatically when Mission Control shows a mission (if enabled below), or press Record.
-          </p>
+          <h3>{t("replay.emptyTitle")}</h3>
+          <p>{t.rich("replay.emptyWhat", { code: (c) => <code>{c}</code> })}</p>
+          <p className="rp-dim">{t.rich("replay.emptyPrivacy", { code: (c) => <code>{c}</code> })}</p>
           {recordingBox}
         </div>
       ) : (
         <div className={`rp${exporting ? " is-busy" : ""}`}>
           <aside className="rp-side">
-            <div className="rp-list" role="listbox" aria-label="Recordings">
-              {items === null && <div className="rp-dim rp-pad">Loading…</div>}
+            <div className="rp-list" role="listbox" aria-label={t("replay.recordings")}>
+              {items === null && <div className="rp-dim rp-pad">{t("common.loading")}</div>}
               {items?.map((it) => {
                 const s = it.loaded?.summary;
                 const meta = metaFromName(it.info.name);
@@ -471,16 +467,18 @@ export function ReplayDialog() {
                   >
                     <span className="rp-item-top">
                       <span>{fmtDate(s?.startedAt ?? meta.startedAt)}</span>
-                      {live && <span className="rp-live">● live</span>}
+                      {live && <span className="rp-live">{t("replay.live")}</span>}
                     </span>
                     <span className="rp-item-goal">{s?.goal ?? meta.slug.replace(/-/g, " ")}</span>
                     <span className="rp-item-meta">
                       {it.error ? (
                         <span className="rp-err">{it.error}</span>
                       ) : s ? (
-                        <>
-                          {formatWall(s.durationMs)} · {s.events} events · {s.agents} agents{s.tasksTotal ? ` · ${s.tasksDone}/${s.tasksTotal} tasks` : ""}
-                        </>
+                        s.tasksTotal ? (
+                          t("replay.itemMetaTasks", { duration: formatWall(s.durationMs), events: s.events, agents: s.agents, done: s.tasksDone, total: s.tasksTotal })
+                        ) : (
+                          t("replay.itemMeta", { duration: formatWall(s.durationMs), events: s.events, agents: s.agents })
+                        )
                       ) : (
                         formatBytes(it.info.sizeBytes)
                       )}
@@ -493,12 +491,12 @@ export function ReplayDialog() {
           </aside>
           <section className="rp-main">
             <div className={`rp-stage is-${prefs.aspect}`}>
-              <canvas ref={canvas} width={dims.w} height={dims.h} className="rp-canvas" aria-label="Replay preview" />
-              {!scene && <div className="rp-stage-msg">{current?.error ?? (current && current.loaded && current.loaded.events.length === 0 ? "This recording has no events yet." : "Loading…")}</div>}
+              <canvas ref={canvas} width={dims.w} height={dims.h} className="rp-canvas" aria-label={t("replay.previewAria")} />
+              {!scene && <div className="rp-stage-msg">{current?.error ?? (current && current.loaded && current.loaded.events.length === 0 ? t("replay.noEvents") : t("common.loading"))}</div>}
             </div>
             <div className="rp-transport">
-              <Button size="sm" disabled={!scene || exporting} onClick={() => (playing ? stop() : play())} aria-label={playing ? "Pause" : "Play"}>
-                {playing ? "❚❚ Pause" : "▶ Play"}
+              <Button size="sm" disabled={!scene || exporting} onClick={() => (playing ? stop() : play())} aria-label={playing ? t("replay.pause") : t("replay.play")}>
+                {playing ? `❚❚ ${t("replay.pause")}` : `▶ ${t("replay.play")}`}
               </Button>
               <input
                 ref={slider}
@@ -509,7 +507,7 @@ export function ReplayDialog() {
                 step={33}
                 defaultValue={0}
                 disabled={!scene || exporting}
-                aria-label="Scrub"
+                aria-label={t("replay.scrub")}
                 onInput={(e) => {
                   stop();
                   paint(Number(e.currentTarget.value));
@@ -519,43 +517,49 @@ export function ReplayDialog() {
                 0:00 / {fmtSec(total)}
               </span>
               {rec && rec.file === selected && (
-                <Button size="sm" variant="ghost" onClick={() => void refreshLive()} title="Load the events recorded since this preview was built">
-                  Refresh
+                <Button size="sm" variant="ghost" onClick={() => void refreshLive()} title={t("replay.refreshTitle")}>
+                  {t("common.refresh")}
                 </Button>
               )}
             </div>
             <div className="rp-options">
               <div className="rp-opt">
-                <span className="rp-opt-label">Length</span>
-                <Segmented size="sm" ariaLabel="Video length" value={String(prefs.length)} onChange={(v) => setPrefs({ length: Number(v) as ReplayLength })} options={LENGTHS.map((l) => ({ value: String(l), label: `${l} s` }))} />
+                <span className="rp-opt-label">{t("replay.length")}</span>
+                <Segmented size="sm" ariaLabel={t("replay.lengthAria")} value={String(prefs.length)} onChange={(v) => setPrefs({ length: Number(v) as ReplayLength })} options={LENGTHS.map((l) => ({ value: String(l), label: `${l} s` }))} />
               </div>
               <div className="rp-opt">
-                <span className="rp-opt-label">Aspect</span>
+                <span className="rp-opt-label">{t("replay.aspect")}</span>
                 <Segmented
                   size="sm"
-                  ariaLabel="Aspect ratio"
+                  ariaLabel={t("replay.aspectAria")}
                   value={prefs.aspect}
                   onChange={(v) => setPrefs({ aspect: v })}
                   options={(Object.keys(ASPECTS) as Aspect[]).map((a) => ({ value: a, label: ASPECTS[a].label, title: `${ASPECTS[a].w}×${ASPECTS[a].h}` }))}
                 />
               </div>
               <label className="rp-opt">
-                <span className="rp-opt-label">Theme</span>
-                <Select value={prefs.theme} onChange={(e) => setPrefs({ theme: e.target.value })} aria-label="Video theme">
-                  <option value="active">Active theme</option>
-                  {THEMES.map((t) => (
-                    <option key={t.id} value={t.id}>
-                      {t.name}
+                <span className="rp-opt-label">{t("replay.theme")}</span>
+                <Select value={prefs.theme} onChange={(e) => setPrefs({ theme: e.target.value })} aria-label={t("replay.themeAria")}>
+                  <option value="active">{t("replay.activeTheme")}</option>
+                  {THEMES.map((th) => (
+                    <option key={th.id} value={th.id}>
+                      {th.name}
                     </option>
                   ))}
                 </Select>
               </label>
               <div className="rp-opt">
-                <Toggle checked={prefs.watermark} onChange={(v) => setPrefs({ watermark: v })} label="Watermark" hint="“Made with Gridkeeper” on the end card" />
+                {/* The watermark itself is drawn by replay/render.ts (English for now); the hint quotes it as drawn. */}
+                <Toggle checked={prefs.watermark} onChange={(v) => setPrefs({ watermark: v })} label={t("replay.watermark")} hint={t("replay.watermarkHint", { mark: "“Made with Gridkeeper”" })} />
               </div>
               {flightLog.enabled && (
                 <div className="rp-opt">
-                  <Toggle checked={prefs.flightLine} onChange={(v) => setPrefs({ flightLine: v })} label="Flight log line" hint="Your streak and rank on the end card, e.g. “Day 7 streak · Captain”" />
+                  <Toggle
+                    checked={prefs.flightLine}
+                    onChange={(v) => setPrefs({ flightLine: v })}
+                    label={t("replay.flightLine")}
+                    hint={t("replay.flightLineHint", { example: t("flightLog.statusLine", { streak: 7, rank: t("flightLog.rank.captain") }) })}
+                  />
                 </div>
               )}
             </div>
@@ -563,15 +567,11 @@ export function ReplayDialog() {
               <div className="rp-facts mono">
                 <span>{formatClockRange(st.startT, st.endT)}</span>
                 <span>{formatWall(st.wallMs)} → {prefs.length} s</span>
-                <span>{summary.events} events</span>
-                <span>{st.agents} agents</span>
-                <span>
-                  {st.tasksDone}/{st.tasksTotal} tasks
-                </span>
-                <span>
-                  {st.commits} commits · +{st.ins} −{st.del}
-                </span>
-                {current?.loaded?.skipped ? <span className="rp-dim">{current.loaded.skipped} unreadable lines skipped</span> : null}
+                <span>{t("replay.events", { count: summary.events })}</span>
+                <span>{t("replay.agents", { count: st.agents })}</span>
+                <span>{t("replay.tasks", { done: st.tasksDone, total: st.tasksTotal })}</span>
+                <span>{t("replay.commits", { count: st.commits, ins: st.ins, del: st.del })}</span>
+                {current?.loaded?.skipped ? <span className="rp-dim">{t("replay.skipped", { count: current.loaded.skipped })}</span> : null}
               </div>
             )}
           </section>

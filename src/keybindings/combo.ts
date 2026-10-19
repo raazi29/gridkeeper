@@ -13,6 +13,7 @@
 //   terminal on a Mac) can never collide with ⌘ ones. `eventToCombo` swaps the two physical keys on
 //   macOS when reading an event; `displayCombo` shows ⌃⌥⇧⌘ glyphs there.
 
+import { t, type MessageKey } from "../i18n";
 import { OS, type Os } from "../lib/platform";
 
 export interface Combo {
@@ -175,14 +176,14 @@ export function displayCombo(combo: string, os: Os = OS): string {
   if (!c) return combo;
   if (os === "macos") {
     const mac: Record<string, string> = {
-      pagedown: "PgDn",
-      pageup: "PgUp",
+      pagedown: t("keys.pageDown"),
+      pageup: t("keys.pageUp"),
       arrowup: "↑",
       arrowdown: "↓",
       arrowleft: "←",
       arrowright: "→",
-      escape: "Esc",
-      space: "Space",
+      escape: t("keys.escape"),
+      space: t("keys.space"),
       tab: "⇥",
       enter: "↩",
       backspace: "⌫",
@@ -192,22 +193,26 @@ export function displayCombo(combo: string, os: Os = OS): string {
     // Apple's order: ⌃ Control, ⌥ Option, ⇧ Shift, ⌘ Command ("meta" token = ⌃, "ctrl" token = ⌘).
     return [c.meta && "⌃", c.alt && "⌥", c.shift && "⇧", c.ctrl && "⌘", key].filter(Boolean).join("");
   }
+  // Key caps follow the UI language where keyboards print them differently (Strg / Maj / Mayús …).
   const names: Record<string, string> = {
-    pagedown: "PgDn",
-    pageup: "PgUp",
+    pagedown: t("keys.pageDown"),
+    pageup: t("keys.pageUp"),
     arrowup: "↑",
     arrowdown: "↓",
     arrowleft: "←",
     arrowright: "→",
-    escape: "Esc",
-    space: "Space",
-    tab: "Tab",
-    enter: "Enter",
-    backspace: "Backspace",
-    delete: "Del",
+    escape: t("keys.escape"),
+    space: t("keys.space"),
+    tab: t("keys.tab"),
+    enter: t("keys.enter"),
+    backspace: t("keys.backspace"),
+    delete: t("keys.delete"),
+    insert: t("keys.insert"),
+    home: t("keys.home"),
+    end: t("keys.end"),
   };
   const key = names[c.key] ?? (c.key.length === 1 ? c.key.toUpperCase() : c.key[0].toUpperCase() + c.key.slice(1));
-  return [c.ctrl && "Ctrl", c.alt && "Alt", c.shift && "Shift", c.meta && (os === "linux" ? "Super" : "Win"), key].filter(Boolean).join("+");
+  return [c.ctrl && t("keys.ctrl"), c.alt && t("keys.alt"), c.shift && t("keys.shift"), c.meta && (os === "linux" ? t("keys.super") : t("keys.win")), key].filter(Boolean).join("+");
 }
 
 /**
@@ -240,62 +245,67 @@ const SHELL_KEYS = new Set(["tab", "escape", "enter", "space", "backspace", "del
 
 /**
  * Combos the app must never claim because shells, readline, TUIs and coding agents rely on them.
- * Returns a human-readable reason, or null when the combo is allowed.
+ * Returns a human-readable reason (in the UI language), or null when the combo is allowed.
  */
 export function forbiddenReason(combo: string, os: Os = OS): string | null {
+  const key = forbiddenReasonKey(combo, os);
+  return key ? t(key) : null;
+}
+
+function forbiddenReasonKey(combo: string, os: Os): MessageKey | null {
   const c = parseCombo(combo);
-  if (!c) return "Not a valid key combination";
+  if (!c) return "keys.reason.invalid";
   if (os === "macos") return forbiddenReasonMac(c);
   const { ctrl, alt, shift, meta, key } = c;
-  if (/^f([1-9]|1[0-9]|2[0-4])$/.test(key)) return "Function keys are used by terminal apps";
-  if (!ctrl && !alt && !meta) return "Needs Ctrl or Alt — plain and Shift+ keys go to the terminal";
-  if (ctrl && alt) return "Ctrl+Alt is AltGr on many keyboard layouts";
-  if (meta) return os === "linux" ? "Super-key combinations are reserved by the desktop" : "Windows-key combinations are reserved by the OS";
+  if (/^f([1-9]|1[0-9]|2[0-4])$/.test(key)) return "keys.reason.functionKeys";
+  if (!ctrl && !alt && !meta) return "keys.reason.needsModifier";
+  if (ctrl && alt) return "keys.reason.ctrlAlt";
+  if (meta) return os === "linux" ? "keys.reason.superReserved" : "keys.reason.winReserved";
   const letter = /^[a-z]$/.test(key);
-  if (alt && !ctrl && (letter || SHELL_KEYS.has(key))) return "Alt+letter is used by shell readline";
-  if (ctrl && !shift && !alt && (letter || /^[\[\]\\/@^_ ]$/.test(key) || key === "space")) return "Ctrl+letter is a terminal control key";
+  if (alt && !ctrl && (letter || SHELL_KEYS.has(key))) return "keys.reason.altLetter";
+  if (ctrl && !shift && !alt && (letter || /^[\[\]\\/@^_ ]$/.test(key) || key === "space")) return "keys.reason.ctrlLetter";
   if (ctrl && !alt && ["arrowup", "arrowdown", "arrowleft", "arrowright", "backspace", "delete", "home", "end", "enter", "escape", "space"].includes(key))
-    return "Used for word navigation / editing in shells";
-  if (ctrl && shift && (key === "c" || key === "v")) return "Reserved for terminal copy / paste";
+    return "keys.reason.wordNavigation";
+  if (ctrl && shift && (key === "c" || key === "v")) return "keys.reason.copyPaste";
   return null;
 }
 
 const ARROWS_AND_EDIT = ["arrowup", "arrowdown", "arrowleft", "arrowright", "backspace", "delete", "home", "end", "enter", "escape"];
 
 /** ⌘ + key (no ⌥ / ⌃) taken by macOS or the standard Edit menu, by Shift state. */
-const MAC_CMD_RESERVED: Record<string, string> = {
-  c: "⌘C / ⌘V / ⌘X are copy / paste / cut",
-  v: "⌘C / ⌘V / ⌘X are copy / paste / cut",
-  x: "⌘C / ⌘V / ⌘X are copy / paste / cut",
-  a: "⌘A is Select All",
-  z: "⌘Z is Undo",
-  q: "⌘Q quits the app",
-  h: "⌘H hides the app",
-  m: "⌘M minimizes the window",
-  w: "⌘W closes the window",
-  tab: "⌘⇥ is the macOS app switcher",
-  space: "⌘Space is Spotlight",
-  "`": "⌘` cycles the app's windows",
+const MAC_CMD_RESERVED: Record<string, MessageKey> = {
+  c: "keys.reason.macCopyPaste",
+  v: "keys.reason.macCopyPaste",
+  x: "keys.reason.macCopyPaste",
+  a: "keys.reason.macSelectAll",
+  z: "keys.reason.macUndo",
+  q: "keys.reason.macQuit",
+  h: "keys.reason.macHide",
+  m: "keys.reason.macMinimize",
+  w: "keys.reason.macCloseWindow",
+  tab: "keys.reason.macAppSwitcher",
+  space: "keys.reason.macSpotlight",
+  "`": "keys.reason.macCycleWindows",
 };
-const MAC_CMD_SHIFT_RESERVED: Record<string, string> = {
-  c: "Reserved for terminal copy / paste",
-  v: "Reserved for terminal copy / paste",
-  z: "⇧⌘Z is Redo",
-  q: "⇧⌘Q logs out",
-  tab: "⌘⇥ is the macOS app switcher",
-  "`": "⌘` cycles the app's windows",
-  "3": "⇧⌘3 / 4 / 5 take screenshots",
-  "4": "⇧⌘3 / 4 / 5 take screenshots",
-  "5": "⇧⌘3 / 4 / 5 take screenshots",
+const MAC_CMD_SHIFT_RESERVED: Record<string, MessageKey> = {
+  c: "keys.reason.copyPaste",
+  v: "keys.reason.copyPaste",
+  z: "keys.reason.macRedo",
+  q: "keys.reason.macLogOut",
+  tab: "keys.reason.macAppSwitcher",
+  "`": "keys.reason.macCycleWindows",
+  "3": "keys.reason.macScreenshots",
+  "4": "keys.reason.macScreenshots",
+  "5": "keys.reason.macScreenshots",
 };
 /** ⌥⌘ + key reserved by macOS. */
-const MAC_CMD_OPT_RESERVED: Record<string, string> = {
-  escape: "⌥⌘Esc opens Force Quit",
-  d: "⌥⌘D toggles the Dock",
-  h: "⌥⌘H hides other apps",
-  m: "⌥⌘M minimizes all windows",
-  w: "⌥⌘W closes all windows",
-  space: "⌥⌘Space opens a Finder search",
+const MAC_CMD_OPT_RESERVED: Record<string, MessageKey> = {
+  escape: "keys.reason.macForceQuit",
+  d: "keys.reason.macDock",
+  h: "keys.reason.macHideOthers",
+  m: "keys.reason.macMinimizeAll",
+  w: "keys.reason.macCloseAll",
+  space: "keys.reason.macFinderSearch",
 };
 
 /**
@@ -303,27 +313,27 @@ const MAC_CMD_OPT_RESERVED: Record<string, string> = {
  * the terminal (^C, ^D, ^Z, ^R …), except ⌃⇥ / ⌃⇧⇥ which terminals don't use; ⌘ combos are free unless
  * macOS or the Edit menu owns them; ⌥ Option types characters and moves by word.
  */
-function forbiddenReasonMac(c: Combo): string | null {
+function forbiddenReasonMac(c: Combo): MessageKey | null {
   const { ctrl, alt, shift, meta, key } = c;
-  if (/^f([1-9]|1[0-9]|2[0-4])$/.test(key)) return "Function keys are used by terminal apps";
-  if (!ctrl && !alt && !meta) return "Needs ⌘ or ⌥ — plain and ⇧ keys go to the terminal";
+  if (/^f([1-9]|1[0-9]|2[0-4])$/.test(key)) return "keys.reason.functionKeys";
+  if (!ctrl && !alt && !meta) return "keys.reason.macNeedsModifier";
   if (meta) {
     if (!ctrl && !alt && key === "tab") return null;
-    return "⌃ Control combinations go to the terminal (^C, ^D, ^Z …) or macOS";
+    return "keys.reason.macControl";
   }
   const letter = /^[a-z]$/.test(key);
   if (alt && !ctrl) {
-    if (letter || SHELL_KEYS.has(key)) return "⌥ Option+key types special characters / moves by word";
+    if (letter || SHELL_KEYS.has(key)) return "keys.reason.macOption";
     return null;
   }
   // ⌘ held from here on.
-  if (ARROWS_AND_EDIT.includes(key)) return "⌘+arrows / ⌫ / ↩ edit and navigate lines on macOS";
+  if (ARROWS_AND_EDIT.includes(key)) return "keys.reason.macArrows";
   if (alt) return MAC_CMD_OPT_RESERVED[key] ?? null;
   return (shift ? MAC_CMD_SHIFT_RESERVED[key] : MAC_CMD_RESERVED[key]) ?? null;
 }
 
 export function isForbiddenCombo(combo: string, os: Os = OS): boolean {
-  return forbiddenReason(combo, os) !== null;
+  return forbiddenReasonKey(combo, os) !== null;
 }
 
 /**

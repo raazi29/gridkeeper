@@ -96,7 +96,8 @@ export function mapAttentionTransition(prev: SessionAttn | undefined, next: Sess
  * The lifecycle mapping already logs those, so the attention echo is skipped.
  */
 export function isLifecycleEcho(a: SessionAttn): boolean {
-  return !!a.lastMessage && /^(Exited|Failed to start|Stopped)\b/.test(a.lastMessage);
+  // `lifecycle` is set by reduceAttention (its messages are translated); the English pattern covers older states.
+  return a.lifecycle === true || (!!a.lastMessage && /^(Exited|Failed to start|Stopped)\b/.test(a.lastMessage));
 }
 
 export interface LifecycleTrack {

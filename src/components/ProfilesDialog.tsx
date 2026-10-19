@@ -6,6 +6,7 @@ import { APP_NAME } from "../lib/brand";
 import { memo, useEffect, useMemo, useState } from "react";
 import { addAccount, checkAccount, refreshAccounts, restoreDismissedAccounts, scanAccounts, signIn, useAccountScan } from "../actions/accounts";
 import { notify } from "../actions/notify";
+import { useT } from "../i18n";
 import { accountStatus, groupAccounts, isSignedIn, maskEmail, type AccountGroup } from "../lib/accounts";
 import { errorMessage, ipc } from "../lib/ipc";
 import type { Account, AccountAgentInfo, PlannedHome } from "../lib/types";
@@ -20,6 +21,7 @@ import { pickFolder } from "./util/pick";
 const COLORS = ["#7b61ff", "#58a6ff", "#3fb950", "#d29922", "#f85149", "#db61a2", "#39c5cf", "#a9a9b6"];
 
 export function ProfilesDialog({ onClose }: { onClose: () => void }) {
+  const t = useT();
   const accounts = useApp((s) => s.accounts);
   const infos = useApp((s) => s.accountAgents);
   const agents = useApp((s) => s.agents);
@@ -37,46 +39,38 @@ export function ProfilesDialog({ onClose }: { onClose: () => void }) {
 
   return (
     <Modal
-      title="Accounts"
+      title={t("accounts.title")}
       onClose={onClose}
       width={720}
       headerExtra={
         <>
-          <Button size="sm" icon={<IconRestart size={12} />} onClick={() => void scanAccounts()} disabled={scanning} title="Find account folders and check every sign-in again">
-            {scanning ? "Scanning…" : "Rescan"}
+          <Button size="sm" icon={<IconRestart size={12} />} onClick={() => void scanAccounts()} disabled={scanning} title={t("accounts.rescanTitle")}>
+            {scanning ? t("accounts.scanning") : t("accounts.rescan")}
           </Button>
           {!adding && (
             <Button size="sm" icon={<IconPlus size={12} />} onClick={() => setAdding(groups[0]?.key ?? "claude")}>
-              Add account
+              {t("accounts.add")}
             </Button>
           )}
         </>
       }
-      footer={<Button onClick={onClose}>Done</Button>}
+      footer={<Button onClick={onClose}>{t("common.done")}</Button>}
     >
-      <p className="explain explain-top">
-        {APP_NAME} finds each agent's account folders automatically and checks sign-in with the agent's own status command. Every account is a separate home folder (
-        <span className="mono">CLAUDE_CONFIG_DIR</span>, <span className="mono">CODEX_HOME</span>, <span className="mono">HERMES_HOME</span>) with its own login and history, so sessions on
-        different accounts run side by side. {APP_NAME} never reads or copies credentials.
-      </p>
+      <p className="explain explain-top">{t.rich("accounts.explain", { app: APP_NAME, mono: (c) => <span className="mono">{c}</span> })}</p>
       {adding && <AddAccountForm infos={infos.filter((i) => i.isolation === "verified")} initialKey={adding} onDone={() => setAdding(null)} />}
       {groups.map((g) => (
         <AgentGroup key={g.key} group={g} onAdd={() => setAdding(g.key)} />
       ))}
-      {groups.length === 0 && <div className="empty-row">{scanning ? "Looking for accounts…" : "No accounts found yet. Use Rescan or Add account."}</div>}
+      {groups.length === 0 && <div className="empty-row">{scanning ? t("accounts.looking") : t("accounts.none")}</div>}
       {dismissed > 0 && (
         <div className="field-msg accounts-hidden">
-          {dismissed} removed account folder{dismissed === 1 ? " is" : "s are"} hidden from the scan.{" "}
+          {t("accounts.hiddenFolders", { count: dismissed })}{" "}
           <button type="button" className="link-btn" onClick={() => void restoreDismissedAccounts()}>
-            Show again
+            {t("accounts.showAgain")}
           </button>
         </div>
       )}
-      {noIsolation.length > 0 && (
-        <p className="explain">
-          Also installed, without account isolation (each uses its single login): {noIsolation.map((i) => i.label).join(", ")}.
-        </p>
-      )}
+      {noIsolation.length > 0 && <p className="explain">{t("accounts.noIsolation", { tools: noIsolation.map((i) => i.label).join(", ") })}</p>}
     </Modal>
   );
 }
@@ -85,19 +79,20 @@ export function ProfilesDialog({ onClose }: { onClose: () => void }) {
 export const AccountsDialog = ProfilesDialog;
 
 function AgentGroup({ group, onAdd }: { group: AccountGroup; onAdd: () => void }) {
+  const t = useT();
   const info = group.info;
   return (
     <div className="account-group">
       <div className="account-group-head">
         <span className="section-label">{group.label}</span>
         {info?.homeEnv && <span className="muted mono account-env">{info.homeEnv}</span>}
-        {info && !info.installed && <span className="chip tone-warn">Not installed</span>}
+        {info && !info.installed && <span className="chip tone-warn">{t("accounts.notInstalled")}</span>}
         <button type="button" className="link-btn push-right" onClick={onAdd}>
-          Add {group.label} account
+          {t("accounts.addFor", { agent: group.label })}
         </button>
       </div>
       <div className="profile-list">
-        {group.accounts.length === 0 && <div className="empty-row">No accounts yet.</div>}
+        {group.accounts.length === 0 && <div className="empty-row">{t("accounts.noneForAgent")}</div>}
         {group.accounts.map((a) => (
           <AccountRow key={a.id} account={a} info={info} />
         ))}
@@ -107,6 +102,7 @@ function AgentGroup({ group, onAdd }: { group: AccountGroup; onAdd: () => void }
 }
 
 const AccountRow = memo(function AccountRow({ account, info }: { account: Account; info: AccountAgentInfo | null }) {
+  const t = useT();
   const [checking, setChecking] = useState(false);
   const [editing, setEditing] = useState(false);
   const [name, setName] = useState(account.name);
@@ -122,7 +118,7 @@ const AccountRow = memo(function AccountRow({ account, info }: { account: Accoun
     try {
       await checkAccount(account.id);
     } catch (e) {
-      notify("error", `Check failed: ${errorMessage(e)}`);
+      notify("error", t("accounts.toast.checkFailed", { error: errorMessage(e) }));
     } finally {
       setChecking(false);
     }
@@ -134,19 +130,17 @@ const AccountRow = memo(function AccountRow({ account, info }: { account: Accoun
       await refreshAccounts();
       setEditing(false);
     } catch (e) {
-      notify("error", `Could not save account: ${errorMessage(e)}`);
+      notify("error", t("accounts.toast.saveFailed", { error: errorMessage(e) }));
     }
   };
 
   const remove = async () => {
     const inUse = useApp.getState().persisted.sessions.filter((m) => m.profileId === account.id).length;
     const ok = await confirmDialog({
-      title: `Remove account “${account.name}”?`,
-      message:
-        `Removes the entry from ${APP_NAME} only. The folder — including its login and history — is NOT deleted, and the automatic scan will not add it again (use “Show again” to undo).` +
-        (inUse ? ` ${inUse} session definition${inUse === 1 ? " uses" : "s use"} it and will need another account on next start.` : ""),
+      title: t("accounts.removeTitle", { name: account.name }),
+      message: inUse ? t("accounts.removeMessageInUse", { app: APP_NAME, count: inUse }) : t("accounts.removeMessage", { app: APP_NAME }),
       detail: account.configDir ?? account.resolvedDir ?? undefined,
-      confirmLabel: "Remove entry",
+      confirmLabel: t("accounts.removeConfirm"),
       danger: true,
     });
     if (!ok) return;
@@ -154,7 +148,7 @@ const AccountRow = memo(function AccountRow({ account, info }: { account: Accoun
       await ipc.profileDelete(account.id);
       await refreshAccounts();
     } catch (e) {
-      notify("error", `Could not remove account: ${errorMessage(e)}`);
+      notify("error", t("accounts.toast.removeFailed", { error: errorMessage(e) }));
     }
   };
 
@@ -167,7 +161,7 @@ const AccountRow = memo(function AccountRow({ account, info }: { account: Accoun
             <Input
               value={name}
               onChange={(e) => setName(e.target.value)}
-              aria-label="Account name"
+              aria-label={t("accounts.nameAria")}
               autoFocus
               onKeyDown={(e) => {
                 if (e.key === "Enter") {
@@ -178,23 +172,27 @@ const AccountRow = memo(function AccountRow({ account, info }: { account: Accoun
             />
             <ColorPicker value={color} onChange={setColor} />
             <Button size="sm" variant="primary" onClick={() => void save()}>
-              Save
+              {t("common.save")}
             </Button>
             <Button size="sm" variant="ghost" onClick={() => setEditing(false)}>
-              Cancel
+              {t("common.cancel")}
             </Button>
           </div>
         ) : (
           <div className="profile-name-row">
             <span className="profile-name">{account.name}</span>
             {email && <span className="muted profile-account">{email}</span>}
-            <span className={`chip tone-${st.tone}`}>{signingIn ? "Signing in…" : st.text}</span>
+            <span className={`chip tone-${st.tone}`}>{signingIn ? t("accounts.signingIn") : st.text}</span>
             {account.status.authMethod && account.status.authMethod !== "none" && <span className="chip">{account.status.authMethod}</span>}
-            {account.autoDetected && <span className="chip" title="Found automatically by the account scan">auto-detected</span>}
+            {account.autoDetected && (
+              <span className="chip" title={t("accounts.autoDetectedTitle")}>
+                {t("accounts.autoDetected")}
+              </span>
+            )}
           </div>
         )}
         <div className="profile-dir mono" title={account.resolvedDir ?? account.configDir ?? undefined}>
-          {account.configDir ?? `Default (${account.resolvedDir ?? "agent's default folder"})`}
+          {account.configDir ?? (account.resolvedDir ? t("accounts.defaultDir", { dir: account.resolvedDir }) : t("accounts.defaultDirUnknown"))}
         </div>
         {account.status.note && <div className="field-msg">{account.status.note}</div>}
       </div>
@@ -202,23 +200,23 @@ const AccountRow = memo(function AccountRow({ account, info }: { account: Accoun
         <div className="profile-actions">
           {!signedIn && info?.isolation === "verified" && (
             <Button size="sm" variant="primary" onClick={() => signIn(account)} disabled={signingIn} title={info.loginHint ?? undefined}>
-              {signingIn ? "Signing in…" : hasStatus ? "Sign in" : "Set up"}
+              {signingIn ? t("accounts.signingIn") : hasStatus ? t("accounts.signIn") : t("accounts.setUp")}
             </Button>
           )}
           {!signedIn && info?.deviceLoginArgs && !signingIn && (
-            <Button size="sm" variant="ghost" onClick={() => signIn(account, { device: true })} title={`Sign in with a device code (${info.deviceLoginArgs.join(" ")})`}>
-              Device code
+            <Button size="sm" variant="ghost" onClick={() => signIn(account, { device: true })} title={t("accounts.deviceCodeTitle", { args: info.deviceLoginArgs.join(" ") })}>
+              {t("accounts.deviceCode")}
             </Button>
           )}
           {hasStatus && (
             <Button size="sm" onClick={() => void check()} disabled={checking}>
-              {checking ? "Checking…" : "Check"}
+              {checking ? t("accounts.checking") : t("accounts.check")}
             </Button>
           )}
-          <IconButton size="sm" label="Rename / colour" onClick={() => setEditing(true)}>
+          <IconButton size="sm" label={t("accounts.renameColour")} onClick={() => setEditing(true)}>
             <IconEdit size={13} />
           </IconButton>
-          <IconButton size="sm" label="Remove account entry" onClick={() => void remove()}>
+          <IconButton size="sm" label={t("accounts.removeEntry")} onClick={() => void remove()}>
             <IconTrash size={13} />
           </IconButton>
         </div>
@@ -228,8 +226,9 @@ const AccountRow = memo(function AccountRow({ account, info }: { account: Accoun
 });
 
 function ColorPicker({ value, onChange }: { value: string; onChange: (c: string) => void }) {
+  const t = useT();
   return (
-    <div className="color-picker" role="radiogroup" aria-label="Colour">
+    <div className="color-picker" role="radiogroup" aria-label={t("accounts.colour")}>
       {COLORS.map((c) => (
         <button
           key={c}
@@ -247,6 +246,7 @@ function ColorPicker({ value, onChange }: { value: string; onChange: (c: string)
 }
 
 function AddAccountForm({ infos, initialKey, onDone }: { infos: AccountAgentInfo[]; initialKey: string; onDone: () => void }) {
+  const t = useT();
   const count = useApp((s) => s.accounts.length);
   const [key, setKey] = useState(infos.some((i) => i.key === initialKey) ? initialKey : (infos[0]?.key ?? ""));
   const info = infos.find((i) => i.key === key) ?? null;
@@ -266,7 +266,7 @@ function AddAccountForm({ infos, initialKey, onDone }: { infos: AccountAgentInfo
     setError(null);
     if (!info || !name.trim() || customDir.trim()) return;
     let cancelled = false;
-    const t = window.setTimeout(() => {
+    const timer = window.setTimeout(() => {
       ipc
         .accountsPlanHome(info.agent, info.preset, name)
         .then((p) => !cancelled && setPlan(p))
@@ -276,7 +276,7 @@ function AddAccountForm({ infos, initialKey, onDone }: { infos: AccountAgentInfo
     }, 200);
     return () => {
       cancelled = true;
-      window.clearTimeout(t);
+      window.clearTimeout(timer);
     };
   }, [info, name, customDir]);
 
@@ -285,17 +285,17 @@ function AddAccountForm({ infos, initialKey, onDone }: { infos: AccountAgentInfo
     setError(null);
     if (!info) return;
     if (!name.trim()) {
-      setError("Enter a name");
+      setError(t("accounts.form.nameRequired"));
       return;
     }
     if (blocked) {
-      setError("That folder already exists and is not empty. Use it as is, or pick another name.");
+      setError(t("accounts.form.folderNotEmpty"));
       return;
     }
     setBusy(true);
     try {
       const a = await addAccount(info, name, { useExisting: useExisting || !!customDir.trim(), homeDir: customDir.trim() || null, color, device });
-      notify("info", `Account “${a.name}” added`);
+      notify("info", t("accounts.toast.added", { name: a.name }));
       onDone();
     } catch (e) {
       setError(errorMessage(e));
@@ -304,8 +304,11 @@ function AddAccountForm({ infos, initialKey, onDone }: { infos: AccountAgentInfo
     }
   };
 
-  if (!info) return <div className="empty-row">No agent with account support is available.</div>;
-  const loginText = info.loginArgs.length ? `${info.key} ${(device && info.deviceLoginArgs ? info.deviceLoginArgs : info.loginArgs).join(" ")}` : `${info.key}, then /login`;
+  if (!info) return <div className="empty-row">{t("accounts.form.noAgents")}</div>;
+  // The command line itself is shown verbatim; only the "then /login" wording follows the UI language.
+  const loginText = info.loginArgs.length
+    ? `${info.key} ${(device && info.deviceLoginArgs ? info.deviceLoginArgs : info.loginArgs).join(" ")}`
+    : t("accounts.form.loginThenSlash", { command: info.key });
 
   return (
     <div
@@ -317,67 +320,64 @@ function AddAccountForm({ infos, initialKey, onDone }: { infos: AccountAgentInfo
         }
       }}
     >
-      <div className="section-label">New account</div>
-      <Field label="Agent" htmlFor="aa-agent" hint={!info.installed ? `${info.label} is not installed on this PC` : undefined}>
+      <div className="section-label">{t("accounts.form.title")}</div>
+      <Field label={t("accounts.form.agent")} htmlFor="aa-agent" hint={!info.installed ? t("accounts.form.notInstalledHint", { agent: info.label }) : undefined}>
         <Select id="aa-agent" value={key} onChange={(e) => setKey(e.target.value)}>
           {infos.map((i) => (
             <option key={i.key} value={i.key}>
-              {i.label}
-              {i.installed ? "" : " (not installed)"}
+              {i.installed ? i.label : t("accounts.form.optionNotInstalled", { agent: i.label })}
             </option>
           ))}
         </Select>
       </Field>
-      <Field label="Name" htmlFor="aa-name">
-        <Input id="aa-name" value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. work" data-autofocus autoFocus />
+      <Field label={t("accounts.form.name")} htmlFor="aa-name">
+        <Input id="aa-name" value={name} onChange={(e) => setName(e.target.value)} placeholder={t("accounts.form.namePlaceholder")} data-autofocus autoFocus />
       </Field>
       <Field
-        label="Folder"
+        label={t("accounts.form.folder")}
         htmlFor="aa-dir"
         error={error}
         hint={
           customDir.trim()
-            ? "This folder is used as is (created if missing)."
+            ? t("accounts.form.folderCustom")
             : plan
               ? plan.exists
                 ? plan.empty
-                  ? `${plan.path} — exists and is empty; it will be used.`
-                  : `${plan.path} — already exists and is not empty.`
-                : `${plan.path} — a new empty folder.`
-              : "Created automatically from the name. Choose a folder only to use a different location."
+                  ? t("accounts.form.folderEmpty", { path: plan.path })
+                  : t("accounts.form.folderExists", { path: plan.path })
+                : t("accounts.form.folderNew", { path: plan.path })
+              : t("accounts.form.folderAuto")
         }
       >
         <div className="input-group">
-          <Input id="aa-dir" mono value={customDir} onChange={(e) => setCustomDir(e.target.value)} placeholder={plan?.path ?? "automatic"} />
+          <Input id="aa-dir" mono value={customDir} onChange={(e) => setCustomDir(e.target.value)} placeholder={plan?.path ?? t("accounts.form.automatic")} />
           <Button
             icon={<IconFolder size={13} />}
             onClick={async () => {
-              const d = await pickFolder(`${info.label} home folder`);
+              const d = await pickFolder(t("accounts.form.homeFolder", { agent: info.label }));
               if (d) setCustomDir(d);
             }}
           >
-            Browse…
+            {t("common.browse")}
           </Button>
         </div>
       </Field>
       {plan && plan.exists && !plan.empty && !customDir.trim() && (
-        <Toggle checked={useExisting} onChange={setUseExisting} label="Use existing folder" hint="Added as is; nothing in it is changed." />
+        <Toggle checked={useExisting} onChange={setUseExisting} label={t("accounts.form.useExisting")} hint={t("accounts.form.useExistingHint")} />
       )}
-      {info.deviceLoginArgs && <Toggle checked={device} onChange={setDevice} label="Sign in with a device code" hint="For when the browser is on another device." />}
-      <Field label="Colour">
+      {info.deviceLoginArgs && <Toggle checked={device} onChange={setDevice} label={t("accounts.form.device")} hint={t("accounts.form.deviceHint")} />}
+      <Field label={t("accounts.colour")}>
         <ColorPicker value={color} onChange={setColor} />
       </Field>
       <p className="explain">
-        After creating the folder, a pane opens running <span className="mono">{loginText}</span> with <span className="mono">{info.homeEnv}</span> set to it — the agent's own sign-in.
-        {" "}The account is marked ready as soon as the agent reports it is signed in. {APP_NAME} never
-        copies credentials between accounts.
+        {t.rich("accounts.form.explain", { app: APP_NAME, command: loginText, env: info.homeEnv, mono: (c) => <span className="mono">{c}</span> })}
       </p>
       <div className="row-end">
         <Button variant="ghost" onClick={onDone}>
-          Cancel
+          {t("common.cancel")}
         </Button>
         <Button variant="primary" onClick={() => void submit()} disabled={busy || blocked}>
-          {busy ? "Creating…" : "Create & sign in"}
+          {busy ? t("accounts.form.creating") : t("accounts.form.create")}
         </Button>
       </div>
     </div>

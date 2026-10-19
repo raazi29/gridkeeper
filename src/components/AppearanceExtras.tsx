@@ -2,6 +2,7 @@
 // (level, blade colour, sound, test) and the hyperspace jump transition. Shown under the theme grid in Settings › Appearance.
 
 import { useState } from "react";
+import { useT } from "../i18n";
 import { igniteFocused, saberCue } from "../layout/saberBlade";
 import type { HyperspaceMode, SaberEffectsMode } from "../lib/types";
 import { useApp } from "../store/appStore";
@@ -22,18 +23,19 @@ interface SwatchOption {
   core: string;
 }
 
-/** Follow the theme accent (non-saber themes only). */
-const THEME_SWATCH: SwatchOption = { id: "theme", name: "Theme", blade: "var(--accent)", core: "color-mix(in srgb, var(--accent) 30%, #ffffff)" };
+/** Follow the theme accent (non-saber themes only). The name is translated at render time. */
+const THEME_SWATCH: SwatchOption = { id: "theme", name: "", blade: "var(--accent)", core: "color-mix(in srgb, var(--accent) 30%, #ffffff)" };
 
 /**
  * Blade colour presets. `withTheme` adds a leading "Theme" swatch (blade follows the theme accent) for
  * themes without their own blade. Picking a preset applies it to every theme.
  */
 export function SaberPicker({ size = "md", withTheme = false }: { size?: "sm" | "md"; withTheme?: boolean }) {
+  const t = useT();
   const saberColor = useApp((s) => s.persisted.settings.saberColor);
   const fromTheme = useApp((s) => s.persisted.settings.saberBladeFromTheme !== false);
   const options: SwatchOption[] = [
-    ...(withTheme ? [THEME_SWATCH] : []),
+    ...(withTheme ? [{ ...THEME_SWATCH, name: t("appearance.swatchTheme") }] : []),
     ...SABER_PRESETS.map((p) => ({ id: p.id, name: p.name, blade: p.accent, core: p.core })),
   ];
   const current = withTheme && fromTheme ? THEME_SWATCH.id : getSaber(saberColor).id;
@@ -47,7 +49,7 @@ export function SaberPicker({ size = "md", withTheme = false }: { size?: "sm" | 
     <div
       className={`saber-swatches saber-swatches--${size}`}
       role="radiogroup"
-      aria-label="Blade colour"
+      aria-label={t("appearance.bladeColour")}
       onKeyDown={(e) => {
         if (e.key === "ArrowRight" || e.key === "ArrowDown") {
           e.preventDefault();
@@ -67,7 +69,7 @@ export function SaberPicker({ size = "md", withTheme = false }: { size?: "sm" | 
           tabIndex={p.id === current ? 0 : -1}
           className={`saber-swatch${p.id === current ? " is-selected" : ""}`}
           style={{ ["--blade" as string]: p.blade, ["--blade-core" as string]: p.core }}
-          title={p.id === THEME_SWATCH.id ? "Blade follows the theme accent" : `${p.name} blade`}
+          title={p.id === THEME_SWATCH.id ? t("appearance.swatchThemeTitle") : t("appearance.swatchTitle", { name: p.name })}
           onClick={() => pick(p.id)}
         >
           <span className="saber-swatch-beam" aria-hidden="true" />
@@ -80,42 +82,47 @@ export function SaberPicker({ size = "md", withTheme = false }: { size?: "sm" | 
 
 /** Settings › Appearance › Saber: effect level, blade colour, sound and a test ignition (every theme). */
 export function SaberSettings({ theme }: { theme: Theme }) {
+  const t = useT();
   const mode = useApp((s) => s.persisted.settings.saberEffects ?? "auto");
   const sound = useApp((s) => s.persisted.settings.saberSound ?? false);
   const reduced = useApp((s) => prefersReducedMotion(s.persisted.settings));
   const level = resolveSaberLevel(mode, theme, reduced);
   const [preview, setPreview] = useState(0);
-  const now = reduced ? "Off while reduced motion is on." : level === "off" ? "Off." : `Now: ${level === "full" ? "Full" : "Subtle"}${mode === "auto" ? ` (${theme.name})` : ""}.`;
+  const now = reduced
+    ? t("appearance.saberNowReduced")
+    : level === "off"
+      ? t("appearance.saberNowOff")
+      : mode === "auto"
+        ? level === "full"
+          ? t("appearance.saberNowFullAuto", { theme: theme.name })
+          : t("appearance.saberNowSubtleAuto", { theme: theme.name })
+        : level === "full"
+          ? t("appearance.saberNowFull")
+          : t("appearance.saberNowSubtle");
   return (
     <>
-      <Field
-        label="Saber effects"
-        hint={`A blade ignites along a pane's top edge when you focus it or a session starts, and retracts when it exits. Full keeps the focused pane's blade lit, turns dividers into blades and crosses two blades by the bell when two sessions in a group finish together. Auto = Full with Saber Duel, Subtle elsewhere. ${now}`}
-      >
+      <Field label={t("appearance.saberEffects")} hint={t("appearance.saberEffectsHint", { now })}>
         <Segmented<SaberEffectsMode>
-          ariaLabel="Saber effects"
+          ariaLabel={t("appearance.saberEffects")}
           value={mode}
           onChange={(v) => useApp.getState().updateSettings({ saberEffects: v })}
           options={[
-            { value: "auto", label: "Auto", title: "Full with Saber Duel, Subtle elsewhere" },
-            { value: "subtle", label: "Subtle", title: "Ignite / retract only" },
-            { value: "full", label: "Full", title: "Lit focus blade, blade dividers, duel" },
-            { value: "off", label: "Off" },
+            { value: "auto", label: t("appearance.saberAuto"), title: t("appearance.saberAutoTitle") },
+            { value: "subtle", label: t("appearance.saberSubtle"), title: t("appearance.saberSubtleTitle") },
+            { value: "full", label: t("appearance.saberFull"), title: t("appearance.saberFullTitle") },
+            { value: "off", label: t("common.off") },
           ]}
         />
       </Field>
-      <Field
-        label="Blade colour"
-        hint={theme.saber ? "The blade that frames the focused pane, and the accent everywhere else." : "Theme = this theme's accent. A colour you pick applies to every theme."}
-      >
+      <Field label={t("appearance.bladeColour")} hint={theme.saber ? t("appearance.bladeColourHintSaber") : t("appearance.bladeColourHint")}>
         <SaberPicker withTheme={!theme.saber} />
       </Field>
       <Toggle
         checked={sound}
         disabled={level === "off"}
         onChange={(v) => useApp.getState().updateSettings({ saberSound: v })}
-        label="Blade sound"
-        hint="A short synthesized ignite / retract when you focus a pane or start a session (never on output; at most one per 0.6 s). Uses the alert volume."
+        label={t("appearance.bladeSound")}
+        hint={t("appearance.bladeSoundHint")}
       />
       <div className="saber-test">
         <span className="saber-preview" aria-hidden="true">
@@ -128,7 +135,7 @@ export function SaberSettings({ theme }: { theme: Theme }) {
             if (!igniteFocused()) saberCue("ignite");
           }}
         >
-          Test ignite
+          {t("appearance.testIgnite")}
         </Button>
       </div>
     </>
@@ -137,6 +144,7 @@ export function SaberSettings({ theme }: { theme: Theme }) {
 
 /** Controls for whatever the current theme offers. Renders nothing for plain themes. */
 export function ThemeEffects({ theme }: { theme: Theme }) {
+  const t = useT();
   const glow = useEffectPrefs((s) => s.glow);
   const holo = useEffectPrefs((s) => s.holo);
   const scanlines = useUi((s) => s.scanlines);
@@ -144,13 +152,13 @@ export function ThemeEffects({ theme }: { theme: Theme }) {
   const fx = theme.effects ?? {};
   if (!fx.glow && !fx.holo && !fx.scanlines) return null;
   return (
-    <div className="theme-effects form" aria-label={`${theme.name} effects`}>
+    <div className="theme-effects form" aria-label={t("appearance.themeEffectsAria", { theme: theme.name })}>
       {fx.glow && (
         <Toggle
           checked={glow}
           onChange={(v) => useEffectPrefs.getState().set({ glow: v })}
-          label={theme.saber ? "Blade glow" : "Glow"}
-          hint={theme.saber ? "Soft light around the focused pane's blade frame and status lamps." : "Status lamps and the focus line bloom slightly."}
+          label={theme.saber ? t("appearance.bladeGlow") : t("appearance.glow")}
+          hint={theme.saber ? t("appearance.bladeGlowHint") : t("appearance.glowHint")}
         />
       )}
       {fx.holo && (
@@ -158,29 +166,36 @@ export function ThemeEffects({ theme }: { theme: Theme }) {
           checked={holo}
           onChange={(v) => useEffectPrefs.getState().set({ holo: v })}
           disabled={reduceMotion}
-          label="Holo scan band"
-          hint="A faint band sweeps the focused pane's header now and then. GPU-composited; pauses when the window is in the background."
+          label={t("appearance.holo")}
+          hint={t("appearance.holoHint")}
         />
       )}
       {fx.scanlines && (
-        <Toggle checked={scanlines} onChange={(v) => useUi.getState().setScanlines(v)} disabled={reduceMotion} label="CRT scanlines" hint={`Static scanline overlay on panes (${theme.name} only).`} />
+        <Toggle
+          checked={scanlines}
+          onChange={(v) => useUi.getState().setScanlines(v)}
+          disabled={reduceMotion}
+          label={t("appearance.scanlines")}
+          hint={t("appearance.scanlinesHint", { theme: theme.name })}
+        />
       )}
     </div>
   );
 }
 
 export function HyperspaceToggle() {
+  const t = useT();
   const mode = useApp((s) => s.persisted.settings.hyperspaceTransition ?? "auto");
   return (
-    <Field label="Hyperspace jump" hint="A 0.2 s star-streak flash when you switch workspaces. Never blocks input; off under reduced motion.">
+    <Field label={t("appearance.hyperspace")} hint={t("appearance.hyperspaceHint")}>
       <Segmented<HyperspaceMode>
-        ariaLabel="Hyperspace jump"
+        ariaLabel={t("appearance.hyperspace")}
         value={mode}
         onChange={(v) => useApp.getState().updateSettings({ hyperspaceTransition: v })}
         options={[
-          { value: "auto", label: "With Hyperspace theme", title: "Only while the Hyperspace theme is active" },
-          { value: "on", label: "Always" },
-          { value: "off", label: "Off" },
+          { value: "auto", label: t("appearance.hyperspaceAuto"), title: t("appearance.hyperspaceAutoTitle") },
+          { value: "on", label: t("appearance.hyperspaceAlways") },
+          { value: "off", label: t("common.off") },
         ]}
       />
     </Field>
