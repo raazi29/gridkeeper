@@ -244,6 +244,7 @@ fn sanitize_settings(s: &mut Settings) {
         }
     }
     s.keybindings.retain(|k, v| !has_nul(k) && !has_nul(v));
+    crate::testrun::sanitize_settings(&mut s.test_runs);
 }
 
 /// Session role: lower-case `[a-z0-9-]`, at most 24 characters; anything else is dropped.
@@ -324,6 +325,10 @@ pub fn sanitize(mut state: PersistedState) -> (PersistedState, Vec<String>) {
     for w in &mut state.workspaces {
         if w.project_dir.as_deref().is_some_and(|p| has_nul(p) || p.trim().is_empty()) {
             w.project_dir = None;
+        }
+        crate::testrun::sanitize_command(&mut w.test_command);
+        for g in &mut w.groups {
+            crate::testrun::sanitize_command(&mut g.test_command);
         }
         let gb = w.groups.len();
         w.groups.retain(|g| !g.id.is_empty() && group_seen.insert(g.id.clone()));
@@ -520,9 +525,11 @@ mod tests {
                     name: "G".into(),
                     layout: Layout::default(),
                     session_ids: vec!["a".into(), "b".into()],
+                    test_command: None,
                 }],
                 active_group_id: Some("g1".into()),
                 created_at: None,
+                test_command: None,
             }],
             sessions: vec![session("a"), session("b")],
             active_workspace_id: Some("w1".into()),
@@ -692,6 +699,22 @@ mod tests {
         // Older files without the field still load.
         let v: SessionMeta = serde_json::from_value(json!({"id":"x","name":"x","agent":"claude","cwd":"C:\\"})).unwrap();
         assert_eq!(v.role, None);
+    }
+
+    #[test]
+    fn sanitize_normalizes_test_commands_and_settings() {
+        let mut st = sample();
+        st.workspaces[0].test_command = Some("  npm test  ".into());
+        st.workspaces[0].groups[0].test_command = Some("cargo test\nrm -rf /".into());
+        st.settings.test_runs = TestRunSettings { max_concurrent: 50, timeout_min: 0 };
+        let (st, _) = sanitize(st);
+        assert_eq!(st.workspaces[0].test_command.as_deref(), Some("npm test"));
+        assert_eq!(st.workspaces[0].groups[0].test_command, None, "multi-line commands are dropped");
+        assert_eq!(st.settings.test_runs, TestRunSettings { max_concurrent: 8, timeout_min: 1 });
+        // Older files without the fields load with defaults.
+        let w: Workspace = serde_json::from_value(json!({"id":"w","name":"W","groups":[{"id":"g","name":"G"}]})).unwrap();
+        assert_eq!((w.test_command, w.groups[0].test_command.clone()), (None, None));
+        assert_eq!(Settings::default().test_runs, TestRunSettings { max_concurrent: 2, timeout_min: 15 });
     }
 
     #[test]

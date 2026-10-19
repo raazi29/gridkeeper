@@ -1,8 +1,10 @@
 pub mod app;
+pub mod merge;
 pub mod meter;
 pub mod mission;
 pub mod replay;
 pub mod services;
 pub mod session;
 pub mod skills;
+pub mod testrun;
 pub mod tools;
