@@ -1,0 +1,312 @@
+/* Flight log: the Mission Control header chip and the dialog, in Mission Control's box-drawing look.
+   Theme variables only; motion is limited to the progress bar and is off under [data-reduce-motion]. */
+
+.fl-insignia,
+.fl-medal-glyph,
+.fl-shield {
+  flex-shrink: 0;
+  display: block;
+}
+.fl-insignia .fl-fill,
+.fl-medal-glyph .fl-fill,
+.fl-shield .fl-fill {
+  fill: currentColor;
+}
+
+/* ---- header chip -------------------------------------------------------------------------------- */
+
+.mc-btn.fl-chip {
+  gap: 6px;
+  color: var(--text-0);
+}
+.mc-btn.fl-chip .fl-insignia {
+  color: var(--accent);
+}
+
+/* ---- dialog ------------------------------------------------------------------------------------- */
+
+.fl {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  padding-top: 6px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text-1);
+}
+.fl-box {
+  position: relative;
+  padding: 14px 14px 12px;
+  border: 1px solid var(--mc-line);
+  border-radius: var(--radius-s);
+}
+.fl-box-label {
+  position: absolute;
+  top: -7px;
+  left: 10px;
+  padding: 0 5px;
+  background: var(--bg-1);
+  color: var(--accent);
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  line-height: 14px;
+}
+.fl-box-label::before {
+  content: "─ ";
+  color: var(--text-2);
+}
+.fl-box-label-right {
+  left: auto;
+  right: 10px;
+  color: var(--text-2);
+}
+.fl-box-label-right::before {
+  content: none;
+}
+.fl-dim {
+  color: var(--text-2);
+}
+.fl-note {
+  margin: 10px 0 0;
+  color: var(--text-2);
+  font-size: 11px;
+  line-height: 1.5;
+}
+.fl > .fl-note {
+  margin: 0;
+}
+
+/* rank */
+.fl-rank {
+  display: flex;
+  gap: 16px;
+  align-items: flex-start;
+}
+.fl-rank-badge {
+  display: grid;
+  place-items: center;
+  width: 64px;
+  height: 64px;
+  flex-shrink: 0;
+  border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent);
+  border-radius: var(--radius-s);
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+  color: var(--accent);
+}
+.fl-rank-body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.fl-rank-name {
+  font-family: var(--font-display, var(--font-ui));
+  font-size: 20px;
+  font-weight: 600;
+  color: var(--text-0);
+}
+.fl-bar {
+  height: 6px;
+  border: 1px solid var(--mc-line);
+  border-radius: 3px;
+  overflow: hidden;
+  background: var(--bg-0);
+}
+.fl-bar > span {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+  transition: width var(--dur-slow, 240ms) var(--ease, ease-out);
+}
+.fl-ladder {
+  display: flex;
+  gap: 8px;
+  margin: 2px 0 0;
+  padding: 0;
+  list-style: none;
+}
+.fl-ladder li {
+  color: var(--text-2);
+  opacity: 0.45;
+}
+.fl-ladder li.is-held {
+  color: var(--accent);
+  opacity: 1;
+}
+
+/* streak */
+.fl-streak {
+  display: flex;
+  gap: 22px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.fl-streak-main {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 150px;
+}
+.fl-big {
+  font-family: var(--font-display, var(--font-ui));
+  font-size: 34px;
+  font-weight: 600;
+  line-height: 1;
+  color: var(--text-0);
+}
+.fl-shields {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 4px;
+  cursor: help;
+}
+.fl-shield {
+  color: var(--text-2);
+}
+.fl-shield.is-on {
+  color: var(--accent);
+}
+.fl-shields .fl-dim {
+  margin-left: 4px;
+}
+.fl-heat-wrap {
+  display: flex;
+  gap: 6px;
+}
+.fl-heat-days {
+  display: grid;
+  grid-template-rows: repeat(7, 12px);
+  gap: 3px;
+  font-size: 9px;
+  line-height: 12px;
+  color: var(--text-2);
+}
+.fl-heat {
+  display: flex;
+  gap: 3px;
+}
+.fl-heat-col {
+  display: grid;
+  grid-template-rows: repeat(7, 12px);
+  gap: 3px;
+}
+.fl-cell {
+  width: 12px;
+  height: 12px;
+  border-radius: 2px;
+  border: 1px solid var(--mc-line);
+  background: var(--bg-0);
+}
+.fl-cell.l1 {
+  background: color-mix(in srgb, var(--accent) 28%, var(--bg-0));
+  border-color: transparent;
+}
+.fl-cell.l2 {
+  background: color-mix(in srgb, var(--accent) 50%, var(--bg-0));
+  border-color: transparent;
+}
+.fl-cell.l3 {
+  background: color-mix(in srgb, var(--accent) 74%, var(--bg-0));
+  border-color: transparent;
+}
+.fl-cell.l4 {
+  background: var(--accent);
+  border-color: transparent;
+}
+.fl-cell.is-future {
+  opacity: 0.25;
+  border-style: dashed;
+}
+.fl-cell.is-today {
+  outline: 1px solid var(--text-1);
+  outline-offset: 1px;
+}
+
+/* totals */
+.fl-totals {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  margin: 0;
+}
+.fl-totals > div {
+  border-left: 1px solid var(--mc-line);
+  padding-left: 10px;
+}
+.fl-totals dt {
+  color: var(--text-2);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.fl-totals dd {
+  margin: 4px 0 0;
+  font-family: var(--font-display, var(--font-ui));
+  font-size: 22px;
+  font-weight: 600;
+  color: var(--text-0);
+}
+
+/* medals */
+.fl-medals {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.fl-medal {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 8px 4px;
+  border: 1px dashed var(--mc-line);
+  border-radius: var(--radius-s);
+  text-align: center;
+  color: var(--text-2);
+}
+.fl-medal-disc {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  border: 1px solid var(--mc-line);
+  opacity: 0.55;
+}
+.fl-medal-name {
+  color: var(--text-1);
+  font-size: 11px;
+}
+.fl-medal-crit {
+  font-size: 10px;
+  line-height: 1.35;
+}
+.fl-medal.is-earned {
+  border-style: solid;
+  border-color: color-mix(in srgb, var(--accent) 45%, transparent);
+  background: color-mix(in srgb, var(--accent) 7%, transparent);
+}
+.fl-medal.is-earned .fl-medal-disc {
+  opacity: 1;
+  color: var(--accent);
+  border-color: color-mix(in srgb, var(--accent) 60%, transparent);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+}
+.fl-medal.is-earned .fl-medal-name {
+  color: var(--text-0);
+}
+
+@media (max-width: 720px) {
+  .fl-totals {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .fl-medals {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}

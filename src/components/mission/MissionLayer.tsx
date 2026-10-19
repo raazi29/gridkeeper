@@ -8,6 +8,7 @@ import { cancelAllStarterPrompts } from "../../actions/starterPrompt";
 import { installActivity } from "../../store/activity";
 import { useMission } from "../../store/mission";
 import { ErrorBoundary } from "../ErrorBoundary";
+import { FlightLogLayer } from "../flightlog/FlightLogLayer";
 import { ReplayLayer } from "../replay/ReplayLayer";
 import { FormationDialog } from "./Formations";
 import { MissionControl } from "./MissionControl";
@@ -33,6 +34,7 @@ export function MissionLayer() {
       </ErrorBoundary>
       <ErrorBoundary scope="Formations">{formationOpen && <FormationDialog />}</ErrorBoundary>
       <ReplayLayer />
+      <FlightLogLayer />
     </>
   );
 }

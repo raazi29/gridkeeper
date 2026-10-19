@@ -67,6 +67,8 @@ export interface PaintOptions {
 export interface ReplayScene {
   tl: Timeline;
   plan: ReplayPlan;
+  /** Optional end-card line from the flight log, e.g. "Day 7 streak · Captain". */
+  flightLine?: string | null;
 }
 
 export function makeScene(events: readonly ReplayEvent[], lengthSec: number): ReplayScene {
@@ -942,7 +944,14 @@ function endCard(p: P, fade: number, phaseMs: number) {
   });
   const rows = Math.ceil(tiles.length / cols);
   const after = gridTop + rows * (th + gap) + 30 * u;
-  text(p, formatClockRange(st.startT, st.endT), W / 2, after + 10 * u, { size: 24, family: p.f.mono, color: pal.text1, align: "center" });
+  const range = formatClockRange(st.startT, st.endT);
+  const flight = p.scene.flightLine?.trim() || "";
+  // The flight-log line gets its own row when it clears the watermark, else it joins the time range.
+  const flightY = after + 52 * u;
+  const floor = p.watermark ? H - (stacked ? 110 : 80) * u - 44 * u : H - 40 * u;
+  const ownRow = !!flight && flightY <= floor;
+  text(p, flight && !ownRow ? `${range}  ·  ${flight}` : range, W / 2, after + 10 * u, { size: 24, family: p.f.mono, color: pal.text1, align: "center", maxW: W - 80 * u });
+  if (ownRow) text(p, flight, W / 2, flightY, { size: 24, weight: 500, color: pal.accent, align: "center", maxW: W - 80 * u });
   if (p.watermark) {
     const y = H - (stacked ? 110 : 80) * u;
     const msg = `Made with Gridkeeper  ·  ${REPO_URL}`;
