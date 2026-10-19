@@ -22,7 +22,7 @@ export const useCanvasView = create<CanvasStore>()(() => ({ view: HOME, viewport
 const VIEW_KEY = (wsId: string) => `gridkeeper.mc.view:${wsId}`;
 const GLIDE_MS = 280;
 /** Elements a plain drag never pans from (they have their own drag or click). */
-const NOT_EMPTY = "[data-node], [data-card], button, input, textarea, select, a, label, [draggable='true'], .mc-newlane, .mc-newlane-zone, .mc-zoom, .mc-minimap";
+const NOT_EMPTY = "[data-node]:not([data-node='top']), [data-card], button, input, textarea, select, a, label, [draggable='true'], .mc-newlane, .mc-newlane-zone, .mc-zoom, .mc-minimap";
 
 export interface BandEvent {
   /** Client-coordinate rect of the band. */
