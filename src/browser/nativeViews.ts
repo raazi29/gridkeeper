@@ -15,6 +15,7 @@
 
 import { applyViewState, navigate, openBrowserPane } from "../actions/browser";
 import { notify, useToasts } from "../actions/notify";
+import { revealPath } from "../components/util/pick";
 import { boundCombos, runBoundCombo } from "../keybindings";
 import { isBrowserMeta } from "../lib/browserPanes";
 import { errorMessage, ipc, onBrowserViewEvents } from "../lib/ipc";
@@ -302,9 +303,7 @@ function onDownload(d: BrowserViewDownload) {
       action: path
         ? {
             label: "Show in folder",
-            run: () => {
-              void import("@tauri-apps/plugin-opener").then(({ revealItemInDir }) => revealItemInDir(path)).catch(() => {});
-            },
+            run: () => void revealPath(path),
           }
         : undefined,
     });
@@ -350,13 +349,15 @@ export function installNativeViews(): () => void {
     unlisten?.();
   });
 
-  // Views of panes that no longer exist (the page was reloaded after they closed).
+  // Views left from before a page reload whose pane closed meanwhile (all of them with the frame engine).
   const retain = () => {
-    if (currentEngine() !== "native") return;
-    const ids = useApp
-      .getState()
-      .persisted.sessions.filter((m) => isBrowserMeta(m))
-      .map((m) => m.id);
+    const ids =
+      currentEngine() === "native"
+        ? useApp
+            .getState()
+            .persisted.sessions.filter((m) => isBrowserMeta(m))
+            .map((m) => m.id)
+        : [];
     void ipc.browserViewRetain(ids).catch(() => {});
   };
   if (useApp.getState().loaded) retain();
