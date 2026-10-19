@@ -615,10 +615,24 @@
   font-weight: 600;
 }
 .lv-c-task {
-  width: 24%;
+  width: 22%;
 }
 .lv-c-branch {
-  width: 24%;
+  width: 20%;
+}
+/* Role tags and state words must stay readable: fixed widths (overriding the cells' max-width trick),
+   the percentage columns give way. */
+.lv-table th.lv-c-role,
+.lv-table td.lv-c-role {
+  width: 108px;
+  min-width: 108px;
+  max-width: none;
+}
+.lv-table th.lv-c-state,
+.lv-table td.lv-c-state {
+  width: 116px;
+  min-width: 116px;
+  max-width: none;
 }
 .lv-task.is-doing {
   color: var(--text-0);
