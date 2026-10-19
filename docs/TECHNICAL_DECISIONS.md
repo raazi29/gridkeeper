@@ -24,6 +24,8 @@ These are short architecture decision records (ADRs). Each one gives the context
 | 018 | [No telemetry](#adr-018-no-telemetry) |
 | 019 | [Browser panes: sandboxed iframes in a persistent layer + pop-out windows, no child webviews](#adr-019-browser-panes-sandboxed-iframes-in-a-persistent-layer--pop-out-windows-no-child-webviews) |
 | 020 | [Native browser panes on Windows: one child webview per pane, iframes as the fallback](#adr-020-native-browser-panes-on-windows-one-child-webview-per-pane-iframes-as-the-fallback) |
+| 020 | [Merge assistant: the first git write operation](#adr-020-merge-assistant-the-first-git-write-operation) |
+| 021 | [Test runs: contained background processes, evidence pinned to a commit](#adr-021-test-runs-contained-background-processes-evidence-pinned-to-a-commit) |
 
 ---
 
@@ -418,3 +420,45 @@ These are short architecture decision records (ADRs). Each one gives the context
 - While a menu, dialog or toast covers a pane, the pane shows a still picture of the page (or nothing if no picture could be taken in 180 ms).
 - Memory per pane is roughly a renderer process per site, as with cross-origin iframes (unmeasured; see the research note).
 - Must be verified live before release (research note, "What must be verified live").
+## ADR-022: Merge assistant: the first git write operation
+
+**Context.** Until now every git call was read-only (`status`, `diff`, `log`, `rev-list`) plus `worktree add`; the Changes drawer and sign-off evidence never write. The last step of a mission — getting a builder's branch into the base — still meant leaving the app, finding the right checkout and typing commands by hand while many agents share one repository. A write operation in a tool that hosts autonomous agents next to the user's own checkout has to be boring: it must never surprise, never force, never leave the repository half-merged.
+
+**Decision.** One module (`src-tauri/src/merge.rs`) holds the only git write path; `git.rs` stays read-only. From a sign-off card, "merge…" opens a dialog (`src/components/merge/MergeDialog.tsx`):
+- **Preview writes nothing.** Commits (`log base..branch`), diffstat, fast-forward check (`merge-base --is-ancestor`) and a conflict check with `git merge-tree --write-tree -z --name-only` (git ≥ 2.38; output parsed from recorded fixtures). It only adds unreferenced objects to the object store. Older git: a detached temporary worktree in the temp folder, `merge --no-commit --no-ff`, `merge --abort`, then the worktree is removed (links unlinked first, see below).
+- **Refusals, never repairs.** The merge happens in the main checkout (first entry of `git worktree list`). It is refused when that checkout has another branch (or a detached HEAD) checked out, has changes to tracked files, has a merge / rebase / cherry-pick / revert / bisect in progress or an `index.lock`. The assistant never checks out, stashes, resets a branch, uses `--force`, rewrites history or deletes branches by itself; the message says what to do instead. Untracked files in the main checkout do not block: git itself refuses before touching anything when one would be overwritten.
+- **Pinned commits.** The request carries the previewed base and branch SHAs; if either branch moved since the preview, the merge is refused. The command merges the branch's SHA, not its name, so exactly the previewed (and tested) commit lands.
+- **Optional test gate** (default on when a test command exists): Rust accepts only a passing run (ADR-021) whose HEAD at start and end was the branch SHA and whose worktree had no uncommitted or untracked files.
+- **Exact commands, one confirmation.** `merge::plan` turns the request into argv lists; the dialog shows `git -C "<main>" merge --ff-only <sha>` / `merge --no-ff --no-edit -m "<message>" <sha>` / `merge --squash <sha>` + `commit -m "<message>"` and the rollback command, and `execute` runs those same lists. Pressing "Merge" is the confirmation. The message is one line (the display is then exactly what runs).
+- **Never mid-merge.** Every guard is re-checked right before writing. A failed step (conflict, hook, identity, timeout) is followed by `merge --abort` (or `reset --merge` after a squash; neither moves HEAD) and a check that HEAD is the old base, no merge is in progress and the checkout is clean; anything else is reported as "rollback incomplete". Each git write runs in a `ProcessContainer` with a 5-minute limit, so a hung hook cannot outlive it; hooks are not skipped.
+- **Conflicts go back to the agent, by the user.** Conflicting files (from the preview or the failed merge) can be handed to the branch's agent with the hand-off pattern: an editable one-line message, sent only on "Send", refused while the agent is asking something.
+- **Clean-up is a separate confirmed step** after a successful merge: `git worktree remove` (never `--force`; refused while the worktree has uncommitted or untracked files, and in the UI while a live session uses the folder) and `git branch -d` only when the branch is contained in the base (never `-D`; a squash-merged branch is kept and the dialog says so). **Before removal every junction / symlink inside the worktree is unlinked** (the link, never its target), because Git for Windows' `worktree remove` follows a directory junction and deletes the target's contents [M: git 2.51, scratch repo: a `node_modules` junction's target folder was emptied]. Agent worktrees in this project routinely hold a `node_modules` junction to the main checkout.
+- One merge or clean-up at a time (a process-wide lock); results go to a toast and the activity log.
+
+**Alternatives.**
+- **Run `git merge` in the agent's worktree, or let agents merge.** The base branch is checked out in the main checkout; merging elsewhere means checking out the base twice (git refuses) or detaching HEADs. Agents merging on their own is exactly the unreviewed write this feature exists to avoid.
+- **Auto-stash / auto-checkout the main checkout.** Convenient, but it touches the user's own work in progress; a refusal with an explanation is cheaper than an unexpected stash.
+- **libgit2 (`git2` crate).** In-process merges without spawning git, but a second implementation of merge semantics, hooks and config next to the user's git, and a large C dependency. The CLI is what the user's own tools use.
+- **Merging by branch name.** Simpler display, but a commit pushed between preview and merge would land untested.
+
+**Consequences.**
+- The repository's history only ever moves forward through ordinary merges, fast-forwards and squash commits the user saw; nothing is deleted without its own confirmation.
+- Conflicts are resolved where they belong (on the branch, by its agent or the user), not inside the main checkout.
+- `merge-tree` adds loose objects (collected by `git gc`). The old-git fallback creates and removes a temporary worktree entry.
+- The user's global git config applies (identity, hooks, signing). A merge that needs an interactive signing prompt times out and is rolled back.
+- Tests: pure plan / parser tests plus temp-repo integration tests (fast-forward, merge commit, squash, conflicts with rollback, refused dirty / switched main checkout, moved branch, clean-up with a junction whose target must survive).
+
+## ADR-023: Test runs: contained background processes, evidence pinned to a commit
+
+**Context.** Sign-off showed what an agent committed, not whether it works. "Tests pass" in an agent's last message is a claim; the user wants a result Gridkeeper observed. Test suites are heavy (this machine has 16 GB and has run out of commit before), can hang, and spawn trees (dev servers, watchers, browsers).
+
+**Decision.** `src-tauri/src/testrun.rs`:
+- **Command.** Per workspace (`Workspace.testCommand`), with an optional lane override (`Group.testCommand`); empty = auto-detect in the tested folder from its own files: `package.json` `test` script (npm / pnpm / yarn / bun by lockfile or `packageManager`), `Cargo.toml`, pytest config / `pyproject.toml`, `go.mod`, a Makefile `test:` target. The dialog previews what was found and where.
+- **Runner.** `cmd.exe /d /s /c "<command>"` (Windows) or `sh -c` (Unix, own session) at below-normal priority, inside a fresh `ProcessContainer` (ADR-009), in the session's worktree. Cancel, the time limit (default 15 min) and normal completion all end the whole tree; leftovers of a finished run are ended too, and app exit ends running trees. `CI=true` unless set, agent session variables removed. stdout + stderr go to a 2 MiB ring (newest output kept). A queue caps concurrency (default 2, setting); one active run per folder.
+- **Evidence.** git root, HEAD and the uncommitted / untracked count are recorded at start and checked again at the end; a run whose folder changed underneath is not evidence. The merge gate (ADR-020) uses exactly this.
+- **Results.** passed / failed / could not run / cancelled / timed out, duration, exit code, the last lines, failing test names and counts from best-effort pure parsers (vitest, jest, cargo, pytest, go, mocha; several runners in one run are summed). `test-run` events update badges on agent and sign-off cards (`tests ✓ 412 · 38s`, `tests ✗ 3 failed`) and the activity log; the read-only log viewer re-reads the newest 256 KiB once a second only while it is open and the run is active.
+- **Ask the agent to fix** opens the hand-off style confirmation with a prefilled one-line failure summary; nothing is ever sent automatically.
+
+**Alternatives.** Running tests in a terminal pane (no structured result, output mixed with the agent's), a temporary clean worktree per run (exact, but a cold `node_modules` / cargo build per run on a memory-constrained machine), parsing JUnit XML (needs per-runner flags in the user's command).
+
+**Consequences.** Results are observations, pinned to a commit. Detection is shallow (the tested folder only). Output beyond 2 MiB keeps the end, where summaries are. On Windows, a process the command starts in the microseconds before the Job assignment could escape (same known gap as ADR-009).

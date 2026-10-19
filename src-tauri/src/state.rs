@@ -97,6 +97,7 @@ impl AppCtx {
     /// Graceful shutdown of every session's process tree. Called once on app exit.
     pub fn shutdown(&self) {
         tracing::info!("shutting down sessions");
+        crate::testrun::shutdown();
         self.sessions.shutdown_all(std::time::Duration::from_millis(1500));
         self.missions.clear();
         self.meter.stop();

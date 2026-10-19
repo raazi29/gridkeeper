@@ -373,6 +373,8 @@ export interface Settings {
   notifications: NotificationSettings;
   /** Confirm before pasting >64 KiB or >20 lines into a program without bracketed paste. */
   pasteWarning: boolean;
+  /** Test runs: concurrency cap and default time limit (Rust always sends it; optional for older fixtures). */
+  testRuns?: TestRunSettings;
   /** Blade colour for the Saber Duel theme (src/theme/saber.ts preset id). */
   saberColor: string;
   /** Star-streak transition on workspace switch: "auto" = only with the Hyperspace theme. */
@@ -472,6 +474,8 @@ export interface Group {
   name: string;
   layout: Layout;
   sessionIds: SessionId[];
+  /** Test command for this lane's worktrees (overrides the workspace's). Absent / null = none. */
+  testCommand?: string | null;
 }
 
 export interface Workspace {
@@ -481,6 +485,8 @@ export interface Workspace {
   groups: Group[];
   activeGroupId: string | null;
   createdAt: string | null;
+  /** Test command for the workspace's folders; absent / null = auto-detect per folder. */
+  testCommand?: string | null;
 }
 
 export interface WorktreeRef {
@@ -1014,4 +1020,187 @@ export interface BrainHit {
 export interface BrainShare {
   shared: boolean;
   gitignorePath: string;
+}
+
+// ---- Test runs (src-tauri/src/testrun.rs) -----------------------------------------------------------
+
+/** Emitted with payload `TestRunInfo` whenever a run is queued, starts or finishes. */
+export const EVT_TEST_RUN = "test-run";
+
+export interface TestRunSettings {
+  /** At most this many runs at once (the rest queue). 1..8, default 2. */
+  maxConcurrent: number;
+  /** Default time limit per run, minutes. 1..240, default 15. */
+  timeoutMin: number;
+}
+
+export const DEFAULT_TEST_RUN_SETTINGS: TestRunSettings = { maxConcurrent: 2, timeoutMin: 15 };
+
+export interface TestCandidate {
+  command: string;
+  /** Where it came from, e.g. `package.json "test": vitest run · pnpm-lock.yaml`. */
+  source: string;
+}
+
+export interface TestDetection {
+  dir: string;
+  command: string | null;
+  source: string | null;
+  candidates: TestCandidate[];
+}
+
+export interface TestRunSpec {
+  cwd: string;
+  command: string;
+  label: string;
+  sessionId: SessionId | null;
+  /** Seconds; null = the settings' default. */
+  timeoutSec: number | null;
+}
+
+export type TestRunStatus = "queued" | "running" | "passed" | "failed" | "error" | "cancelled" | "timedOut";
+
+export interface TestCounts {
+  /** "vitest", "jest", "cargo", "pytest", "go", "mocha" (several joined with "+"). */
+  runner: string;
+  /** "tests", or "packages" for `go test` without -v. */
+  unit: string;
+  passed: number;
+  failed: number;
+  skipped: number;
+}
+
+export interface TestRunInfo {
+  id: string;
+  cwd: string;
+  command: string;
+  label: string;
+  sessionId: SessionId | null;
+  status: TestRunStatus;
+  queuedMs: number;
+  startedMs: number | null;
+  endedMs: number | null;
+  durationMs: number | null;
+  exitCode: number | null;
+  counts: TestCounts | null;
+  /** Failing test names found in the output (best effort, at most 10). */
+  failures: string[];
+  /** Last non-empty output lines (at most 20). */
+  lastLines: string[];
+  error: string | null;
+  outputBytes: number;
+  timeoutSec: number;
+  repoRoot: string | null;
+  /** HEAD when the run started (null when not a repository or HEAD moved during the run). */
+  headSha: string | null;
+  /** Uncommitted / untracked files at start (and end); null = not a repository. */
+  uncommitted: number | null;
+}
+
+export interface TestRunLog {
+  id: string;
+  status: TestRunStatus;
+  text: string;
+  droppedBytes: number;
+}
+
+// ---- Merge assistant (src-tauri/src/merge.rs, ADR-020) -----------------------------------------------
+
+export type MergeStrategy = "fastForward" | "mergeCommit" | "squash";
+
+export interface MergeCommitInfo {
+  sha: string;
+  subject: string;
+  author: string;
+  timeMs: number;
+}
+
+export interface MergeConflict {
+  path: string;
+  /** git's conflict type: "content", "modify/delete", "add/add", ... ("conflict" when unknown). */
+  kind: string;
+}
+
+export interface MergePreview {
+  path: string;
+  branch: string | null;
+  branchSha: string | null;
+  base: string | null;
+  baseSha: string | null;
+  mainPath: string | null;
+  mainBranch: string | null;
+  ahead: number;
+  behind: number;
+  filesChanged: number;
+  insertions: number;
+  deletions: number;
+  files: BranchFile[];
+  filesTruncated: boolean;
+  commits: MergeCommitInfo[];
+  commitsTruncated: boolean;
+  lastSubject: string | null;
+  canFastForward: boolean;
+  /** true clean, false conflicts, null = the check could not run. */
+  clean: boolean | null;
+  conflicts: MergeConflict[];
+  /** "fast-forward" | "merge-tree" | "temporary worktree". */
+  checkMethod: string;
+  gitVersion: string | null;
+  worktreeUncommitted: number;
+  /** Reasons the merge is refused (empty = allowed). */
+  blockers: string[];
+  warnings: string[];
+}
+
+export interface MergeRequest {
+  path: string;
+  mainPath: string;
+  base: string;
+  branch: string;
+  baseSha: string;
+  branchSha: string;
+  strategy: MergeStrategy;
+  message: string;
+  requireTests: boolean;
+}
+
+export interface MergePlan {
+  mainPath: string;
+  commands: string[];
+  onFailure: string[];
+}
+
+export interface GitStepLog {
+  command: string;
+  ok: boolean;
+  output: string;
+}
+
+export interface MergeOutcome {
+  ok: boolean;
+  strategy: MergeStrategy;
+  newSha: string | null;
+  conflicts: MergeConflict[];
+  rolledBack: boolean;
+  error: string | null;
+  steps: GitStepLog[];
+}
+
+export interface WorktreeCleanupPlan {
+  path: string;
+  branch: string;
+  mainPath: string;
+  /** Junctions / symlinks inside the worktree; unlinked first, their targets are never touched. */
+  links: string[];
+  commands: string[];
+  branchMerged: boolean;
+  blockers: string[];
+}
+
+export interface WorktreeCleanupOutcome {
+  linksRemoved: number;
+  worktreeRemoved: boolean;
+  branchDeleted: boolean;
+  error: string | null;
+  steps: GitStepLog[];
 }

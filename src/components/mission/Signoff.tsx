@@ -1,7 +1,8 @@
 // Mission Control's SIGN-OFF dock: sessions that finished or need you, each as a card with the evidence
 // of what was done — branch, commits vs base, files / lines changed, uncommitted leftovers, last commit —
 // from read-only git (fetched when the card appears and when its session turns done / waiting; no timer).
-// Actions: jump (click), review diff (Changes drawer focused on the worktree), hand off… (dialog with an
+// Actions: jump (click), run tests (badge + log; components/testrun), merge… (merge assistant dialog;
+// components/merge), review diff (Changes drawer focused on the worktree), hand off… (dialog with an
 // editable line; nothing is typed into any agent until the user presses Send), context menu.
 
 import { isMac } from "../../lib/platform";
@@ -32,6 +33,9 @@ import { Modal } from "../ui/Modal";
 import { LAMP_TEXT, sessionStatus } from "./derive";
 import { RoleTag, roleStyle } from "./RoleTag";
 import { summaryParts } from "./signoffModel";
+import { runTestsForSession } from "../../store/testrun";
+import { TestBadge } from "../testrun/TestBadge";
+import { openMergeDialog } from "../merge/mergeStore";
 import "../../styles/signoff.css";
 
 type MenuEvent = { clientX: number; clientY: number; preventDefault?: () => void; stopPropagation?: () => void };
@@ -88,6 +92,7 @@ function SignoffCard({ id, onJump, onMenu }: { id: SessionId; onJump: (id: Sessi
   const st = sessionStatus(rt, a);
   const waiting = st.lamp === "waiting";
   const isRepo = !!entry?.summary?.isRepo;
+  const mergeable = isRepo && !!entry?.summary?.branch && entry.summary.branch !== entry.summary.base && entry.summary.ahead > 0;
 
   const reviewDiff = () => {
     if (!path) return;
@@ -119,7 +124,20 @@ function SignoffCard({ id, onJump, onMenu }: { id: SessionId; onJump: (id: Sessi
           </span>
         )}
         <span className="mc-spacer" />
+        <TestBadge path={path} />
         <span className="so-actions">
+          <button type="button" className="mc-btn" disabled={!path} title="Run the test command in this worktree (contained background process; result as a badge and in the activity log)" onClick={() => void runTestsForSession(id)}>
+            run tests
+          </button>
+          <button
+            type="button"
+            className="mc-btn"
+            disabled={!mergeable}
+            title={mergeable ? "Preview merging this branch into its base (nothing is written until you confirm the exact commands)" : "Nothing to merge: no commits ahead of the base, or not a branch worktree"}
+            onClick={() => openMergeDialog(id)}
+          >
+            merge…
+          </button>
           <button
             type="button"
             className="mc-btn"

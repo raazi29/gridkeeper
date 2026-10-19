@@ -24,6 +24,8 @@
 //! - `skills`      Agent Skills: GitHub discovery (user-initiated), review, install into a project
 //! - `phone`       opt-in phone alerts through ntfy (user-chosen server; curl; rate limited; generic text)
 //! - `meter`       Claude Code cost & context meter: status line helper mode, `--settings` file, folder watch
+//! - `testrun`     test runs: command detection, contained background runs (queue, ring, timeout), summaries
+//! - `merge`       merge assistant: the one git write path (preview, guarded merge, worktree clean-up)
 //! - `logging` / `redact` structured logs with secret redaction
 //! - `webview_guard` reload / rebuild the main window when a WebView2 process dies
 
@@ -38,6 +40,7 @@ pub mod diagnostics;
 pub mod git;
 pub mod gpu;
 pub mod logging;
+pub mod merge;
 pub mod meter;
 pub mod mission;
 pub mod persistence;
@@ -53,6 +56,7 @@ pub mod sandbox;
 pub mod selftest;
 pub mod skills;
 pub mod state;
+pub mod testrun;
 pub mod types;
 pub mod webview_guard;
 
@@ -238,6 +242,17 @@ pub fn run() {
             commands::brain::brain_share,
             commands::meter::spend_ledger_read,
             commands::meter::spend_ledger_write,
+            // Test runs + merge assistant (testrun.rs, merge.rs)
+            commands::testrun::test_detect,
+            commands::testrun::test_run_start,
+            commands::testrun::test_run_cancel,
+            commands::testrun::test_run_list,
+            commands::testrun::test_run_log,
+            commands::merge::merge_preview,
+            commands::merge::merge_plan,
+            commands::merge::merge_execute,
+            commands::merge::merge_cleanup_plan,
+            commands::merge::merge_cleanup,
         ])
         .build(context)
         .unwrap_or_else(|e| fatal_startup_error(&e.to_string()))

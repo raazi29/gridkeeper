@@ -49,6 +49,8 @@ anything.
 | `profiles.rs` | `profiles.json` store and `claude auth status --json`. |
 | `persistence.rs` | Versioned, atomic, lenient `workspaces.json` (sanitize, migrate, read-only on newer versions). |
 | `git.rs` | Repo info, `git worktree add`, read-only status/diff for the Changes drawer, branch summaries for sign-off (`git_branch_summary`). |
+| `merge.rs` | **The only git write path** (ADR-022): merge preview (`merge-tree --write-tree`, temp-worktree fallback), guarded merge into the base in the main checkout (ff / merge commit / squash, pinned SHAs, rollback), worktree + branch clean-up (unlinks junctions first: Git for Windows' `worktree remove` follows them). |
+| `testrun.rs` | Test runs (ADR-023): command detection, contained background runs (queue, 2 MiB ring, timeout, cancel), summary parsers, the merge gate's evidence. |
 | *(mission file)* | `mission_read` / `mission_write` (atomic, conflict check) / `mission_watch` (filesystem watch, no polling → `mission-changed`) for `<projectDir>/.gridkeeper/mission.md`. |
 | `brain.rs`, `commands/brain.rs` | Brain (long-term project memory) in `<project>/.gridkeeper/brain/`: `brain_list` / `brain_read` / `brain_write` (atomic, redacted, 16 KiB cap, conflict check) / `brain_approve` (inbox → notes) / `brain_delete` (returns the text for Undo) / `brain_search` (local BM25-style ranking, prefix matching) / `brain_share` (marked `.gitignore` block). `INDEX.md` is regenerated from the notes (debounced after each change, by the mission watcher on agents' edits, by `brain_list` when stale). The mission watch also watches `brain/` recursively and emits `mission-changed` with `file: "brain"`. |
 | `ports.rs` | Listening TCP ports attributed to session trees: `GetExtendedTcpTable` (Windows), `/proc/net/tcp{,6}` + `/proc/<pid>/fd` (Linux), `lsof` (macOS). |
@@ -98,6 +100,8 @@ anything.
 | `components/*` | Shell, sidebar, dialogs, palette, Fleet, Broadcast, Comms, Inspector, Diagnostics, ChangesDrawer, settings, welcome, theme switcher, menus. |
 | `components/mission/*` | Mission Control (mission board from `mission.md`, lanes, sign-off with branch evidence, "brief team…" / "hand off…"), Formations UI, activity river, session log. |
 | `lib/brain.ts`, `store/brain.ts`, `actions/brainCapture.ts`, `components/brain/*` | Brain: note format helpers, the brief line, capture rules (board / review / lead decisions → inbox suggestions, scrubbed, deduplicated), panel state + per-project prefs (localStorage: capture, auto-approve, briefs), the panel, "add memory" dialog and the "remember…" selection chip over Mission Control. |
+| `components/testrun/*`, `store/testrun.ts` | Test runs: badges, log viewer, test command dialog, "ask the agent to fix" confirmation; run / lane actions and menus. |
+| `components/merge/*` | Merge assistant dialog (preview, test gate, strategy, exact commands, outcome, clean-up) and its pure model. |
 | `keybindings/combo.ts`, `index.ts` | `DEFAULT_BINDINGS` (+ `MAC_DEFAULT_OVERRIDES`), `forbiddenReason(combo, os)`, capture-phase listener. On macOS the stored `ctrl` token means ⌘ and `meta` means ⌃ (saved bindings keep working; display `⇧⌘P`). |
 | `theme/themes.ts`, `applyTheme.ts`, `saber.ts`, `effectPrefs.ts` | 12 themes (pure data), CSS variable application, saber colours, effect prefs. |
 | `styles/*.css` | `tokens.css` (derived tokens), `signature.css` (theme-specific accents), feature CSS. |
@@ -141,6 +145,7 @@ anything.
 15. Built-in tools are read-only or sandboxed: Changes drawer (`git status`/`diff` only), ports (TCP table), browser panes (Windows: a child webview per pane without IPC, hidden with a snapshot placeholder while DOM overlays cover it; elsewhere / legacy setting: sandboxed iframes in one persistent layer; pop-outs as separate webviews without IPC).
 14. Attention is detected in Rust from BEL/OSC signals and output activity (`pty/attention.rs`), plus exact Claude Code hook states for Claude panes when the meter and "exact status" are on (`meter/hooks.rs`), and reduced in `store/attention.ts` (hooks first, heuristics fill gaps); notifications, Comms, Fleet, Mission Control and Autopilot (never types into a permission / question prompt) consume it.
 15. Built-in tools are read-only or sandboxed: Changes drawer (`git status`/`diff` only), ports (TCP table), browser panes (sandboxed iframes in one persistent layer, pop-outs as separate webviews without IPC).
+15. Built-in tools are read-only or sandboxed: Changes drawer (`git status`/`diff` only), ports (TCP table), browser panes (sandboxed iframes in one persistent layer, pop-outs as separate webviews without IPC). The one exception is the merge assistant (`merge.rs`, ADR-020): previewed, confirmed, guarded, rolled back on failure; test runs (`testrun.rs`) run the user's test command in a container.
 16. `GRIDKEEPER_SANDBOX=<name>` (`[a-z0-9-]{1,32}`) runs an isolated instance: data in `%APPDATA%\app.gridkeeper.desktop\sandboxes\<name>`, its own WebView2 profile, no single-instance lock, title `Gridkeeper [sandbox: <name>]`, `ipc.appInfo().sandbox`. That is how tests run next to the live app (section 6).
 17. Team coordination is a plain file: `<projectDir>/.gridkeeper/mission.md`, which every agent CLI can edit. Rust reads/writes it atomically (conflict check on modified time) and watches it with filesystem notifications (`mission-changed`); Mission Control renders it as a board and sign-off shows each builder's branch evidence (`git_branch_summary`).
 
@@ -183,6 +188,9 @@ anything.
 - **Keybindings never take terminal-critical keys** (`forbiddenReason()` in `combo.ts`).
 - **Persistence is never destructive**: newer-version files make the store read-only; damaged files are preserved as
   `workspaces.corrupt-<timestamp>.json`.
+- **git writes only through `merge.rs`** (ADR-022): preview first, exact commands shown, one confirmation, guards
+  re-checked, pinned SHAs, rollback on failure; never `--force`, checkout, stash, reset of a branch, history rewrite or
+  automatic branch deletion. Unlink junctions before any `git worktree remove` (it follows them on Windows).
 - **Same-agent launch gaps** (Claude 350 ms, Codex 600 ms) and the 12 s no-output watchdog stay unless the Codex
   startup hang is proven fixed.
 

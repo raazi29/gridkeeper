@@ -8,6 +8,7 @@ import { useApp } from "../../store/appStore";
 import { useMission } from "../../store/mission";
 import type { MenuItem } from "../ui/Menu";
 import { t } from "../../i18n";
+import { laneTestsSubmenu, workspaceTestMenuItem } from "../testrun/menus";
 import { formationItem, layoutSubmenu, newSessionSubmenu, shortcutHint } from "./common";
 
 function findGroup(groupId: string) {
@@ -34,6 +35,7 @@ export function buildGroupMenu(groupId: string, ctx: { onRename?: () => void } =
     { label: t("menu.group.messageAll"), disabled: empty, onSelect: () => messageSessions(groupSessionIds(groupId), what) },
     { label: t("menu.group.restartAll"), disabled: empty, onSelect: () => void restartSessions(groupSessionIds(groupId), what) },
     { label: t("menu.group.stopAll"), disabled: empty, onSelect: () => void stopSessions(groupSessionIds(groupId), what) },
+    laneTestsSubmenu(groupId),
     "separator",
     { label: t("menu.group.closeAll"), danger: true, disabled: empty, onSelect: () => void closeSessions(groupSessionIds(groupId), what) },
     { label: t("menu.group.delete"), danger: true, disabled: ws.groups.length <= 1, onSelect: () => void deleteGroupFlow(groupId) },
@@ -59,6 +61,7 @@ export function workspaceExtraItems(workspaceId: string): MenuItem[] {
     },
     { label: muted ? t("menu.unmuteNotifications") : t("menu.muteNotifications"), checked: muted, hint: t("menu.workspace.muteHint"), onSelect: () => toggleWorkspaceMute(workspaceId) },
     { label: t("menu.workspace.stopAll"), disabled: !hasSessions, onSelect: () => void stopSessions(workspaceSessionIds(workspaceId), t("menu.quoted", { name: ws.name })) },
+    workspaceTestMenuItem(workspaceId),
   ];
 }
 
