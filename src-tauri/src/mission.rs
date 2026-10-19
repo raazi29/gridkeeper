@@ -602,8 +602,10 @@ fn classify(event: &notify::Event, project: &Path, gk: &Path, outbox: &Path) -> 
         } else if is_name(path, OUTBOX_DIR) && same_path(parent, gk) {
             out.rearm_outbox |= structural;
         } else if same_path(parent, outbox) && is_outbox_file_name(path) {
-            // A rename pair lists [from, to]: only the destination arrives.
-            out.outbox |= !leaving && !(rename_pair && i == 0);
+            // A rename pair lists [from, to]: only the destination arrives. FSEvents (macOS) reports each
+            // side of a rename on its own as Name(Any), so there only a file that still exists has arrived.
+            let unpaired = matches!(event.kind, EventKind::Modify(ModifyKind::Name(RenameMode::Any)));
+            out.outbox |= !leaving && !(rename_pair && i == 0) && (!unpaired || path.exists());
         }
     }
     out
@@ -948,6 +950,8 @@ mod tests {
         // Leaving the outbox (archived to sent/ or deleted) is silent; so are other names.
         assert_eq!(classify(&ev(EventKind::Remove(RemoveKind::Any), ob.join("a.md"))), IGNORE);
         assert_eq!(classify(&ev(EventKind::Modify(ModifyKind::Name(RenameMode::From)), ob.join("a.md"))), IGNORE);
+        // Unpaired rename (FSEvents): a file that is no longer there has left.
+        assert_eq!(classify(&ev(EventKind::Modify(ModifyKind::Name(RenameMode::Any)), ob.join("a.md"))), IGNORE);
         assert_eq!(classify(&ev(create, ob.join(".a.md"))), IGNORE);
         assert_eq!(classify(&ev(create, ob.join("~a.md"))), IGNORE);
         assert_eq!(classify(&ev(create, ob.join("a.json"))), IGNORE);
@@ -1012,6 +1016,18 @@ mod tests {
             }
         });
         (watchers, names)
+    }
+
+    #[test]
+    fn unpaired_rename_into_the_outbox_arrives() {
+        use notify::event::{ModifyKind, RenameMode};
+        let t = tempfile::tempdir().unwrap();
+        let gk = t.path().join(DIR_NAME);
+        let ob = gk.join(OUTBOX_DIR);
+        fs::create_dir_all(&ob).unwrap();
+        fs::write(ob.join("0003-lead.md"), "to: lead\n---\nhi").unwrap();
+        let ev = notify::Event::new(EventKind::Modify(ModifyKind::Name(RenameMode::Any))).add_path(ob.join("0003-lead.md"));
+        assert_eq!(classify(&ev, t.path(), &gk, &ob), OUTBOX);
     }
 
     #[test]
