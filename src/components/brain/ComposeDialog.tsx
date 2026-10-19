@@ -54,7 +54,7 @@ function Compose({ req }: { req: ComposeRequest }) {
       className="br-compose"
       footer={
         <>
-          <label className="br-check footer-note" title="Write it to inbox/ as a suggestion instead of a confirmed note">
+          <label className="br-check br-push" title="Write it to inbox/ as a suggestion instead of a confirmed note">
             <input type="checkbox" checked={inbox} onChange={(e) => setInbox(e.target.checked)} /> suggest only (inbox)
           </label>
           <Button onClick={() => void requestClose()}>Cancel</Button>
