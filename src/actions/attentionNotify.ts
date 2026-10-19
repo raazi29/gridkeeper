@@ -8,11 +8,10 @@ import { disposeAudio, playSound } from "../audio/sounds";
 import { APP_NAME } from "../lib/brand";
 import { errorMessage, ipc, onSessionAttention, onSessionState } from "../lib/ipc";
 import { isMac } from "../lib/platform";
-import { notifyPhone, type PhoneEvent } from "../lib/phoneAlerts";
+import { installPhoneAlerts, notifyPhone, type PhoneEvent } from "../lib/phoneAlerts";
 import type { SessionId, SessionInfo } from "../lib/types";
 import { findGroupOf, selectActiveGroup, useApp } from "../store/appStore";
 import { countUnread, useAttention, type Alert } from "../store/attention";
-import { useLeadControl } from "../store/leadControl";
 import { useMission } from "../store/mission";
 import { actionToast } from "../store/uiStore";
 import { jumpToSession } from "./commands";
@@ -121,6 +120,7 @@ function phoneEvent(id: SessionId, alert: Alert): PhoneEvent {
     workspaceId: g?.workspace.id ?? null,
     paneName: sessionLabel(id),
     workspaceName: g?.workspace.name,
+    onScreen: isOnScreen(id),
   };
 }
 
@@ -292,18 +292,8 @@ export function installAttention(): () => void {
   });
   pruneMutedIds();
 
-  // A lead proposal that starts waiting for the user (new, or an autopilot item that gave up) goes to the phone once.
-  const toldProposals = new Set<string>();
-  const unsubProposals = useLeadControl.subscribe((s) => {
-    const waiting = s.proposals.filter((p) => p.status === "proposal");
-    for (const p of waiting) {
-      if (toldProposals.has(p.key)) continue;
-      toldProposals.add(p.key);
-      void notifyPhone({ kind: "proposal", key: `p:${p.dirKey}`, paneName: p.lead ?? undefined });
-    }
-    for (const k of toldProposals) if (!waiting.some((p) => p.key === k)) toldProposals.delete(k);
-  });
-  for (const p of useLeadControl.getState().proposals) if (p.status === "proposal") toldProposals.add(p.key);
+  // Lead proposals waiting for the user and finished mission boards also go to the phone (opt-in).
+  const uninstallPhone = installPhoneAlerts();
 
   let prevUnread = -1;
   const unsubAttn = useAttention.subscribe((s) => {
@@ -331,7 +321,7 @@ export function installAttention(): () => void {
     document.removeEventListener("visibilitychange", markFocusedRead);
     unsubApp();
     unsubAttn();
-    unsubProposals();
+    uninstallPhone();
     window.clearTimeout(flushTimer);
     flushTimer = undefined;
     pending = [];
