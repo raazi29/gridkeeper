@@ -8,6 +8,9 @@
 // the shared session context menu and keyboard actions (Enter / R / S / M / Del / F2 / Shift+F10).
 // Effects (gold entry jump, panel assembly, energy connectors with comets on real events, lit cards, the
 // briefing crawl) live in MissionFx.tsx / mission.css behind one class, `has-fx`.
+// v3 deck: four views (graph / board / timeline / list, keys 1–4), a zoomable, pannable canvas with a minimap
+// (useCanvas.ts, CanvasControls.tsx), filter chips, spotlight, find (Ctrl/⌘+F), pins, multi-selection with a
+// bulk bar, the agent panel, message comets and FLIP moves. State: store/missionDeck.ts; rules: deck.ts.
 // Every number shown is real: process state, exit codes, attention state, PTY output bytes/s (sampled
 // once per second ONLY while this overlay is open), CPU/RAM from the shared diagnostics poll.
 
@@ -15,12 +18,12 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, typ
 import { createPortal } from "react-dom";
 import { useShallow } from "zustand/react/shallow";
 import { confirmCloseSession, deleteGroupFlow, jumpToSession } from "../../actions/commands";
-import { messageSessions, restartSessions, restartTargets, stopSessions } from "../../actions/groupActions";
+import { closeSessions, messageSessions, restartSessions, restartTargets, stopSessions } from "../../actions/groupActions";
 import { closeSession, startSession } from "../../actions/sessions";
 import { commandForEvent } from "../../keybindings";
 import { chipText, dayKey, rankProgress, streakInfo } from "../../lib/flightlog";
 import { ipc } from "../../lib/ipc";
-import { countOwned, currentTaskFor, progress, type Task, type TeamMember } from "../../lib/missionDoc";
+import { countOwned, currentTaskFor, ownersFor, progress, slugify, type Task, type TeamMember } from "../../lib/missionDoc";
 import { fileManagerName } from "../../lib/platform";
 import { BUILTIN_ROLES } from "../../lib/roles";
 import type { GitInfo, SessionId } from "../../lib/types";
@@ -32,6 +35,8 @@ import { useAttention } from "../../store/attention";
 import { openFlightLog, useFlightLog } from "../../store/flightlog";
 import { openBrain } from "../../store/brain";
 import { LEAD_BOX, useMission } from "../../store/mission";
+import { pinsOf, togglePin, useDeck } from "../../store/missionDeck";
+import { recordMark } from "../../store/stateHistory";
 import { dirKey, useMissionFile } from "../../store/missionDoc";
 import { DEFAULT_POLICY, effectiveMode, useLeadControl } from "../../store/leadControl";
 import { acquireRateSampler, formatRate, latestRate, useRates } from "../../store/rates";
@@ -87,6 +92,26 @@ import { SessionLog } from "./SessionLog";
 import { SignoffNode } from "./Signoff";
 import { processSessionIds } from "../../lib/browserPanes";
 import { useOutputTails } from "./useOutputTails";
+import { AgentPanel } from "./AgentPanel";
+import { BoardView } from "./BoardView";
+import { Minimap, useCanvasInset, ZoomControls } from "./CanvasControls";
+import { Comets } from "./Comets";
+import { matchesFilters, pinnedFirst, roleKey, stateChipOf, toggleSpotlight, viewForKey, VIEWS, type McView, type Spotlight, type StateChip } from "./deck";
+import { DeckBar } from "./DeckBar";
+import { findHits, type FindAgent, type FindHit } from "./find";
+import { FindBar } from "./FindBar";
+import { FlipLayer } from "./Flip";
+import { ListView } from "./ListView";
+import { useMcExtensions } from "./mcExtensions";
+import { IcBoard, IcGraph, IcList, IcTimeline } from "./mcIcons";
+import { T } from "./mcText";
+import { clickSelect, extendSelect, idsInRect, pruneSelection } from "./selection";
+import { SelectionBar } from "./SelectionBar";
+import { ShortcutSheet } from "./ShortcutSheet";
+import { addOwners } from "./taskOps";
+import { TimelineView } from "./TimelineView";
+import { useCanvas, type BandEvent, type CanvasApi } from "./useCanvas";
+import "../../styles/mcDeck.css";
 import "../../styles/attention.css";
 import "../../styles/mission.css";
 import "../../styles/mcDrag.css";
@@ -233,7 +258,7 @@ function nearestCard(root: HTMLElement, x: number, y: number, exclude: SessionId
 }
 
 /** The header's "⋯" menu: the secondary actions (also listed when a wide header shows some of them inline). */
-function headerMenu(projectDir: string | null): MenuItem[] {
+function headerMenu(projectDir: string | null, deck: MenuItem[] = []): MenuItem[] {
   const rec = projectDir ? useReplay.getState().recording[dirKey(projectDir)] : undefined;
   const fl = useFlightLog.getState().data;
   const items: MenuItem[] = [];
@@ -254,6 +279,7 @@ function headerMenu(projectDir: string | null): MenuItem[] {
     { label: "Copy project path", disabled: !projectDir, onSelect: () => projectDir && void copyText(projectDir, "Project path copied") },
     { label: `Show project folder in ${fileManagerName()}`, disabled: !projectDir, onSelect: () => projectDir && void revealPath(projectDir) },
   );
+  if (deck.length) items.push("separator", ...deck);
   return items;
 }
 
@@ -306,6 +332,22 @@ function useVisibleClock(ms = 1000): number {
   return now;
 }
 
+const NO_IDS: SessionId[] = [];
+
+/** Esc in Mission Control peels one layer: the shortcut sheet, find, a multi-selection, the spotlight. False = nothing left. */
+function escapeLayer(): boolean {
+  const d = useDeck.getState();
+  if (d.sheetOpen) d.set({ sheetOpen: false });
+  else if (d.findOpen) d.set({ findOpen: false, findCurrent: null });
+  else if (d.sel.ids.length > 1) d.set({ sel: { ids: [], anchor: null } });
+  else if (d.spotlight) d.set({ spotlight: null });
+  else return false;
+  return true;
+}
+
+const VIEW_ICON: Record<McView, () => React.ReactNode> = { graph: () => <IcGraph />, board: () => <IcBoard />, timeline: () => <IcTimeline />, list: () => <IcList /> };
+const VIEW_HINT: Record<McView, string> = { graph: T.views.graphHint, board: T.views.boardHint, timeline: T.views.timelineHint, list: T.views.listHint };
+
 export function MissionControl() {
   const close = useCallback(() => useMission.getState().toggle(false), []);
   const panel = useRef<HTMLDivElement>(null);
@@ -340,13 +382,34 @@ export function MissionControl() {
   const now = useVisibleClock();
   const splitTop = useMedia(SPLIT_TOP);
   const collapsed = useMission((s) => s.collapsed);
+  const view = useDeck((s) => s.view);
+  const sel = useDeck((s) => s.sel);
+  const spotlight = useDeck((s) => s.spotlight);
+  const filters = useDeck((s) => s.filters);
+  const pinned = useDeck((s) => pinsOf(s, wsId));
+  const panelMode = useDeck((s) => s.panel);
+  const panelWidth = useDeck((s) => s.panelWidth);
+  const findOpen = useDeck((s) => s.findOpen);
+  const findQuery = useDeck((s) => s.findQuery);
+  const findCurrent = useDeck((s) => s.findCurrent);
+  const sheetOpen = useDeck((s) => s.sheetOpen);
+  const minimapOn = useDeck((s) => s.minimap);
+  const starfield = useDeck((s) => s.starfield);
+  const tool = useDeck((s) => s.tool);
+  const setDeck = useDeck((s) => s.set);
+  const headerActions = useMcExtensions((s) => s.header);
+  /** Key handler of the board / timeline / list view (row navigation, time zoom); true = handled. */
+  const viewKeys = useRef<((e: React.KeyboardEvent) => boolean) | null>(null);
+  const canvasApiRef = useRef<CanvasApi | null>(null);
+  // Selection, spotlight, filters and find belong to one visit of Mission Control.
+  useLayoutEffect(() => useDeck.getState().resetOpen(), []);
   const [renamingLane, setRenamingLane] = useState<string | null>(null);
   const [announce, setAnnounce] = useState("");
 
   // Output-rate sampling, the shared diagnostics poll and card output tails run only while open.
   useEffect(() => acquireRateSampler(), []);
   useDiagnosticsPoll(diagOn);
-  useOutputTails(panel);
+  useOutputTails(panel, view === "graph" ? ".mc-scroll" : ".mc-main");
 
   const { groups, roles } = useMemo(() => {
     const roles: Record<SessionId, string | null> = {};
@@ -364,10 +427,12 @@ export function MissionControl() {
     return { groups, roles };
   }, [structure]);
 
-  const model = useMemo(
-    () => deriveMission(groups, (id) => roles[id], (id) => sessionStatus(runtime[id], attn[id])),
-    [groups, roles, runtime, attn],
-  );
+  // Pinned cards first in their lane / the lead box (display order only; the group order is unchanged).
+  const model = useMemo(() => {
+    const m = deriveMission(groups, (id) => roles[id], (id) => sessionStatus(runtime[id], attn[id]));
+    if (!pinned.length) return m;
+    return { ...m, leads: pinnedFirst(m.leads, pinned), lanes: m.lanes.map((l) => (pinnedFirst(l.ids, pinned) === l.ids ? l : { ...l, ids: pinnedFirst(l.ids, pinned) })) };
+  }, [groups, roles, runtime, attn, pinned]);
   const allIds = useMemo(() => groups.flatMap((g) => g.sessionIds), [groups]);
   const wsIdSet = useMemo(() => new Set(allIds), [allIds]);
   // Keyboard order: the cards on screen (collapsed boxes hide theirs).
@@ -444,6 +509,29 @@ export function MissionControl() {
     doneBase.current = boardDone;
     if (fx && prev !== null && boardDone !== null && boardDone > prev) addPulses([{ key: "mission", tone: "gold" }]);
   }, [boardDone, fx, addPulses]);
+  // A task turned done (by text: lines move): a timeline mark per owner and, with effects, a flash on the
+  // owner's card (saber colour when saber effects are on). The first read is the baseline.
+  const doneTexts = useRef<Map<string, string> | null>(null);
+  useEffect(() => {
+    if (!mission.doc) return;
+    const prev = doneTexts.current;
+    doneTexts.current = new Map(tasks.map((t) => [t.text, t.state]));
+    if (!prev) return;
+    const fresh = tasks.filter((t) => t.state === "done" && prev.has(t.text) && prev.get(t.text) !== "done");
+    const timers: ReturnType<typeof setTimeout>[] = [];
+    for (const t of fresh)
+      for (const id of ownersFor(t, team)) {
+        recordMark({ at: Date.now(), sessionId: id, kind: "task", label: t.text });
+        const el = fx ? panel.current?.querySelector<HTMLElement>(`[data-card="${CSS.escape(id)}"]`) : null;
+        if (!el) continue;
+        el.removeAttribute("data-flash");
+        void el.offsetWidth; // restart the animation
+        el.setAttribute("data-flash", "");
+        timers.push(setTimeout(() => el.removeAttribute("data-flash"), 1300));
+      }
+    return () => timers.forEach(clearTimeout);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tasks]);
   const [briefing, setBriefing] = useState(false);
   const briefingFrom = useRef<HTMLElement | null>(null);
   const openBriefing = useCallback(() => {
@@ -504,7 +592,7 @@ export function MissionControl() {
       if (document.activeElement && document.activeElement !== document.body) return;
       if (e.key === "Escape") {
         e.preventDefault();
-        close();
+        if (!escapeLayer()) close();
       } else panel.current?.focus();
     };
     window.addEventListener("keydown", onKey);
@@ -520,7 +608,10 @@ export function MissionControl() {
     // canvas to the new selection.
     const a = document.activeElement as HTMLElement | null;
     const navigating = !!a && !/^(BUTTON|INPUT|TEXTAREA|SELECT)$/.test(a.tagName);
-    if (el && a !== el && navigating && panel.current?.contains(a)) el.focus({ preventScroll: false });
+    if (el && a !== el && navigating && panel.current?.contains(a)) {
+      el.focus({ preventScroll: true });
+      canvasApiRef.current?.reveal(el);
+    }
   }, [selected]);
 
   const jump = useCallback(
@@ -531,11 +622,13 @@ export function MissionControl() {
     [close],
   );
 
-  /** Owner chip on the mission board: focus (and so select + scroll to) that session's card. */
+  /** Owner chip on the mission board: focus (and so select + bring into view) that session's card. */
   const selectCard = useCallback((id: SessionId) => {
     const el = panel.current?.querySelector<HTMLElement>(`[data-card="${CSS.escape(id)}"]`);
-    if (el) el.focus();
-    else setSelected(id);
+    if (el) {
+      el.focus({ preventScroll: true });
+      canvasApiRef.current?.reveal(el);
+    } else setSelected(id);
   }, []);
 
   // ---- drag & drop / keyboard moves ---------------------------------------------------------------
@@ -549,7 +642,11 @@ export function MissionControl() {
       say(msg);
       if (!id || !msg) return;
       setSelected(id);
-      requestAnimationFrame(() => panel.current?.querySelector<HTMLElement>(`[data-card="${CSS.escape(id)}"]`)?.focus());
+      requestAnimationFrame(() => {
+        const el = panel.current?.querySelector<HTMLElement>(`[data-card="${CSS.escape(id)}"]`);
+        el?.focus({ preventScroll: true });
+        canvasApiRef.current?.reveal(el ?? null);
+      });
     },
     [say],
   );
@@ -563,6 +660,221 @@ export function MissionControl() {
       endAllMcDrags();
     };
   }, []);
+
+  // ---- deck: selection (click / Ctrl / Shift / rubber band), pins, spotlight, views, find, canvas ----------
+  const multiIds = sel.ids.length > 1 ? sel.ids : NO_IDS;
+  const multiSet = useMemo(() => new Set(multiIds), [multiIds]);
+  const flatRef = useRef(flat);
+  flatRef.current = flat;
+  const selectedRef = useRef(selected);
+  selectedRef.current = selected;
+  /** Keyboard selection: one card (the anchor for a later Shift range). */
+  const selectOnly = useCallback((id: SessionId | null) => {
+    if (!id) return;
+    setSelected(id);
+    useDeck.getState().set({ sel: { ids: [id], anchor: id } });
+  }, []);
+  /** Click on a card / row: select (Ctrl/⌘ toggles, Shift ranges); a plain click opens the agent panel ("auto"). */
+  const pick = useCallback((id: SessionId, e: { ctrlKey: boolean; metaKey: boolean; shiftKey: boolean }) => {
+    const toggle = e.ctrlKey || e.metaKey;
+    const d = useDeck.getState();
+    const cur = d.sel.ids.length ? d.sel : { ids: selectedRef.current ? [selectedRef.current] : [], anchor: selectedRef.current };
+    const order = flatRef.current.includes(id) ? flatRef.current : [...flatRef.current, id];
+    d.set({ sel: clickSelect(cur, id, { toggle, range: e.shiftKey }, order) });
+    setSelected(id);
+    if (!toggle && !e.shiftKey && d.panel === "auto") d.set({ panel: "open" });
+  }, []);
+  // Cards that went away leave the selection.
+  useEffect(() => {
+    const d = useDeck.getState();
+    const next = pruneSelection(d.sel, allIds);
+    if (next !== d.sel) d.set({ sel: next });
+  }, [allIds]);
+  const dimOf = (id: SessionId) => (spotlight?.kind === "agent" && spotlight.id !== id) || !matchesFilters(filters, roles[id], lamps[id] ?? "stopped");
+  const onPin = useCallback(
+    (id: SessionId) => {
+      const on = togglePin(wsId, id);
+      say(`${on ? "Pinned" : "Unpinned"} “${sessionName(id)}”`);
+    },
+    [wsId, say],
+  );
+  const spotAgent = useCallback((id: SessionId) => {
+    const d = useDeck.getState();
+    d.set({ spotlight: toggleSpotlight(d.spotlight, { kind: "agent", id }) });
+  }, []);
+  const setView = useCallback(
+    (v: McView) => {
+      if (useDeck.getState().view === v) return;
+      setDeck({ view: v });
+      say(`${T.views[v]} view`);
+    },
+    [setDeck, say],
+  );
+
+  // Rubber band (Shift+drag or the select tool on the empty canvas): cards under it are selected live.
+  const band = useRef<{ base: SessionId[] } | null>(null);
+  const onBand = useCallback((b: BandEvent) => {
+    const root = panel.current;
+    if (!root) return;
+    band.current ??= { base: b.additive ? useDeck.getState().sel.ids : [] };
+    const items = [...root.querySelectorAll<HTMLElement>(".mc-canvas [data-card]")].map((el) => {
+      const r = el.getBoundingClientRect();
+      return { id: el.dataset.card as string, rect: { x: r.left, y: r.top, w: r.width, h: r.height } };
+    });
+    const order = flatRef.current;
+    const ids = [...new Set([...band.current.base, ...idsInRect(items, b.rect)])].sort((x, y) => order.indexOf(x) - order.indexOf(y));
+    const d = useDeck.getState();
+    if (ids.join() !== d.sel.ids.join()) d.set({ sel: { ids, anchor: ids[0] ?? null } });
+  }, []);
+  const onBandEnd = useCallback((b: BandEvent | null) => {
+    band.current = null;
+    const ids = useDeck.getState().sel.ids;
+    if (b && ids.length) setSelected(ids[ids.length - 1]);
+  }, []);
+  const onEmptyClick = useCallback(() => {
+    const d = useDeck.getState();
+    if (d.sel.ids.length > 1) d.set({ sel: { ids: [], anchor: null } });
+  }, []);
+  const canvasApi = useCanvas({ wsId, still, active: view === "graph", tool, onBand, onBandEnd, onEmptyClick });
+  canvasApiRef.current = canvasApi;
+  const panelOpen = panelMode === "open";
+  // Over the graph the panel floats (no reflow of the canvas); reveal / fit / the controls keep clear of it.
+  const graphInset = view === "graph" ? (panelOpen ? panelWidth : 28) : 0;
+  useCanvasInset(graphInset);
+
+  // Find (Ctrl/⌘+F): agents (name, role, lane, branch) and mission tasks.
+  const findAgents = useMemo<FindAgent[]>(() => {
+    const metas = useApp.getState().persisted.sessions;
+    const rows = [...model.leads.map((id) => ({ id, lane: "lead" })), ...model.lanes.flatMap((l) => l.ids.map((id) => ({ id, lane: l.name })))];
+    return rows.map(({ id, lane }) => {
+      const m = metas.find((x) => x.id === id);
+      return { id, name: m?.name ?? "", role: m?.role ?? null, lane, branch: m?.worktree ? (m.worktree.branch ?? null) : null };
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [model, names]);
+  const hits = useMemo<FindHit[]>(() => (findOpen ? findHits(findQuery, findAgents, tasks) : []), [findOpen, findQuery, findAgents, tasks]);
+  const goHit = useCallback((h: FindHit) => {
+    const v = useDeck.getState().view;
+    const root = panel.current;
+    if (h.kind === "agent") {
+      setSelected(h.id);
+      useDeck.getState().set({ sel: { ids: [h.id], anchor: h.id } });
+      if (v === "graph") {
+        const lane = home.current(h.id);
+        const key = lane === "lead" ? LEAD_BOX : lane;
+        if (key && useMission.getState().collapsed[key]) useMission.getState().toggleCollapsed(key, false);
+        requestAnimationFrame(() => canvasApiRef.current?.reveal(root?.querySelector<HTMLElement>(`[data-card="${CSS.escape(h.id)}"]`) ?? null));
+      } else
+        requestAnimationFrame(() =>
+          root?.querySelector<HTMLElement>(`[data-row="${CSS.escape(h.id)}"], [data-tl="${CSS.escape(h.id)}"], .bv-col-head.is-hit`)?.scrollIntoView({ block: "nearest", inline: "nearest" }),
+        );
+    } else if (v === "graph")
+      requestAnimationFrame(() => {
+        const row = root?.querySelector<HTMLElement>(`[data-node="mission"] [data-line="${h.line}"]`);
+        canvasApiRef.current?.reveal(row ?? root?.querySelector<HTMLElement>('[data-node="mission"]') ?? null);
+      });
+    else if (v === "board") requestAnimationFrame(() => root?.querySelector<HTMLElement>(`.bv-task[data-line="${h.line}"]`)?.scrollIntoView({ block: "nearest", inline: "nearest" }));
+  }, []);
+  // The task the find bar is on, highlighted on the mission board (a transient attribute, not React state).
+  useEffect(() => {
+    const m = /^t:(\d+)$/.exec(findCurrent ?? "");
+    if (!m || view !== "graph") return;
+    const row = panel.current?.querySelector<HTMLElement>(`[data-node="mission"] [data-line="${m[1]}"]`);
+    row?.setAttribute("data-find-hit", "");
+    return () => row?.removeAttribute("data-find-hit");
+  }, [findCurrent, view, tasks]);
+
+  // Multi-selection bar actions: move to a lane (Undo restores every card), assign a task (one write, Undo).
+  const moveSelection = useCallback(
+    (gid: string | null) => {
+      const ids = useDeck.getState().sel.ids;
+      const target = gid ?? createLane(wsId);
+      if (!target || !ids.length) return;
+      const before = ids
+        .map((id) => {
+          const loc = findGroupOf(id);
+          return loc ? { id, groupId: loc.group.id, index: loc.group.sessionIds.indexOf(id) } : null;
+        })
+        .filter((x): x is { id: SessionId; groupId: string; index: number } => !!x)
+        .sort((a, b) => a.index - b.index);
+      for (const id of ids) moveCardToLane(id, target, null);
+      const name = findGroupOf(ids[0])?.group.name ?? "";
+      say(T.selection.moved(ids.length, name));
+      actionToast({
+        kind: "info",
+        message: T.selection.moved(ids.length, name),
+        action: { label: "Undo", run: () => before.forEach((b) => useApp.getState().moveSessionToGroup(b.id, b.groupId, b.index)) },
+      });
+    },
+    [wsId, say],
+  );
+  const assignSelection = useCallback(
+    (t: Task) => {
+      if (!projectDir) return;
+      const slugs = useDeck
+        .getState()
+        .sel.ids.map((id) => slugify(sessionName(id)))
+        .filter(Boolean);
+      void addOwners(projectDir, t, slugs, T.selection.assigned(t.text.length > 40 ? `${t.text.slice(0, 39)}…` : t.text, slugs.length));
+    },
+    [projectDir],
+  );
+
+  /** Deck keys (views, find, zoom, spotlight, pins, panel…). True = handled. Never terminal keys: no terminal has focus here. */
+  const deckKey = (e: React.KeyboardEvent): boolean => {
+    const mod = e.ctrlKey || e.metaKey;
+    const done = () => {
+      e.preventDefault();
+      e.stopPropagation();
+      return true;
+    };
+    if (mod && !e.altKey && !e.shiftKey && (e.key === "f" || e.key === "F")) {
+      setDeck({ findOpen: true });
+      return done();
+    }
+    if (mod && !e.altKey && !e.shiftKey && (e.key === "a" || e.key === "A") && flat.length) {
+      setDeck({ sel: { ids: flat, anchor: flat[0] } });
+      return done();
+    }
+    if (mod || e.altKey) return false;
+    if (e.key === "?") {
+      setDeck({ sheetOpen: !useDeck.getState().sheetOpen });
+      return done();
+    }
+    const v = e.shiftKey ? null : viewForKey(e.key);
+    if (v) {
+      setView(v);
+      return done();
+    }
+    if (view !== "graph" && viewKeys.current?.(e)) return done();
+    if (view === "graph") {
+      if (e.key === "+" || e.key === "=") canvasApi.zoomStep(1);
+      else if (e.key === "-" || e.key === "_") canvasApi.zoomStep(-1);
+      else if (e.key === "0") canvasApi.home();
+      else if ((e.key === "f" || e.key === "F") && !e.shiftKey) canvasApi.fit();
+      else if (e.key === "M" && e.shiftKey) setDeck({ minimap: !useDeck.getState().minimap });
+      else if ((e.key === "h" || e.key === "H") && !e.shiftKey) setDeck({ tool: "pan" });
+      else if ((e.key === "v" || e.key === "V") && !e.shiftKey) setDeck({ tool: "select" });
+      else return deckCardKey(e, done);
+      return done();
+    }
+    return deckCardKey(e, done);
+  };
+  const deckCardKey = (e: React.KeyboardEvent, done: () => boolean): boolean => {
+    if (e.key === "." && selected) {
+      spotAgent(selected);
+      return done();
+    }
+    if ((e.key === "p" || e.key === "P") && !e.shiftKey && selected) {
+      onPin(selected);
+      return done();
+    }
+    if ((e.key === "i" || e.key === "I") && !e.shiftKey) {
+      setDeck({ panel: useDeck.getState().panel === "open" ? "closed" : "open" });
+      return done();
+    }
+    return false;
+  };
 
   /** Alt+←/→ reorders the selected card in its lane, Alt+↑/↓ moves it to the previous / next lane. */
   const keyboardMoveCard = (id: SessionId, key: string) => {
@@ -618,11 +930,14 @@ export function MissionControl() {
     if (e.key === "Escape" || commandForEvent(e.nativeEvent) === "view.mission") {
       e.preventDefault();
       e.stopPropagation();
-      close();
+      // Esc peels the layers first (sheet, find, selection, spotlight); the shortcut always closes.
+      if (e.key !== "Escape" || !escapeLayer()) close();
       return;
     }
     const tag = (e.target as HTMLElement).tagName;
-    if (tag === "SELECT" || tag === "INPUT" || tag === "TEXTAREA" || tag === "BUTTON") return;
+    if (tag === "SELECT" || tag === "INPUT" || tag === "TEXTAREA") return;
+    if (deckKey(e)) return;
+    if (tag === "BUTTON") return;
     const arrow = e.key === "ArrowLeft" || e.key === "ArrowRight" || e.key === "ArrowUp" || e.key === "ArrowDown";
     const altOnly = e.altKey && !e.ctrlKey && !e.metaKey && !e.shiftKey;
     // A lane box itself has focus (click on its empty area): F2 renames it, Alt+←/→ moves it.
@@ -658,6 +973,15 @@ export function MissionControl() {
         const r = panel.current?.querySelector<HTMLElement>(`[data-card="${CSS.escape(selected)}"]`)?.getBoundingClientRect();
         openCardMenu({ clientX: (r?.left ?? 40) + 12, clientY: (r?.top ?? 40) + 22 }, selected);
       });
+    } else if (plain && multiIds.length > 1 && !e.shiftKey && /^[rRsSmM]$|^Delete$/.test(e.key)) {
+      // Several cards selected: the bulk paths (each asks first; the composer sends nothing until Send).
+      const what = T.selection.what(multiIds.length);
+      act(() => {
+        if (e.key === "r" || e.key === "R") void restartSessions(multiIds, what);
+        else if (e.key === "s" || e.key === "S") void stopSessions(multiIds, what);
+        else if (e.key === "m" || e.key === "M") messageSessions(multiIds, what);
+        else void closeSessions(multiIds, what);
+      });
     } else if (plain && selected && (e.key === "r" || e.key === "R") && !e.shiftKey) {
       act(() => {
         if (useApp.getState().runtime[selected]) void confirmRestart(selected, sessionName(selected), { mode: "continue" }, live);
@@ -674,18 +998,23 @@ export function MissionControl() {
     } else if (plain && selected && (e.key === "m" || e.key === "M") && !e.shiftKey) act(() => messageSessions([selected], `“${sessionName(selected)}”`));
     else if (plain && selected && e.key === "Delete") act(() => void confirmRemove(selected));
     else if (plain && selected && e.key === "F2") act(() => requestRename(selected, "mission"));
-    else if (e.key === "ArrowRight" || e.key === "ArrowLeft") {
+    else if ((e.key === "ArrowRight" || e.key === "ArrowLeft") && e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey && selected) {
       e.preventDefault();
-      setSelected(flat[e.key === "ArrowRight" ? Math.min(flat.length - 1, i + 1) : Math.max(0, i - 1)]);
+      const r = extendSelect(useDeck.getState().sel.ids.length ? useDeck.getState().sel : { ids: [selected], anchor: selected }, selected, e.key === "ArrowRight" ? 1 : -1, flat);
+      setDeck({ sel: r.sel });
+      setSelected(r.focus);
+    } else if (e.key === "ArrowRight" || e.key === "ArrowLeft") {
+      e.preventDefault();
+      selectOnly(flat[e.key === "ArrowRight" ? Math.min(flat.length - 1, i + 1) : Math.max(0, i - 1)]);
     } else if (e.key === "ArrowDown" || e.key === "ArrowUp") {
       e.preventDefault();
-      setSelected(verticalNeighbor(panel.current, selected, flat, e.key === "ArrowDown") ?? selected);
+      selectOnly(verticalNeighbor(panel.current, selected, flat, e.key === "ArrowDown") ?? selected);
     } else if (e.key === "Home") {
       e.preventDefault();
-      setSelected(flat[0]);
+      selectOnly(flat[0]);
     } else if (e.key === "End") {
       e.preventDefault();
-      setSelected(flat[flat.length - 1]);
+      selectOnly(flat[flat.length - 1]);
     }
   };
 
@@ -712,13 +1041,60 @@ export function MissionControl() {
   /** Header "sign-off [n]": bring the sign-off box into view and focus its first card. */
   const showSignoff = () => {
     const box = panel.current?.querySelector<HTMLElement>('[data-node="signoff"]');
-    if (!box) return;
-    box.scrollIntoView({ block: "nearest", behavior: still ? "auto" : "smooth" });
-    box.querySelector<HTMLElement>(".so-jump")?.focus({ preventScroll: true });
+    if (!box && view === "graph") return;
+    if (view !== "graph") setDeck({ view: "graph" });
+    requestAnimationFrame(() => canvasApiRef.current?.reveal(panel.current?.querySelector<HTMLElement>('[data-node="signoff"]') ?? null));
+    box?.querySelector<HTMLElement>(".so-jump")?.focus({ preventScroll: true });
   };
   const board = !!mission.doc;
-  const cardProps = { selected, onSelect: setSelected, onJump: jump, onMenu: openCardMenu, now, tasks: cardTasks, board, diag: diagOn, lamps, onMoved };
+  const cardProps = {
+    selected,
+    onSelect: setSelected,
+    onJump: jump,
+    onMenu: openCardMenu,
+    now,
+    tasks: cardTasks,
+    board,
+    diag: diagOn,
+    lamps,
+    onMoved,
+    onPick: pick,
+    multi: multiSet,
+    dimOf,
+    hit: findCurrent,
+    pins: pinned,
+    onPin,
+    spotlight,
+  };
   const collapsedKey = Object.keys(collapsed).sort().join(",");
+  const homeOf = useCallback((id: SessionId) => home.current(id), []);
+  const laneList = useMemo(() => model.lanes.map((l) => ({ id: l.groupId, name: l.name })), [model]);
+  const viewAgents = useMemo(
+    () => [...model.leads.map((id) => ({ id, lane: "lead", laneName: "lead" })), ...model.lanes.flatMap((l) => l.ids.map((id) => ({ id, lane: l.groupId, laneName: l.name })))],
+    [model],
+  );
+  const laneNameOf = (id: SessionId) => viewAgents.find((a) => a.id === id)?.laneName ?? null;
+  const openTasks = useMemo(() => tasks.filter((t) => t.state !== "done"), [tasks]);
+  const deckRoles = useMemo(() => {
+    const keys = new Set(allIds.map((id) => roleKey(roles[id])));
+    const out = rolesPresent.filter((r) => keys.has(r));
+    if (keys.has("")) out.push("");
+    return out;
+  }, [allIds, roles, rolesPresent]);
+  const roleCounts: Record<string, number> = {};
+  const stateCounts: Record<StateChip, number> = { working: 0, needs: 0, done: 0, idle: 0, error: 0 };
+  for (const id of allIds) {
+    const rk = roleKey(roles[id]);
+    roleCounts[rk] = (roleCounts[rk] ?? 0) + 1;
+    stateCounts[stateChipOf(lamps[id] ?? "stopped")]++;
+  }
+  const spotlightLabel = !spotlight
+    ? null
+    : spotlight.kind === "agent"
+      ? sessionName(spotlight.id)
+      : spotlight.id === "lead"
+        ? "lead box"
+        : `lane ${model.lanes.find((l) => l.groupId === spotlight.id)?.name ?? ""}`;
 
   return createPortal(
     <div className="mc-backdrop" onMouseDown={(e) => e.target === e.currentTarget && close()}>
@@ -760,6 +1136,15 @@ export function MissionControl() {
               </span>
             )}
           </div>
+          <div className="mc-views" role="tablist" aria-label={T.views.label}>
+            {VIEWS.map((v, i) => (
+              <button key={v} type="button" role="tab" aria-selected={view === v} className={`mc-view-btn${view === v ? " is-on" : ""}`} title={VIEW_HINT[v]} onClick={() => setView(v)}>
+                {VIEW_ICON[v]()}
+                <span className="mc-view-label">{T.views[v]}</span>
+                <kbd className="mc-view-key">{i + 1}</kbd>
+              </button>
+            ))}
+          </div>
           <span className="mc-bracket mc-head-count">
             agents [ <b>{model.counts.live}</b>/<b>{total}</b> ]
           </span>
@@ -774,6 +1159,11 @@ export function MissionControl() {
             </button>
           )}
           <span className="mc-head-actions">
+            {headerActions.map((a) => (
+              <span key={a.id} className="mc-head-ext">
+                {a.render()}
+              </span>
+            ))}
             <FlightLogChip />
             <ReplayHeaderControls projectDir={projectDir} />
             <button type="button" className="mc-btn" title="Brain: the team's long-term project memory (.gridkeeper/brain)" onClick={() => openBrain({ dir: projectDir })}>brain</button>
@@ -795,7 +1185,17 @@ export function MissionControl() {
               aria-label="More Mission Control actions"
               aria-haspopup="menu"
               title="More: flight log, replay recording, project folder"
-              onClick={(e) => openMenu(anchorOf(e.currentTarget), headerMenu(projectDir))}
+              onClick={(e) =>
+                openMenu(
+                  anchorOf(e.currentTarget),
+                  headerMenu(projectDir, [
+                    { label: T.menu.minimap, hint: "Shift+M", checked: minimapOn, onSelect: () => setDeck({ minimap: !minimapOn }) },
+                    { label: T.menu.starfield, checked: starfield, onSelect: () => setDeck({ starfield: !starfield }) },
+                    { label: T.menu.resetView, hint: "0", disabled: view !== "graph", onSelect: () => canvasApi.home() },
+                    { label: T.menu.shortcuts, hint: "?", onSelect: () => setDeck({ sheetOpen: true }) },
+                  ]),
+                )
+              }
             >
               ⋯
             </button>
@@ -805,9 +1205,16 @@ export function MissionControl() {
           </span>
         </header>
 
-        <div className="mc-scroll">
-          <div className="mc-canvas">
+        <DeckBar view={view} roles={deckRoles} roleCounts={roleCounts} stateCounts={stateCounts} spotlightLabel={spotlightLabel} />
+
+        <div className={`mc-body is-${view}${panelOpen ? " has-panel" : ""}`} style={{ "--mc-inset": `${graphInset}px` } as CSSProperties}>
+          <div className="mc-main">
+            {view === "graph" ? (
+        <div ref={canvasApi.viewport} className={`mc-scroll mc-viewport is-tool-${tool}${starfield ? " has-stars" : ""}${spotlight ? " has-spotlight" : ""}`}>
+          <div ref={canvasApi.canvas} className="mc-canvas">
+            <FlipLayer root={canvasApi.canvas} flipKey={`${structure.join("|")}|${collapsedKey}|${pinned.join(",")}`} enabled={!still && !entering} />
             <Links links={links} version={`${structure.join("|")}|${linkKey}|${collapsedKey}`} pulses={pulses} onPulseEnd={dropPulse} />
+            <Comets enabled={fx} homeOf={homeOf} />
             <div className="mc-top" data-node="top">
               <div className="mc-row">
                 <MissionNode workspaceId={wsId} projectDir={projectDir} mission={mission} team={team} onSelectSession={selectCard} openMenu={openMenu} selectedSessionId={selected} onBriefing={fx && mission.doc ? openBriefing : undefined} />
@@ -847,6 +1254,50 @@ export function MissionControl() {
               </>
             )}
           </div>
+          <ZoomControls api={canvasApi} />
+          {minimapOn && <Minimap api={canvasApi} version={`${structure.join("|")}|${collapsedKey}|${pinned.join(",")}|${Object.values(lamps).join(",")}|${model.counts.needs}`} />}
+        </div>
+            ) : view === "board" ? (
+              <BoardView
+                projectDir={projectDir}
+                mission={mission}
+                team={team}
+                agents={viewAgents}
+                lanes={laneList}
+                lamps={lamps}
+                selected={selected}
+                onSelect={(id) => pick(id, { ctrlKey: false, metaKey: false, shiftKey: false })}
+                onJump={jump}
+                onGraph={() => setView("graph")}
+                openMenu={openMenu}
+              />
+            ) : view === "timeline" ? (
+              <TimelineView agents={viewAgents} lamps={lamps} roles={roles} selected={selected} multi={multiIds} now={now} onSelect={pick} onJump={jump} keys={viewKeys} />
+            ) : (
+              <ListView agents={viewAgents} lamps={lamps} tasks={cardTasks} selected={selected} multi={multiIds} now={now} onSelect={pick} onJump={jump} onMenu={openCardMenu} keys={viewKeys} />
+            )}
+            {multiIds.length > 1 && (
+              <SelectionBar ids={multiIds} lanes={laneList.map((l) => ({ groupId: l.id, name: l.name }))} openTasks={openTasks} onMove={moveSelection} onAssign={assignSelection} onClear={() => setDeck({ sel: { ids: [], anchor: null } })} />
+            )}
+            {findOpen && <FindBar hits={hits} onGo={goHit} />}
+          </div>
+          <AgentPanel
+            id={selected && allIds.includes(selected) ? selected : null}
+            open={panelOpen}
+            overlay={view === "graph"}
+            projectDir={projectDir}
+            tasks={tasks}
+            team={team}
+            board={board}
+            lane={selected ? laneNameOf(selected) : null}
+            now={now}
+            pinned={!!selected && pinned.includes(selected)}
+            spotlit={!!selected && spotlight?.kind === "agent" && spotlight.id === selected}
+            onJump={jump}
+            onPin={onPin}
+            onSpotlight={spotAgent}
+            onOpen={(o) => setDeck({ panel: o ? "open" : "closed" })}
+          />
         </div>
 
         <ActivityRiver sessions={riverSessions} still={still} roles={rolesPresent} />
@@ -877,18 +1328,15 @@ export function MissionControl() {
           {wsId && <SpendToday workspaceId={wsId} variant="mc" />}
           <CostMeterHint ids={allIds} variant="mc" />
           <span className="mc-spacer" />
-          <span
-            className="mc-keys"
-            title="Keyboard, on the selected card: ←↑↓→ select · Enter jump · R restart · S stop/start · M message · Del close · F2 rename · Alt+←→ reorder · Alt+↑↓ move to the previous / next lane · Shift+F10 menu · Esc close Mission Control"
-          >
-            <kbd>←↑↓→</kbd> select · <kbd>enter</kbd> jump · <kbd>r</kbd> restart · <kbd>s</kbd> stop/start · <kbd>m</kbd> message · <kbd>del</kbd> close ·{" "}
-            <kbd>F2</kbd> rename · <kbd>alt+←→</kbd> reorder · <kbd>alt+↑↓</kbd> move lane · <kbd>⇧F10</kbd> menu · <kbd>esc</kbd> close
+          <span className="mc-keys" title={T.footer.keys}>
+            <kbd>click</kbd> select · <kbd>dbl-click</kbd>/<kbd>enter</kbd> jump · <kbd>ctrl/⇧ click</kbd> multi · <kbd>space+drag</kbd> pan · <kbd>ctrl+wheel</kbd> zoom · <kbd>F</kbd> fit · <kbd>1–4</kbd> views · <kbd>ctrl+F</kbd> find · <kbd>?</kbd> all keys
           </span>
         </footer>
         <div className="mc-sr" role="status" aria-live="polite" aria-atomic="true">
           {announce}
         </div>
         {briefing && mission.doc && <Briefing doc={mission.doc} title={wsName || "Mission"} onClose={closeBriefing} />}
+        {sheetOpen && <ShortcutSheet />}
       </div>
       {menu.element}
     </div>,
@@ -914,6 +1362,28 @@ interface CardProps {
   lamps: Record<SessionId, FleetLamp>;
   /** A card / lane move finished (drag & drop): announce + refocus. */
   onMoved: OnMoved;
+  /** Click on a card: selection (Ctrl/⌘ toggles, Shift ranges). */
+  onPick: (id: SessionId, e: React.MouseEvent) => void;
+  /** Cards of a multi-selection (two or more). */
+  multi: Set<SessionId>;
+  /** Outside the agent spotlight or not matching the filter chips. */
+  dimOf: (id: SessionId) => boolean;
+  /** Current find hit key ("a:<id>" for a card). */
+  hit: string | null;
+  pins: SessionId[];
+  onPin: (id: SessionId) => void;
+  spotlight: Spotlight;
+}
+
+/** The deck props of one card. */
+function deckOf(p: Pick<CardProps, "onPick" | "multi" | "dimOf" | "hit" | "pins" | "onPin">, id: SessionId) {
+  return { onPick: p.onPick, multi: p.multi.has(id), dim: p.dimOf(id), hit: p.hit === `a:${id}`, pinned: p.pins.includes(id), onPin: p.onPin };
+}
+
+/** Click on a lane name: spotlight that lane (again: off). */
+function spotLane(id: string) {
+  const d = useDeck.getState();
+  d.set({ spotlight: toggleSpotlight(d.spotlight, { kind: "lane", id }) });
 }
 
 /** One lamp per session: the one-line summary of a collapsed box. */
@@ -997,10 +1467,11 @@ function LeadNode({
   lamps,
   onMoved,
   autopilot,
+  ...deck
 }: CardProps & { leads: SessionId[]; lanes: LaneModel[]; allIds: SessionId[]; collapsed: boolean; autopilot: boolean }) {
   const liveLeads = useApp((s) => leads.filter((id) => isLive(s.runtime[id])).length);
   const drop = useLeadDrop(onMoved);
-  const dropCls = `${drop.over ? " is-drop-target" : ""}${autopilot ? " is-autopilot" : ""}`;
+  const dropCls = `${drop.over ? " is-drop-target" : ""}${autopilot ? " is-autopilot" : ""}${deck.spotlight?.kind === "lane" ? (deck.spotlight.id === "lead" ? " is-spot" : " is-dim") : ""}`;
   const phases = lanes.length > 0 && (
     <div className="mc-lead-phases mc-micro" aria-label="Workflow phases">
       <span>workflow</span>
@@ -1048,7 +1519,9 @@ function LeadNode({
     <div data-node="lead" className={`mc-node mc-lead is-solid${dropCls}`} {...drop.handlers}>
       <span className="mc-node-label mc-box-label">
         <FoldToggle k={LEAD_BOX} collapsed={false} what="lead box" />
-        lead · orchestrator
+        <span className="mc-lane-name is-spotable" title={T.lane.spotlight("lead")} onClick={() => spotLane("lead")}>
+          lead · orchestrator
+        </span>
       </span>
       <span className="mc-node-label mc-node-label-right">{leads.length === 1 ? "1 lead" : `${leads.length} leads`}</span>
       <div className="mc-node-actions">
@@ -1078,6 +1551,7 @@ function LeadNode({
             taskState={tasks[id]?.state ?? null}
             board={board}
             diag={diag}
+            {...deckOf(deck, id)}
           />
         ))}
       </div>
@@ -1141,6 +1615,7 @@ function LaneNode({
   collapsed,
   renaming,
   onRenaming,
+  ...deck
 }: CardProps & {
   lane: LaneModel;
   index: number;
@@ -1169,6 +1644,7 @@ function LaneNode({
     !collapsed && lane.total >= 7 ? "is-wide" : "",
     collapsed ? "is-collapsed" : "",
     drop.state?.kind === "card" ? "is-drop-target" : "",
+    deck.spotlight?.kind === "lane" ? (deck.spotlight.id === lane.groupId ? "is-spot" : "is-dim") : "",
   ]
     .filter(Boolean)
     .join(" ");
@@ -1197,7 +1673,12 @@ function LaneNode({
       {renaming ? (
         <LaneRename groupId={lane.groupId} name={lane.name} onDone={() => onRenaming(null)} />
       ) : (
-        <span className="mc-lane-name" title={`Lane ${index}: ${lane.name} — double-click to rename (F2 on the lane)`} onDoubleClick={() => onRenaming(lane.groupId)}>
+        <span
+          className="mc-lane-name is-spotable"
+          title={`Lane ${index}: ${lane.name} — click: spotlight (the others dim) · double-click: rename (F2 on the lane)`}
+          onClick={() => spotLane(lane.groupId)}
+          onDoubleClick={() => onRenaming(lane.groupId)}
+        >
           lane {index} · {lane.name}
         </span>
       )}
@@ -1298,7 +1779,7 @@ function LaneNode({
       {progress ? (
         <div className="mc-lane-head mc-micro">
           <span className="mc-progress" role="progressbar" aria-valuemin={0} aria-valuemax={lane.total} aria-valuenow={lane.done} aria-label={progress.label}>
-            <span style={{ width: `${Math.round(progress.fraction * 100)}%` } as CSSProperties} />
+            <span style={{ transform: `scaleX(${progress.fraction.toFixed(3)})` } as CSSProperties} />
             {lane.done > 0 && <i key={lane.done} className="mc-progress-sweep" aria-hidden="true" />}
           </span>
           <span>{progress.label}</span>
@@ -1327,6 +1808,7 @@ function LaneNode({
             board={board}
             diag={diag}
             dropSide={anchor?.id === id ? anchor.side : null}
+            {...deckOf(deck, id)}
           />
         ))}
       </div>

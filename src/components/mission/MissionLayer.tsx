@@ -1,5 +1,5 @@
-// Mount point for Mission Control: installs the activity log and the lead control engine once (both must
-// work while the overlay is closed) and renders the overlay and the formation dialog as siblings (so the
+// Mount point for Mission Control: installs the activity log, the state history (timeline) and the lead control
+// engine once (they must work while the overlay is closed) and renders the overlay and the formation dialog as siblings (so the
 // dialog's key events never bubble into the overlay). Mounted once by Shell.
 
 import { useEffect } from "react";
@@ -7,6 +7,7 @@ import { installLeadControl } from "../../actions/leadControl";
 import { cancelAllStarterPrompts } from "../../actions/starterPrompt";
 import { installActivity } from "../../store/activity";
 import { useMission } from "../../store/mission";
+import { installStateHistory } from "../../store/stateHistory";
 import { ErrorBoundary } from "../ErrorBoundary";
 import { FlightLogLayer } from "../flightlog/FlightLogLayer";
 import { ReplayLayer } from "../replay/ReplayLayer";
@@ -18,9 +19,11 @@ export function MissionLayer() {
   const formationOpen = useMission((s) => s.formationOpen);
   useEffect(() => {
     const off = installActivity();
+    const offHistory = installStateHistory(); // the timeline view needs history from before it opens
     const offLead = installLeadControl();
     return () => {
       off();
+      offHistory();
       offLead();
       cancelAllStarterPrompts();
     };

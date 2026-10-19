@@ -571,7 +571,7 @@ function Board({
 
   const progressBar = (
     <span className="mc-progress" role="progressbar" aria-valuemin={0} aria-valuemax={p.total} aria-valuenow={p.done} aria-label={`${p.done} of ${p.total} tasks done`}>
-      <span style={{ width: `${Math.round(p.fraction * 100)}%` } as CSSProperties} />
+      <span style={{ transform: `scaleX(${p.fraction.toFixed(3)})` } as CSSProperties} />
       {p.done > 0 && <i key={p.done} className="mc-progress-sweep" aria-hidden="true" />}
     </span>
   );
