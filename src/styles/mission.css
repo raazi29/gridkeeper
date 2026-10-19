@@ -10,6 +10,11 @@
   --role-custom: var(--text-1);
 
   --mc-line: var(--border-strong);
+  /* Mission Control's gold family (decor and effects), mixed toward --text-0 so it stays legible on light themes */
+  --mc-gold: color-mix(in oklab, #f3c14b 84%, var(--text-0));
+  --mc-gold-hi: color-mix(in oklab, #fff0c2 80%, var(--text-0));
+  --mc-gold-deep: color-mix(in oklab, #c98a1b 84%, var(--text-0));
+  --mc-amber: var(--warn);
   --mc-fs: 11.5px;
   --mc-fs-micro: 10px;
 }
@@ -69,6 +74,7 @@
   padding: 14px;
 }
 .mc {
+  position: relative; /* the briefing crawl covers it */
   flex: 1;
   min-width: 0;
   display: flex;
@@ -124,7 +130,8 @@
   font-size: var(--mc-fs);
 }
 .mc-title-glyph {
-  color: var(--accent);
+  color: var(--mc-gold);
+  text-shadow: 0 0 8px color-mix(in srgb, var(--mc-gold) 60%, transparent);
 }
 .mc-head-meta {
   display: flex;
@@ -275,10 +282,18 @@
   overflow: auto;
   overscroll-behavior: contain;
 }
+/* a column: the gaps between the top row, the lanes and the sign-off box grow (up to a cap) into spare height,
+   so the canvas is used instead of leaving a void under the sign-off box */
 .mc-canvas {
   position: relative;
-  padding: 16px 18px 10px;
+  display: flex;
+  flex-direction: column;
+  padding: 16px 18px 14px;
   min-height: 100%;
+}
+.mc-gap {
+  flex: 1 0 34px;
+  max-height: 96px;
 }
 .mc-links {
   position: absolute;
@@ -290,7 +305,7 @@
 }
 .mc-link {
   fill: none;
-  stroke: var(--mc-line);
+  stroke: color-mix(in srgb, var(--mc-gold) 26%, var(--mc-line));
   stroke-width: 1;
   stroke-dasharray: 3 4;
 }
@@ -327,8 +342,7 @@
   justify-content: center;
 }
 .mc-row + .mc-row,
-.mc-lanes + .mc-row,
-.mc-top + .mc-lanes {
+.mc-lanes + .mc-row {
   margin-top: 34px;
 }
 /* mission board + lead box: stacked and centred; side by side when the window is wide enough, so the lanes
@@ -467,11 +481,12 @@
   min-width: 40px;
   background: var(--bg-3);
   position: relative;
+  overflow: hidden;
 }
 .mc-progress > span {
   position: absolute;
   inset: 0 auto 0 0;
-  background: var(--ok);
+  background: linear-gradient(90deg, var(--mc-gold-deep), var(--mc-gold));
 }
 .mc-lane-stats {
   display: inline-flex;
@@ -489,9 +504,10 @@
 .mc-lane-stats .is-err {
   color: var(--err);
 }
+/* auto-fit: a lone card (one lead, a one-agent lane) takes the row instead of leaving empty tracks beside it */
 .mc-cards {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
   gap: 6px;
 }
 .mc-empty {
@@ -547,7 +563,7 @@
   min-width: 0;
   white-space: nowrap;
 }
-.mc-card > .mc-card-row:first-child {
+.mc-card > .mc-card-row:first-of-type {
   min-height: 16px; /* the role tag's height: no jump when the hover toolbar hides it */
 }
 .mc-card-name {
@@ -1114,10 +1130,10 @@
   display: inline-flex;
 }
 /* while the toolbar shows, the name row ends before it (the name ellipsizes, nothing is covered) */
-.mc-card:is(:hover, :focus-visible, :focus-within) > .mc-card-row:first-child {
+.mc-card:is(:hover, :focus-visible, :focus-within) > .mc-card-row:first-of-type {
   padding-right: 110px;
 }
-.mc-card:is(:hover, :focus-visible, :focus-within) > .mc-card-row:first-child > .role-tag {
+.mc-card:is(:hover, :focus-visible, :focus-within) > .mc-card-row:first-of-type > .role-tag {
   display: none;
 }
 .mc-card-tools button {
@@ -1205,9 +1221,11 @@
     padding-top: 14px;
   }
   .mc-row + .mc-row,
-  .mc-lanes + .mc-row,
-  .mc-top + .mc-lanes {
+  .mc-lanes + .mc-row {
     margin-top: 26px;
+  }
+  .mc-gap {
+    flex-basis: 26px;
   }
   .mc-top {
     row-gap: 26px;
@@ -1216,5 +1234,488 @@
 @media (max-height: 640px) {
   .mc-river-body {
     display: none;
+  }
+}
+
+/* ---- gold decor (static) ------------------------------------------------------------------- */
+
+.mc .mb-node {
+  --rc: var(--mc-gold);
+  border-color: color-mix(in srgb, var(--mc-gold) 45%, var(--mc-line));
+}
+.mc-head {
+  border-bottom-color: color-mix(in srgb, var(--mc-gold) 22%, var(--border));
+}
+.mc-lead.is-autopilot {
+  border-color: color-mix(in srgb, var(--mc-gold) 65%, var(--mc-line));
+}
+.mb-briefing {
+  border-color: color-mix(in srgb, var(--mc-gold) 55%, var(--mc-line));
+  color: var(--mc-gold);
+}
+.mb-briefing:hover {
+  color: var(--mc-gold-hi);
+  border-color: var(--mc-gold);
+  background: color-mix(in srgb, var(--mc-gold) 12%, transparent);
+}
+
+/* ---- effects: only under .has-fx (the "Mission Control effects" setting, never under reduced motion).
+   Motion is transform / opacity wherever it loops; the dash flow on busy connectors is the one paint loop. Every loop pauses while the window is in the background. ------------------- */
+
+.mc-jump {
+  position: absolute;
+  inset: 0;
+  z-index: 6;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+.mc-link-energy,
+.mc-comet,
+.mc-card-fx,
+.mc-progress-sweep {
+  display: none;
+}
+:root[data-app-blurred] .mc.has-fx *,
+:root[data-app-blurred] .mc.has-fx *::before,
+:root[data-app-blurred] .mc.has-fx *::after {
+  animation-play-state: paused !important;
+}
+
+/* entry: the gold jump (canvas, MissionFx.tsx) then the panels assemble one after another, each swept by
+   a gold scanline; connectors and the bottom bands follow */
+.mc.has-fx.is-entering .mc-head {
+  animation: mc-drop-in 420ms cubic-bezier(0.2, 0.8, 0.2, 1) 300ms backwards;
+}
+.mc.has-fx.is-entering :is(.mc-node, .mc-newlane) {
+  animation: mc-assemble 640ms cubic-bezier(0.2, 0.7, 0.2, 1) backwards;
+  animation-delay: calc(420ms + var(--mc-i, 6) * 90ms);
+}
+.mc.has-fx.is-entering .mc-node::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  border-radius: inherit;
+  background: linear-gradient(to bottom, transparent, color-mix(in srgb, var(--mc-gold) 16%, transparent) 72%, var(--mc-gold-hi) 96%, transparent) no-repeat 0 -48px / 100% 48px;
+  opacity: 0;
+  animation: mc-scan 780ms ease-in-out backwards;
+  animation-delay: calc(540ms + var(--mc-i, 6) * 90ms);
+}
+.mc-top > .mc-row:first-child .mc-node {
+  --mc-i: 0;
+}
+.mc-top > .mc-row:nth-child(2) .mc-node {
+  --mc-i: 1;
+}
+.mc-lanes > :nth-child(1) {
+  --mc-i: 2;
+}
+.mc-lanes > :nth-child(2) {
+  --mc-i: 3;
+}
+.mc-lanes > :nth-child(3) {
+  --mc-i: 4;
+}
+.mc-lanes > :nth-child(4) {
+  --mc-i: 5;
+}
+.mc.has-fx.is-entering .mc-links {
+  animation: mc-fade 600ms ease 1000ms backwards;
+}
+.mc.has-fx.is-entering :is(.mc-river, .mc-log, .mc-status) {
+  animation: mc-rise 480ms ease 800ms backwards;
+}
+.mc.has-fx.is-entering .mc-progress-sweep {
+  animation-delay: 1200ms;
+}
+@keyframes mc-assemble {
+  from {
+    opacity: 0;
+    transform: perspective(1200px) translate3d(0, 18px, -140px) rotateX(16deg);
+  }
+  35% {
+    opacity: 0.85;
+  }
+  45% {
+    opacity: 0.3;
+  }
+  60% {
+    opacity: 1;
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes mc-scan {
+  from {
+    opacity: 1;
+    background-position: 0 -48px;
+  }
+  85% {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+    background-position: 0 calc(100% + 48px);
+  }
+}
+@keyframes mc-drop-in {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+}
+@keyframes mc-rise {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+}
+@keyframes mc-fade {
+  from {
+    opacity: 0;
+  }
+}
+
+/* energy connectors: gold motes along mission → lead → lanes → sign-off; they flow (brighter, faster) where work
+   is happening and amber toward a lane that needs you. A comet runs along a line on a real event (Links.tsx). */
+.mc.has-fx .mc-link,
+.mc.has-fx .mc-link.is-active {
+  stroke: color-mix(in srgb, var(--mc-gold) 30%, var(--mc-line));
+  stroke-dasharray: none;
+  animation: none;
+}
+.mc.has-fx .mc-link.is-needs {
+  stroke: color-mix(in srgb, var(--mc-amber) 60%, var(--mc-line));
+}
+.mc.has-fx .mc-link-energy {
+  display: inline;
+  fill: none;
+  stroke: var(--mc-gold);
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-dasharray: 0.5 13.5;
+  opacity: 0.55;
+}
+/* the motes flow only where something is happening (the dash flow is a paint per frame); idle lines rest */
+.mc.has-fx .mc-link-energy:is(.is-active, .is-needs, .is-review) {
+  animation: mc-energy 2.4s steps(14) infinite; /* 1 px per step: smooth to the eye, repaints only on a step */
+}
+.mc.has-fx .mc-link-energy.is-active {
+  stroke: var(--mc-gold-hi);
+  stroke-width: 2.2;
+  opacity: 0.95;
+  animation-duration: 1s;
+}
+.mc.has-fx .mc-link-energy.is-needs {
+  stroke: var(--mc-amber);
+  stroke-width: 2;
+  opacity: 0.95;
+  animation-duration: 1.5s;
+}
+.mc.has-fx .mc-link-energy.is-review {
+  stroke: color-mix(in srgb, var(--mc-gold) 55%, var(--ok));
+  opacity: 0.85;
+}
+@keyframes mc-energy {
+  to {
+    stroke-dashoffset: -14;
+  }
+}
+.mc.has-fx .mc-comet {
+  display: inline;
+}
+.mc-comet path {
+  fill: none;
+  stroke-linecap: round;
+}
+.mc-comet-tail {
+  stroke: var(--mc-gold);
+  stroke-width: 2.5;
+  stroke-dasharray: 0.16 3;
+  opacity: 0.85;
+  animation: mc-comet-tail 1.15s cubic-bezier(0.45, 0.05, 0.55, 0.95) both;
+}
+.mc-comet-head {
+  stroke: var(--mc-gold-hi);
+  stroke-width: 4.5;
+  stroke-dasharray: 0.012 3;
+  filter: drop-shadow(0 0 4px var(--mc-gold));
+  animation: mc-comet-head 1.15s cubic-bezier(0.45, 0.05, 0.55, 0.95) both;
+}
+.mc-comet.is-amber .mc-comet-tail {
+  stroke: var(--mc-amber);
+}
+.mc-comet.is-amber .mc-comet-head {
+  filter: drop-shadow(0 0 4px var(--mc-amber));
+}
+@keyframes mc-comet-tail {
+  from {
+    stroke-dashoffset: 0.16;
+  }
+  to {
+    stroke-dashoffset: -1;
+  }
+}
+@keyframes mc-comet-head {
+  from {
+    stroke-dashoffset: 0.012;
+  }
+  to {
+    stroke-dashoffset: -1.148;
+  }
+}
+
+/* cards: working = a gold arc runs round the border; needs you = the border breathes amber; idle stays calm.
+   The lit layer sits under the card's content (z-index -1 in the card's own stacking context): the ring colour
+   or a rotating conic layer, covered by an inner plate in the card's background except for a 1.5 px rim. Only
+   transform / opacity animate, so the compositor does the work. */
+.mc.has-fx .mc-card:is([data-lamp="working"], [data-lamp="waiting"]) {
+  isolation: isolate;
+}
+.mc.has-fx .mc-card:is([data-lamp="working"], [data-lamp="waiting"]) > .mc-card-fx {
+  display: block;
+  position: absolute;
+  inset: -1px;
+  z-index: -1;
+  border-radius: inherit;
+  overflow: hidden;
+  pointer-events: none;
+}
+.mc.has-fx .mc-card > .mc-card-fx::after {
+  content: "";
+  position: absolute;
+  inset: 1.5px;
+  border-radius: 3px;
+  background: var(--bg-0);
+}
+.mc.has-fx .mc-card:is(:hover, .is-selected, :focus-visible) > .mc-card-fx::after {
+  background: var(--bg-2);
+}
+.mc.has-fx .mc-card[data-lamp="working"] > .mc-card-fx {
+  background: color-mix(in srgb, var(--mc-gold) 30%, var(--mc-line));
+}
+.mc.has-fx .mc-card[data-lamp="working"] > .mc-card-fx::before {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 150%;
+  aspect-ratio: 1;
+  background: conic-gradient(
+    transparent 0 12%,
+    var(--mc-gold-deep) 26%,
+    var(--mc-gold) 33%,
+    #fff 36%,
+    transparent 39% 62%,
+    var(--mc-gold-deep) 76%,
+    var(--mc-gold) 83%,
+    #fff 86%,
+    transparent 89%
+  );
+  transform: translate(-50%, -50%) rotate(0deg);
+  animation: mc-spin 3.6s linear infinite;
+}
+.mc.has-fx .mc-card[data-lamp="working"]:not(.is-selected, :focus-visible) {
+  box-shadow: 0 0 18px -8px var(--mc-gold);
+}
+.mc.has-fx .mc-card[data-lamp="waiting"] > .mc-card-fx {
+  background: var(--mc-amber);
+  animation: mc-breathe 1.4s ease-in-out infinite alternate;
+}
+.mc.has-fx .mc-card[data-lamp="waiting"]:not(.is-selected, :focus-visible) {
+  box-shadow: 0 0 16px -6px var(--mc-amber);
+}
+/* with effects, "needs you" reads amber throughout the cockpit: the lane, the card and its call to action */
+.mc.has-fx .mc-node.is-needs {
+  border-color: color-mix(in srgb, var(--mc-amber) 80%, var(--mc-line));
+  box-shadow: 0 0 26px -12px var(--mc-amber);
+}
+.mc.has-fx .mc-card.is-needs {
+  border-color: var(--mc-amber);
+}
+.mc.has-fx .mc-card-meta .is-waiting,
+.mc.has-fx .mc-lane-stats .is-needs,
+.mc.has-fx .mc-cta-go {
+  color: var(--mc-amber);
+}
+.mc.has-fx .mc-cta {
+  border-color: var(--mc-amber);
+  background: color-mix(in srgb, var(--mc-amber) 14%, transparent);
+}
+.mc.has-fx .mc-cta:hover {
+  background: color-mix(in srgb, var(--mc-amber) 26%, transparent);
+}
+@keyframes mc-spin {
+  to {
+    transform: translate(-50%, -50%) rotate(360deg);
+  }
+}
+@keyframes mc-breathe {
+  from {
+    opacity: 0.2;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+/* lead control on autopilot: a gold aura round the lead box that breathes slowly */
+.mc.has-fx:not(.is-entering) .mc-lead.is-autopilot::before {
+  content: "";
+  position: absolute;
+  inset: -1px;
+  border-radius: inherit;
+  pointer-events: none;
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--mc-gold) 45%, transparent),
+    0 0 28px -2px color-mix(in srgb, var(--mc-gold) 45%, transparent);
+  animation: mc-breathe 3.2s ease-in-out infinite alternate;
+}
+.mc.has-fx .mc-lead.is-autopilot .mc-card:not(.is-selected, :focus-visible) {
+  box-shadow: 0 0 22px -8px var(--mc-gold);
+}
+
+/* a task turned done: its row flashes gold and a ring bursts from its box (or from "▸ n done" while the
+   done group is folded); progress bars glide and a light sweeps them when they advance */
+.mc.has-fx :is(.mb-task, .mb-done-toggle).is-just-done {
+  animation: mc-row-flash 1.5s ease-out;
+}
+.mc.has-fx .mb-task.is-just-done .mb-box {
+  position: relative;
+  color: var(--mc-gold-hi);
+}
+.mc.has-fx .mb-task.is-just-done .mb-box::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 22px;
+  height: 22px;
+  margin: -11px;
+  border: 2px solid var(--mc-gold);
+  border-radius: 50%;
+  box-shadow: 0 0 12px var(--mc-gold);
+  pointer-events: none;
+  animation: mc-burst 900ms ease-out forwards;
+}
+@keyframes mc-row-flash {
+  from {
+    background: color-mix(in srgb, var(--mc-gold) 32%, transparent);
+    box-shadow: inset 0 0 0 1px var(--mc-gold);
+  }
+}
+@keyframes mc-burst {
+  from {
+    transform: scale(0.2);
+    opacity: 1;
+  }
+  to {
+    transform: scale(2.8);
+    opacity: 0;
+  }
+}
+.mc.has-fx .mc-progress > span {
+  transition: width 700ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.mc.has-fx .mc-progress-sweep {
+  display: block;
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 30%;
+  background: linear-gradient(90deg, transparent, var(--mc-gold-hi), transparent);
+  animation: mc-sweep 1s ease-out both;
+}
+@keyframes mc-sweep {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(340%);
+    opacity: 0;
+  }
+}
+
+/* ---- briefing crawl (opt-in, MissionFx.tsx): intro line, the title receding, then the gold text (canvas) */
+
+.mc-crawl {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  overflow: hidden;
+  background: radial-gradient(ellipse at 50% 120%, #1a1408 0%, #020203 60%);
+  cursor: pointer;
+  outline: none;
+  user-select: none;
+}
+.mc-crawl-stars {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+.mc-crawl-intro {
+  position: absolute;
+  top: 44%;
+  left: 0;
+  right: 0;
+  margin: 0;
+  text-align: center;
+  color: #e9cf8a;
+  font-size: clamp(14px, 1.6vw, 22px);
+  letter-spacing: 0.04em;
+  opacity: 0;
+  animation: mc-intro 4s ease both;
+}
+.mc-crawl-logo {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  line-height: 0.95;
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: clamp(56px, 10vw, 160px);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: transparent;
+  -webkit-text-stroke: 2px #f3c14b;
+  opacity: 0;
+  animation: mc-logo 5.5s cubic-bezier(0.3, 0, 0.7, 1) 4s forwards;
+}
+.mc-crawl-skip {
+  position: absolute;
+  right: 14px;
+  bottom: 10px;
+  color: #8a7a52;
+  font-size: var(--mc-fs-micro);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+@keyframes mc-intro {
+  15%,
+  70% {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+@keyframes mc-logo {
+  from {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(2.2);
+  }
+  85% {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(0.04);
   }
 }

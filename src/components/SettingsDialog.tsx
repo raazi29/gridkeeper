@@ -21,7 +21,7 @@ import { pickExecutable } from "./util/pick";
 import { TERMINAL_FONTS, preloadFont } from "../styles/fonts";
 import { withSaber } from "../theme/saber";
 import { THEMES, getTheme } from "../theme/themes";
-import { HyperspaceToggle, SaberSettings, ThemeEffects } from "./AppearanceExtras";
+import { HyperspaceToggle, MissionFxToggle, SaberSettings, ThemeEffects } from "./AppearanceExtras";
 import { ThemeCard } from "./ThemeCard";
 
 type Section = "appearance" | "terminal" | "agents" | "keys" | "interface" | "notifications";
@@ -121,6 +121,7 @@ function AppearanceSection() {
         </Field>
         <Toggle checked={reduceMotion} onChange={setReduceMotion} label="Reduce motion" hint={`Turns off transitions, lamp pulses, the holo band, the hyperspace jump, saber effects and the CRT overlay. Also follows the ${isWindows ? "Windows animation" : "system reduce-motion"} setting.`} />
         <HyperspaceToggle />
+        <MissionFxToggle />
       </section>
 
       <section className="appearance-group">

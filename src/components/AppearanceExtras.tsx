@@ -186,3 +186,17 @@ export function HyperspaceToggle() {
     </Field>
   );
 }
+
+export function MissionFxToggle() {
+  const on = useEffectPrefs((s) => s.mission);
+  const reduceMotion = useApp((s) => s.persisted.settings.reduceMotion);
+  return (
+    <Toggle
+      checked={on}
+      onChange={(v) => useEffectPrefs.getState().set({ mission: v })}
+      disabled={reduceMotion}
+      label="Mission Control effects"
+      hint="Gold hyperspace entry, energy on the connectors, lit borders on working agents and the briefing crawl. Pauses when the window is in the background; off under reduced motion."
+    />
+  );
+}
