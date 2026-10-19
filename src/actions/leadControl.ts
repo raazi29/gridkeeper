@@ -204,7 +204,7 @@ function deactivate(k: string) {
 function ensureListener() {
   if (unlisten) return;
   unlisten = onMissionChanged((ev) => {
-    if (ev.file === "mission") return; // the mission store re-reads; doc changes arrive via its subscription
+    if (ev.file === "mission" || ev.file === "brain") return; // the mission store re-reads; doc changes arrive via its subscription
     const k = dirKey(ev.projectDir);
     if (holds.has(k)) void scanOutbox(k);
   }).catch(() => null);

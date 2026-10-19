@@ -82,6 +82,58 @@ progress shows it.
 
 Without a tool watching `outbox/`, nothing is delivered: then put instructions on the board as tasks instead.
 
+## Brain (long-term memory)
+
+Agents forget everything between sessions. `.gridkeeper/brain/` is the team's memory for this project: decisions,
+conventions, gotchas, how-tos, facts and context that earlier agents and the user wrote down. Plain files, local,
+no service.
+
+```
+.gridkeeper/brain/
+  INDEX.md            one line per memory, grouped by kind (generated: never edit it)
+  notes/<slug>.md     confirmed memories, one per file
+  inbox/<slug>.md     suggested memories waiting for the user's approval
+```
+
+A note is a tiny front matter plus a few concrete lines:
+
+```markdown
+---
+title: Refresh tokens live in the OS keychain
+kind: decision            # decision | convention | gotcha | howto | fact | context
+tags: [auth, security]
+source: task "Design the token storage"
+created: 2026-10-18
+updated: 2026-10-18
+confidence: suggested     # suggested in inbox/, confirmed in notes/
+supersedes: token-file    # optional: the slug of the note this one replaces
+---
+We store refresh tokens in the OS keychain, never on disk (decided after the review of builder-1's branch).
+```
+
+Rules:
+
+1. **Read `INDEX.md` first** when you start a task, then open the notes relevant to it. Prefer a note over
+   guessing; if a note is marked superseded, read the newer one.
+2. **Write to `inbox/`, one new file per memory**, named with a short lowercase slug (`inbox/ci-cache-key.md`;
+   letters, digits and `-` only). Use `confidence: suggested`. Write one when you learn something the next agent
+   must know: a decision and its reason, a convention, a trap you fell into, a command that works.
+3. **Never edit or delete confirmed notes** in `notes/`, and never touch other agents' inbox files. To correct a
+   note, write an inbox note with `supersedes: <its slug>`.
+4. **Small and factual**: one to five lines, concrete (what, why, when it applies). No secrets, tokens, passwords,
+   e-mail addresses, personal data or absolute paths.
+5. Don't repeat what the index already says; check it for a similar title first.
+
+The user approves suggestions into `notes/` (Gridkeeper's Brain panel does this, and may also suggest memories from
+finished tasks with `- note:` lines, resolved blockers, review outcomes and the lead's decisions).
+
+**Without Gridkeeper** nothing generates the index: whoever approves a memory (the user, or a lead they asked to)
+moves the file from `inbox/` to `notes/`, sets `confidence: confirmed` and `updated:`, and adds its line to
+`INDEX.md` under the heading of its kind (`## Decisions`, `## Conventions`, `## Gotchas`, `## How-tos`, `## Facts`,
+`## Context`) as `- [title](notes/<slug>.md) — kind · tags · updated`. Keep the index sorted by title within each
+heading. Like the rest of `.gridkeeper/`, the brain is git-ignored unless the team chooses to commit
+`brain/notes/` and `brain/INDEX.md`.
+
 ## If you are the lead
 
 1. Read the goal and context. Explore the codebase enough to plan.

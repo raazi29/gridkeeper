@@ -41,6 +41,8 @@ import { EVT_MISSION_CHANGED, EVT_SESSION_ATTENTION, EVT_SESSION_METER, EVT_SESS
 import type { InstallResult, InstalledSkill, RepoSkills, SkillFileText, SkillRepoPage, SkillSort, SkillTarget, SkillUpdateCheck } from "./types";
 // Phone alerts
 import type { PhoneAlert, PhoneAlertsView, PhoneConfig, PhoneSendResult } from "./types";
+// Brain
+import type { BrainHit, BrainIndex, BrainNoteFile, BrainShare } from "./types";
 
 export interface AppInfo {
   version: string;
@@ -186,6 +188,22 @@ export const ipc = {
     invoke<string>("replay_save_file", bytes, { headers: { "x-replay-token": token } }),
   // Meter: Claude Code cost & context per pane (status line JSON; live updates via onSessionMeter).
   meterSnapshot: () => invoke<SessionMeter[]>("meter_snapshot"),
+  // Brain: long-term project memory in <projectDir>/.gridkeeper/brain/ (notes/, inbox/, generated INDEX.md).
+  // Agents' direct edits arrive as EVT_MISSION_CHANGED with file "brain" while a mission watch is held.
+  /** Every note and suggestion; missing folder = exists false. Also refreshes a stale INDEX.md. */
+  brainList: (projectDir: string) => invoke<BrainIndex>("brain_list", { projectDir }),
+  brainRead: (projectDir: string, slug: string, inbox: boolean) => invoke<BrainNoteFile>("brain_read", { projectDir, slug, inbox }),
+  /** Atomic, redacted, <= 16 KiB. Rejects with code "conflict" when the note changed since `expectedModifiedMs`
+   *  (null = must not exist yet, undefined = no check). */
+  brainWrite: (projectDir: string, slug: string, text: string, inbox: boolean, expectedModifiedMs?: number | null) =>
+    invoke<BrainNoteFile>("brain_write", { projectDir, slug, text, inbox, expectedModifiedMs, checkExpected: expectedModifiedMs !== undefined }),
+  /** inbox/ → notes/ as confirmed; returns the slug in notes/ (a clash gets "-<n>"). */
+  brainApprove: (projectDir: string, slug: string) => invoke<string>("brain_approve", { projectDir, slug }),
+  /** Returns the deleted text (for Undo). Code "not_found" when it is gone. */
+  brainDelete: (projectDir: string, slug: string, inbox: boolean) => invoke<string>("brain_delete", { projectDir, slug, inbox }),
+  brainSearch: (projectDir: string, query: string) => invoke<BrainHit[]>("brain_search", { projectDir, query }),
+  /** Share the brain through git (notes/*.md + INDEX.md committable) or keep it local (default). */
+  brainShare: (projectDir: string, share: boolean) => invoke<BrainShare>("brain_share", { projectDir, share }),
 };
 
 export function onSessionState(cb: (info: SessionInfo) => void): Promise<UnlistenFn> {

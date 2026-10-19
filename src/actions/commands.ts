@@ -21,6 +21,8 @@ import { nextAttentionTarget, useAttention, useAttentionUi } from "../store/atte
 import { useMission } from "../store/mission";
 import { openTeamTemplates } from "../store/teamTemplates";
 import { toggleSkills } from "../store/skills";
+import { openBrain } from "../store/brain";
+import { rememberText } from "../components/brain/remember";
 import { openReplay } from "../store/replay";
 import { confirmDialog, useUi } from "../store/uiStore";
 import { focusTerminal } from "../terminal/registry";
@@ -468,6 +470,8 @@ export const COMMANDS: Command[] = [
   { id: "teamTemplate.export", title: "Team template: export…", category: "Workspace", run: () => openTeamTemplates("export") },
   { id: "view.skills", title: "Skills: discover & add…", category: "Workspace", run: toggleSkills },
   { id: "mission.replay", title: "Mission replay… (timelapse video of a recorded mission)", category: "View", run: () => openReplay() },
+  { id: "brain.open", title: "Brain: open (the team's long-term project memory)", category: "Workspace", run: () => openBrain() },
+  { id: "brain.add", title: "Brain: add memory…", category: "Workspace", run: () => rememberText() },
   ...EXPERIENCE_COMMANDS,
 ];
 

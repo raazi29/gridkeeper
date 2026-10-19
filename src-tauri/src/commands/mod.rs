@@ -1,4 +1,5 @@
 pub mod app;
+pub mod brain;
 pub mod meter;
 pub mod mission;
 pub mod replay;

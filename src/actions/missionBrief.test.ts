@@ -268,3 +268,39 @@ describe("lead control channel in briefs", () => {
     expect(projectDirOfMission("/home/u/p/.gridkeeper/mission.md")).toBe("/home/u/p");
   });
 });
+
+describe("brain in briefs", () => {
+  const INDEX = "D:\\proj\\.gridkeeper\\brain\\INDEX.md";
+
+  it("briefText appends the brain line with ctx.brain, after the channel; the base text is unchanged", () => {
+    const base = briefText({ name: "Builder 2", role: "builder" }, ctx);
+    const b = briefText({ name: "Builder 2", role: "builder" }, { ...ctx, brain: true });
+    expect(b.startsWith(base)).toBe(true);
+    expect(b).toContain(`Project memory: read ${INDEX} first`);
+    expect(b).toContain("D:\\proj\\.gridkeeper\\brain\\inbox\\<short-slug>.md");
+    expect(b).not.toMatch(/[\r\n]/);
+    const both = briefText({ name: "lead", role: "lead" }, { ...ctx, channel: true, brain: true });
+    expect(both.indexOf("team.md")).toBeLessThan(both.indexOf("Project memory:"));
+    expect(briefText({ name: "lead", role: "lead" }, ctx)).not.toContain("Project memory");
+  });
+
+  it("formation prompts mention the brain by default (the project's setting), not when told otherwise", () => {
+    const planned = [
+      { name: "lead", role: "lead" },
+      { name: "builder-1", role: "builder" },
+    ];
+    expect(formationBriefPrompts(["lead", "builder"], planned, PATH).builder).toContain(INDEX);
+    expect(formationBriefPrompts(["lead", "builder"], planned, PATH, false, false).builder).not.toContain("Project memory");
+  });
+
+  it("gatherBrief includes the brain line", async () => {
+    useAttention.setState({ sessions: {} });
+    const s = useApp.getState();
+    useApp.setState({
+      persisted: { ...s.persisted, sessions: [{ id: "solo", name: "solo", role: "builder", agent: "claude" }] as never },
+      runtime: { solo: info("solo", { state: "running" }) },
+    });
+    const { recipients } = await gatherBrief(["solo"], PATH);
+    expect(recipients[0]?.text).toContain(INDEX);
+  });
+});

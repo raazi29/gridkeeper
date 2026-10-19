@@ -476,13 +476,15 @@ pub struct MissionChanged {
     pub file: MissionChangeKind,
 }
 
-/// `MissionChanged.file`: `"mission"` (`.gridkeeper/mission.md`) or `"outbox"` (a file created in or
-/// renamed into `.gridkeeper/outbox/`). `team.md` (written by Gridkeeper) never produces an event.
+/// `MissionChanged.file`: `"mission"` (`.gridkeeper/mission.md`), `"outbox"` (a file created in or
+/// renamed into `.gridkeeper/outbox/`) or `"brain"` (a note in `.gridkeeper/brain/notes/` or
+/// `brain/inbox/` changed). `team.md` and `brain/INDEX.md` (written by Gridkeeper) never produce an event.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum MissionChangeKind {
     Mission,
     Outbox,
+    Brain,
 }
 
 /// One instruction file directly in `<projectDir>/.gridkeeper/outbox/` (`mission_outbox_list`).
@@ -1153,4 +1155,99 @@ pub struct SessionMeter {
     pub seven_day_pct: Option<f64>,
     /// When the helper last wrote data (ms since the epoch); `None` = no data yet.
     pub updated_ms: Option<u64>,
+}
+
+// ---------------------------------------------------------------------------
+// Brain (`brain`): long-term project memory in `<projectDir>/.gridkeeper/brain/`
+// ---------------------------------------------------------------------------
+
+/// One memory file (`brain/notes/<slug>.md`, or a suggestion in `brain/inbox/`) as listed by `brain_list`.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BrainNoteMeta {
+    /// File stem (`token-storage` for `token-storage.md`).
+    pub slug: String,
+    /// From `brain/inbox/` (a suggestion waiting for the user).
+    pub inbox: bool,
+    /// `title:`, else the first heading / line of the body, else the slug.
+    pub title: String,
+    /// `decision`, `convention`, `gotcha`, `howto`, `fact` or `context` (unknown kinds read as `fact`).
+    pub kind: String,
+    pub tags: Vec<String>,
+    pub source: Option<String>,
+    /// `YYYY-MM-DD` as written in the note (`None` when missing or malformed).
+    pub created: Option<String>,
+    /// `updated:`, else `created:`.
+    pub updated: Option<String>,
+    /// `confirmed` or `suggested` (default: by folder).
+    pub confidence: String,
+    /// Slug of the note this one replaces.
+    pub supersedes: Option<String>,
+    /// Slug of the confirmed note that replaces this one (computed from the other notes).
+    pub superseded_by: Option<String>,
+    /// The body's first ~160 characters on one line.
+    pub excerpt: String,
+    /// Last-write time in ms since the epoch (0 when unknown).
+    pub modified_ms: u64,
+    /// File size; above `brain::MAX_NOTE_BYTES` only the beginning was read and `brain_read` refuses it.
+    pub bytes: u64,
+}
+
+/// `brain_list`: every note and suggestion of a project.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BrainIndex {
+    /// Absolute path of `<projectDir>/.gridkeeper/brain` (whether or not it exists).
+    pub dir: String,
+    pub exists: bool,
+    /// `.gridkeeper/.gitignore` carries the "share the brain through git" block.
+    pub shared: bool,
+    /// `brain/notes/`, newest `updated` first.
+    pub notes: Vec<BrainNoteMeta>,
+    /// `brain/inbox/`, newest file first.
+    pub inbox: Vec<BrainNoteMeta>,
+    /// `.md` files whose names are not valid slugs (`notes/My Note.md`); not read.
+    pub ignored: Vec<String>,
+    /// More than `brain::MAX_NOTES` files in a folder: the list was cut.
+    pub truncated: bool,
+}
+
+/// One note file (`brain_read` / `brain_write`).
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BrainNoteFile {
+    pub slug: String,
+    pub inbox: bool,
+    /// Absolute path (whether or not it exists).
+    pub path: String,
+    pub exists: bool,
+    /// Contents (UTF-8 lossy, BOM stripped, at most 16 KiB; "" when missing).
+    pub text: String,
+    /// Last-write time in ms; `None` when missing. Passed back to `brain_write` for the conflict check.
+    pub modified_ms: Option<u64>,
+}
+
+/// One `brain_search` result (best first).
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BrainHit {
+    pub slug: String,
+    pub inbox: bool,
+    pub title: String,
+    pub kind: String,
+    pub tags: Vec<String>,
+    pub score: f64,
+    /// The body line that matched (or the excerpt), one line.
+    pub snippet: String,
+    /// A newer note supersedes this one.
+    pub superseded: bool,
+}
+
+/// `brain_share` result.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BrainShare {
+    pub shared: bool,
+    /// Absolute path of `.gridkeeper/.gitignore`.
+    pub gitignore_path: String,
 }
