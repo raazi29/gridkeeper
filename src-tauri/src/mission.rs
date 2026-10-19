@@ -602,10 +602,10 @@ fn classify(event: &notify::Event, project: &Path, gk: &Path, outbox: &Path) -> 
         } else if is_name(path, OUTBOX_DIR) && same_path(parent, gk) {
             out.rearm_outbox |= structural;
         } else if same_path(parent, outbox) && is_outbox_file_name(path) {
-            // A rename pair lists [from, to]: only the destination arrives. FSEvents (macOS) reports each
-            // side of a rename on its own as Name(Any), so there only a file that still exists has arrived.
-            let unpaired = matches!(event.kind, EventKind::Modify(ModifyKind::Name(RenameMode::Any)));
-            out.outbox |= !leaving && !(rename_pair && i == 0) && (!unpaired || path.exists());
+            // A rename pair lists [from, to]: only the destination arrives. And only a file that exists now
+            // has arrived: FSEvents (macOS) reports each side of a rename on its own and coalesces flags, so
+            // archiving a file can show up as "created" for the path it just left.
+            out.outbox |= !leaving && !(rename_pair && i == 0) && path.exists();
         }
     }
     out
@@ -922,9 +922,17 @@ mod tests {
     #[test]
     fn classifies_outbox_and_team_events() {
         use notify::event::{CreateKind, ModifyKind, RemoveKind, RenameMode};
-        let project = Path::new(r"D:\proj");
+        // Outbox arrivals must exist on disk, so this test uses a real folder.
+        let t = tempfile::tempdir().unwrap();
+        let project = t.path();
         let gk = project.join(DIR_NAME);
         let ob = gk.join(OUTBOX_DIR);
+        fs::create_dir_all(&ob).unwrap();
+        for name in ["0007-builder-1.md", "note.TXT", "a.md"] {
+            fs::write(ob.join(name), "to: lead
+---
+hi").unwrap();
+        }
         let classify = |e: &notify::Event| classify(e, project, &gk, &ob);
         let ev = |kind, p: PathBuf| notify::Event::new(kind).add_path(p);
         let create = EventKind::Create(CreateKind::File);
@@ -950,8 +958,9 @@ mod tests {
         // Leaving the outbox (archived to sent/ or deleted) is silent; so are other names.
         assert_eq!(classify(&ev(EventKind::Remove(RemoveKind::Any), ob.join("a.md"))), IGNORE);
         assert_eq!(classify(&ev(EventKind::Modify(ModifyKind::Name(RenameMode::From)), ob.join("a.md"))), IGNORE);
-        // Unpaired rename (FSEvents): a file that is no longer there has left.
-        assert_eq!(classify(&ev(EventKind::Modify(ModifyKind::Name(RenameMode::Any)), ob.join("a.md"))), IGNORE);
+        // A file that is no longer there has not arrived, whatever the event says (FSEvents).
+        assert_eq!(classify(&ev(EventKind::Modify(ModifyKind::Name(RenameMode::Any)), ob.join("gone.md"))), IGNORE);
+        assert_eq!(classify(&ev(create, ob.join("gone.md"))), IGNORE);
         assert_eq!(classify(&ev(create, ob.join(".a.md"))), IGNORE);
         assert_eq!(classify(&ev(create, ob.join("~a.md"))), IGNORE);
         assert_eq!(classify(&ev(create, ob.join("a.json"))), IGNORE);
