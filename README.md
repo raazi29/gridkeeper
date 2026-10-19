@@ -175,6 +175,13 @@ Gemini CLI don't report usage to other programs, so they show "n/a".
 Works with **Claude Code, Codex, PowerShell** and, when installed, **Hermes, OpenCode, Gemini CLI, Copilot CLI, Aider,
 Factory Droid, Kimi, Qwen Code, Cursor Agent, Goose, Crush, Amp and OpenClaw**, plus any other command-line program.
 
+### Languages
+
+English, Español, Português (Brasil), Français, Deutsch, 日本語, 简体中文, 한국어, हिन्दी, Русский, العربية
+(right-to-left) and Türkçe: Settings › Interface › Language, or follow the system language. The non-English
+translations are machine-assisted; corrections are welcome, see [docs/translating.md](docs/translating.md).
+Terminal output and the text Gridkeeper types into agents stay as they are.
+
 ## Why Gridkeeper
 
 Built because the tools available on Windows kept failing this workflow: high CPU, freezes and crashes, flaky
@@ -367,6 +374,7 @@ Ctrl+Shift+C/V.
 | [docs/RESEARCH.md](docs/RESEARCH.md) | Research questions, evidence and sources |
 | [docs/HANDOFF.md](docs/HANDOFF.md) | Project map and working notes for the next contributor (human or agent) |
 | [docs/ROADMAP.md](docs/ROADMAP.md) | Prioritized idea backlog |
+| [docs/translating.md](docs/translating.md) | How to fix or add a UI translation |
 | [docs/assets/logo/README.md](docs/assets/logo/README.md) | Brand and icon guide |
 | [CONTRIBUTING.md](CONTRIBUTING.md) · [SECURITY.md](SECURITY.md) | How to build, test and contribute · how to report a vulnerability |
 
