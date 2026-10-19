@@ -1,0 +1,87 @@
+;; Scripted demo output for the "reviewer" pane (scripts/showcase/fake-agent.ps1). Not an AI run.
+;; Runs in the main checkout; it only reads git and edits the mission board.
+
+@@section grid
+@@fast
+{dim}reviewer · main{/}
+{cyan}▸{/} read  .gridkeeper/mission.md
+@@normal
+@@wait go
+@@pace 700
+~ Two branches in flight. I'll write the end-to-end test while they finish.
+@@git log --oneline -3
+{cyan}▸{/} read  test/
+  {dim}no auth tests yet{/}
+{cyan}▸{/} draft  test/login-flow.test.ts
+  {green}+ test("login round trip", async () => {{/}
+  {green}+   const start = await get("/auth/start");{/}
+  {green}+   expect(start.status).toBe(302);{/}
+@@mark
+{dim}  waiting for gk/builder-1 and gk/builder-2{/}
+@@sleep 1000
+@@git branch --list gk/*
+@@sleep 900
+@@loop
+
+@@section board
+@@fast
+{dim}reviewer · main{/}
+{cyan}▸{/} button branch is done; starting the integration test
+@@normal
+@@wait go
+@@sleep 1600
+@@task doing Integration test for the full login flow
+  {green}✓{/} mission.md  [ ] → [~]  Integration test for the full login flow
+@@pace 900
+{cyan}▸{/} edit  test/login-flow.test.ts
+@@mark
+  {green}+   const back = await get("/auth/callback?code=test&state=" + state);{/}
+  {green}+   expect(back.status).toBe(302);{/}
+@@sleep 700
+@@loop
+
+@@section autopilot
+@@fast
+{dim}reviewer · main{/}
+{cyan}▸{/} working on  Integration test for the full login flow
+@@normal
+@@wait go
+@@pace 950
+@@mark
+{cyan}▸{/} edit  test/login-flow.test.ts
+{dim}  waiting for gk/builder-1{/}
+@@loop
+
+@@section signoff
+@@fast
+{dim}reviewer · main{/}
+{cyan}▸{/} working on  Integration test for the full login flow
+@@normal
+@@wait go
+@@pace 1000
+@@mark
+{cyan}▸{/} edit  test/login-flow.test.ts
+  {green}+   expect(await session(back)).toHaveProperty("token");{/}
+{dim}  waiting for gk/builder-1{/}
+@@loop
+
+@@section drag
+@@fast
+{dim}reviewer · main{/}
+{cyan}▸{/} next  Review both branches
+@@normal
+@@wait go
+@@pace 900
+@@mark
+@@git log --oneline main..gk/builder-1
+{cyan}▸{/} review  gk/builder-1
+  {dim}git diff main...gk/builder-1{/}
+@@sleep 900
+@@loop
+
+@@section replay
+@@fast
+{dim}reviewer · main{/}
+{green}✓{/} both branches reviewed
+@@normal
+@@hold

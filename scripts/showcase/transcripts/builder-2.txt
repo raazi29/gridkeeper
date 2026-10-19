@@ -1,0 +1,100 @@
+;; Scripted demo output for the "builder-2" pane (scripts/showcase/fake-agent.ps1). Not an AI run.
+;; Runs in its own git worktree (branch gk/builder-2). In the autopilot section it waits on stdin for the
+;; instruction that Gridkeeper's lead control delivers.
+
+@@section grid
+@@fast
+{dim}builder-2 · {branch}{/}
+{cyan}▸{/} claimed  Wire the login button to /auth/start
+@@normal
+@@wait go
+@@pace 600
+{cyan}▸{/} read  src/ui/header.tsx
+{cyan}▸{/} edit  src/ui/LoginButton.tsx
+  {green}+ export function LoginButton() {{/}
+  {green}+   return <a className="btn" href="/auth/start">Sign in with GitHub</a>;{/}
+  {green}+ }{/}
+{cyan}▸{/} edit  src/ui/header.tsx
+  {green}+ <LoginButton />{/}
+~ The button only links to /auth/start. No client secret in the browser.
+@@mark
+{cyan}▸{/} run  npm test -- ui
+  {dim}header shows the login button{/}
+  {dim}button points at /auth/start{/}
+@@sleep 800
+{cyan}▸{/} edit  src/ui/LoginButton.tsx
+@@loop
+
+@@section board
+@@fast
+{dim}builder-2 · {branch}{/}
+{cyan}▸{/} working on  Wire the login button to /auth/start
+@@normal
+@@wait go
+@@sleep 600
+@@task done Wire the login button
+  {green}✓{/} mission.md  [~] → [x]  Wire the login button to /auth/start
+@@pace 900
+{cyan}▸{/} button branch ready: gk/builder-2
+@@mark
+{dim}  idle · waiting for the next task{/}
+@@sleep 1200
+@@loop
+
+@@section autopilot
+@@fast
+{dim}builder-2 · {branch}{/}
+{green}✓{/} Wire the login button to /auth/start
+@@normal
+@@wait go
+@@pace 500
+{cyan}▸{/} branch {branch} · 1 commit ahead of main
+@@input {dim}idle · ready for the next instruction{/}
+{cyan}▸{/} instruction received
+@@task doing Add rate limiting
+  {green}✓{/} mission.md  [ ] → [~]  Add rate limiting to /auth/start
+@@pace 650
+{cyan}▸{/} read  src/auth/start.ts
+~ Five attempts per minute per address, stored next to the session.
+{cyan}▸{/} edit  src/auth/rate-limit.ts
+  {green}+ export const limitStart = rateLimit({ windowMs: 60_000, max: 5 });{/}
+{cyan}▸{/} edit  src/auth/routes.ts
+  {green}+ router.get("/auth/start", limitStart, start);{/}
+@@mark
+{cyan}▸{/} run  npm test -- auth
+  {dim}start allows five attempts{/}
+@@sleep 900
+@@loop
+
+@@section signoff
+@@fast
+{dim}builder-2 · {branch}{/}
+{cyan}▸{/} working on  Add rate limiting to /auth/start
+@@normal
+@@wait go
+@@pace 1000
+@@mark
+{cyan}▸{/} run  npm test -- auth
+  {dim}start allows five attempts{/}
+  {dim}the sixth attempt gets 429{/}
+{cyan}▸{/} edit  src/auth/rate-limit.ts
+@@loop
+
+@@section drag
+@@fast
+{dim}builder-2 · {branch}{/}
+{cyan}▸{/} working on  Add rate limiting to /auth/start
+@@normal
+@@wait go
+@@pace 950
+@@mark
+{cyan}▸{/} run  npm test -- auth
+  {dim}the sixth attempt gets 429{/}
+@@loop
+
+@@section replay
+@@fast
+{dim}builder-2 · {branch}{/}
+{green}✓{/} done
+@@normal
+@@hold

@@ -1,0 +1,132 @@
+;; Scripted demo output for the "builder-1" pane (scripts/showcase/fake-agent.ps1). Not an AI run.
+;; Runs in its own git worktree (branch gk/builder-1). The signoff section makes a real commit there.
+
+@@section grid
+@@fast
+{dim}builder-1 · {branch}{/}
+{cyan}▸{/} claimed  Implement /auth/callback and token storage
+@@normal
+@@wait go
+@@pace 520
+{cyan}▸{/} read  src/auth/routes.ts
+{cyan}▸{/} read  src/server.ts
+~ The callback swaps the code for a token, then keeps it in the session.
+{cyan}▸{/} edit  src/auth/callback.ts
+  {green}+ export async function handleCallback(req, res) {{/}
+  {green}+   const { code, state } = req.query;{/}
+  {green}+   if (state !== req.session.oauthState) return res.status(400).end();{/}
+  {green}+   const token = await exchangeCode(code);{/}
+  {green}+   await tokens.save(req.session.id, token);{/}
+  {green}+   res.redirect("/");{/}
+  {green}+ }{/}
+{cyan}▸{/} edit  src/auth/token-store.ts
+  {green}+ export const tokens = createStore("oauth-tokens");{/}
+@@mark
+{cyan}▸{/} run  npm test -- auth
+  {dim}callback rejects a wrong state{/}
+  {dim}callback stores the token{/}
+@@sleep 700
+{cyan}▸{/} edit  src/auth/callback.ts
+  {green}+   if (!code) return res.status(400).end();{/}
+@@loop
+
+@@section board
+@@fast
+{dim}builder-1 · {branch}{/}
+{cyan}▸{/} working on  Implement /auth/callback and token storage
+@@normal
+@@wait go
+@@pace 900
+@@mark
+{cyan}▸{/} edit  src/auth/callback.ts
+  {green}+   if (!code) return res.status(400).end();{/}
+{cyan}▸{/} run  npm test -- auth
+  {dim}callback rejects a missing code{/}
+@@loop
+
+@@section autopilot
+@@fast
+{dim}builder-1 · {branch}{/}
+{cyan}▸{/} working on  Implement /auth/callback and token storage
+@@normal
+@@wait go
+@@pace 950
+@@mark
+{cyan}▸{/} run  npm test -- auth
+  {dim}callback stores the token{/}
+{cyan}▸{/} edit  src/auth/token-store.ts
+@@loop
+
+@@section signoff
+@@fast
+{dim}builder-1 · {branch}{/}
+{cyan}▸{/} working on  Implement /auth/callback and token storage
+@@normal
+@@wait go
+@@pace 480
+{cyan}▸{/} edit  src/auth/callback.ts
+@@file src/auth/callback.ts
+import { exchangeCode } from "./github";
+import { tokens } from "./token-store";
+
+// GET /auth/callback?code=...&state=...
+// Swaps the authorization code for an access token and keeps it in the session store.
+export async function handleCallback(req, res) {
+  const { code, state } = req.query;
+  if (!code) return res.status(400).send("missing code");
+  if (state !== req.session.oauthState) return res.status(400).send("state mismatch");
+
+  const token = await exchangeCode(code);
+  await tokens.save(req.session.id, token);
+  delete req.session.oauthState;
+  res.redirect("/");
+}
+@@end
+  {green}+ export async function handleCallback(req, res) {{/}
+  {green}+   if (state !== req.session.oauthState) return res.status(400).send("state mismatch");{/}
+{cyan}▸{/} edit  src/auth/token-store.ts
+@@file src/auth/token-store.ts
+import { createStore } from "../session";
+
+// Access tokens live in the server-side session store, never in a cookie.
+export const tokens = {
+  store: createStore("oauth-tokens"),
+  save(sessionId, token) {
+    return this.store.set(sessionId, { token, savedAt: Date.now() });
+  },
+  get(sessionId) {
+    return this.store.get(sessionId);
+  },
+};
+@@end
+  {green}+ export const tokens = { store: createStore("oauth-tokens"), ... }{/}
+{cyan}▸{/} run  npm test -- auth
+  {dim}callback rejects a missing code{/}
+  {dim}callback rejects a wrong state{/}
+  {dim}callback stores the token{/}
+{cyan}▸{/} commit
+@@commit Add /auth/callback and session token storage
+@@task done Implement /auth/callback
+  {green}✓{/} mission.md  [~] → [x]  Implement /auth/callback and token storage
+{cyan}▸{/} ready for review on {branch}
+@@hold
+
+@@section drag
+@@fast
+{dim}builder-1 · {branch}{/}
+{green}✓{/} callback branch ready for review
+@@normal
+@@wait go
+@@pace 1000
+@@mark
+{cyan}▸{/} claimed  Add a logout route
+{cyan}▸{/} read  src/auth/routes.ts
+{cyan}▸{/} edit  src/auth/logout.ts
+@@loop
+
+@@section replay
+@@fast
+{dim}builder-1 · {branch}{/}
+{green}✓{/} done
+@@normal
+@@hold
