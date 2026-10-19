@@ -254,7 +254,8 @@ export function buildFormationPlan(input: PlanInput): FormationPlan {
         cwd = wt.path;
       }
       const profileId = agent === "claude" ? resolveProfile(role, slot) : null;
-      const prompt = input.prompts[role]?.trim() || null;
+      // Starter prompts are typed into agents only: in a shell or a custom program the text would run as a command.
+      const prompt = agent === "powershell" || command ? null : input.prompts[role]?.trim() || null;
       return {
         name: slot.name?.trim() || ((roleTotals.get(role) ?? 0) > 1 ? `${role}-${n}` : role),
         role: normalizeRole(slot.role),

