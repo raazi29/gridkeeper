@@ -13,6 +13,7 @@ import type { SessionId, SessionInfo } from "../lib/types";
 import { findGroupOf, selectActiveGroup, useApp } from "../store/appStore";
 import { countUnread, useAttention, type Alert } from "../store/attention";
 import { useLeadControl } from "../store/leadControl";
+import { useMission } from "../store/mission";
 import { actionToast } from "../store/uiStore";
 import { jumpToSession } from "./commands";
 import {
@@ -37,8 +38,9 @@ export function isWindowFocused(): boolean {
   return typeof document === "undefined" || (document.hasFocus() && document.visibilityState === "visible");
 }
 
-/** The session's pane is on screen: active workspace + group, view not hidden, not behind a maximized pane. */
+/** The session's pane is on screen: active workspace + group, view not hidden, not behind a maximized pane or Mission Control. */
 export function isOnScreen(id: SessionId): boolean {
+  if (useMission.getState().open) return false;
   const s = useApp.getState();
   const g = selectActiveGroup(s);
   if (!g || !g.sessionIds.includes(id) || s.hiddenViews[id]) return false;
