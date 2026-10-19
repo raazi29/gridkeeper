@@ -12,9 +12,16 @@
 //!   polling), keeps a running pane total across `/clear` (the sum of the last cost seen per Claude
 //!   session id) and emits `session-meter` events. Files of removed sessions are deleted; files older
 //!   than [`STALE_AFTER`] are cleaned up at startup.
+//! - **Hooks** ([`hooks`], opt-in with the meter): the same settings file adds Claude Code hooks that
+//!   write `<data>\meter\<session>.hooks.json`; the same watch turns them into exact `session-attention`
+//!   states (`kind = hook`: permission, tool, stopped, ...).
+//! - **Ledger** ([`ledger`]): the spend guard's small per-day file (`<data>\spend-ledger.json`), owned
+//!   by the frontend (src/store/spend.ts); Rust only stores it.
 
 pub mod helper;
+pub mod hooks;
 pub mod launch;
+pub mod ledger;
 pub mod shell;
 
 use std::collections::{BTreeMap, HashMap};
@@ -28,7 +35,7 @@ use notify::{RecursiveMode, Watcher};
 use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
 
-use crate::types::{AppError, AppResult, MeterStatus, SessionId, SessionMeter};
+use crate::types::{AppError, AppResult, MeterStatus, SessionAttention, SessionId, SessionMeter};
 
 /// Folder inside the data folder.
 pub const DIR_NAME: &str = "meter";
@@ -190,6 +197,8 @@ impl PaneMeter {
 
 /// Receives every changed meter.
 pub type MeterEmit = Arc<dyn Fn(&SessionMeter) + Send + Sync>;
+/// Receives hook states as `session-attention` events (`kind = hook`).
+pub type HookSink = Arc<dyn Fn(&SessionAttention) + Send + Sync>;
 
 pub struct MeterHub {
     dir: PathBuf,
@@ -200,6 +209,9 @@ pub struct MeterHub {
     panes: Arc<Mutex<HashMap<SessionId, PaneMeter>>>,
     emit: MeterEmit,
     watch: Mutex<Option<MeterWatch>>,
+    /// Hook state of panes launched with hooks in this app run (others' hook files are ignored).
+    hooks: Mutex<HashMap<SessionId, hooks::PaneHooks>>,
+    hook_sink: Mutex<Option<HookSink>>,
 }
 
 static HUB: OnceLock<Arc<MeterHub>> = OnceLock::new();
@@ -220,7 +232,16 @@ impl MeterHub {
         if let Err(e) = std::fs::create_dir_all(&dir) {
             tracing::warn!(error = %e, "could not create the meter folder");
         }
-        let hub = Self { dir, exe, managed, panes: Arc::new(Mutex::new(HashMap::new())), emit, watch: Mutex::new(None) };
+        let hub = Self {
+            dir,
+            exe,
+            managed,
+            panes: Arc::new(Mutex::new(HashMap::new())),
+            emit,
+            watch: Mutex::new(None),
+            hooks: Mutex::new(HashMap::new()),
+            hook_sink: Mutex::new(None),
+        };
         hub.cleanup_stale(SystemTime::now());
         hub.rescan(false);
         hub
@@ -277,9 +298,59 @@ impl MeterHub {
         self.emit_view(&view);
     }
 
-    /// Read `path` if it is a meter record and apply it. Emits when something changed.
+    /// Where hook states go (`session-attention`). Set once at startup.
+    pub fn set_hook_sink(&self, sink: HookSink) {
+        *self.hook_sink.lock() = Some(sink);
+    }
+
+    /// A Claude pane is being launched with hooks: fresh hook state, and the previous run's state file
+    /// is deleted before Claude can write a new one.
+    pub fn hooks_launch(&self, id: &str) {
+        self.remove_file(&hooks::hooks_name(id), id);
+        self.hooks.lock().insert(id.to_string(), hooks::PaneHooks::default());
+    }
+
+    /// A Claude pane is being launched without hooks: hook files for it are ignored from now on.
+    pub fn hooks_off(&self, id: &str) {
+        self.hooks.lock().remove(id);
+    }
+
+    /// The pane has hook state in this app run.
+    pub fn hooks_active(&self, id: &str) -> bool {
+        self.hooks.lock().contains_key(id)
+    }
+
+    /// The user typed into a pane (`session_write`): may end a prompt's wait or interrupt a turn. Cheap
+    /// when the pane has no hooks.
+    pub fn note_input(&self, id: &str, data: &[u8]) {
+        let update = self.hooks.lock().get_mut(id).and_then(|p| p.on_input(data));
+        if let Some(u) = update {
+            self.emit_hook(&u.to_attention(id));
+        }
+    }
+
+    fn ingest_hook(&self, id: &str, path: &Path) -> Option<SessionAttention> {
+        let rec = hooks::read_record(path)?;
+        let attention = self.hooks.lock().get_mut(id)?.apply(&rec)?.to_attention(id);
+        self.emit_hook(&attention);
+        Some(attention)
+    }
+
+    fn emit_hook(&self, a: &SessionAttention) {
+        let Some(sink) = self.hook_sink.lock().clone() else { return };
+        if std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| sink(a))).is_err() {
+            tracing::error!("hook attention emit panicked");
+        }
+    }
+
+    /// Read `path` if it is a meter record and apply it. Emits when something changed. A hook state
+    /// file is handed to the pane's hook state machine instead (returns `None`).
     pub fn ingest(&self, path: &Path) -> Option<SessionMeter> {
         let name = path.file_name()?.to_str()?;
+        if let Some(id) = hooks::session_of_hooks_name(name) {
+            self.ingest_hook(id, path);
+            return None;
+        }
         let id = session_of_record_name(name)?;
         let rec = read_record(path)?;
         let view = {
@@ -314,14 +385,19 @@ impl MeterHub {
     /// A session was removed: forget it and delete its files.
     pub fn forget(&self, id: &str) {
         self.panes.lock().remove(id);
-        if valid_session_id(id) {
-            for name in [record_name(id), settings_name(id)] {
-                let p = self.dir.join(name);
-                if let Err(e) = std::fs::remove_file(&p) {
-                    if e.kind() != std::io::ErrorKind::NotFound {
-                        tracing::warn!(error = %e, "could not delete a meter file");
-                    }
-                }
+        self.hooks.lock().remove(id);
+        for name in [record_name(id), settings_name(id), hooks::hooks_name(id)] {
+            self.remove_file(&name, id);
+        }
+    }
+
+    fn remove_file(&self, name: &str, id: &str) {
+        if !valid_session_id(id) {
+            return;
+        }
+        if let Err(e) = std::fs::remove_file(self.dir.join(name)) {
+            if e.kind() != std::io::ErrorKind::NotFound {
+                tracing::warn!(error = %e, "could not delete a meter file");
             }
         }
     }

@@ -72,6 +72,12 @@ impl AppCtx {
                 }
             }),
         ));
+        let hook_emitter = app.clone();
+        meter.set_hook_sink(Arc::new(move |a: &crate::types::SessionAttention| {
+            if let Err(e) = hook_emitter.emit(crate::types::EVT_SESSION_ATTENTION, a) {
+                tracing::warn!(error = %e, "could not emit session-attention (hook)");
+            }
+        }));
         if let Err(e) = meter.start_watch() {
             tracing::warn!(error = %e, "cost meter folder watch failed; meters update on the next start");
         }

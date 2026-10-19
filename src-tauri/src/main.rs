@@ -8,6 +8,11 @@ fn main() {
     if let Some(code) = gridkeeper_lib::meter::helper::main_from_env() {
         std::process::exit(code);
     }
+    // Hook helper mode (`--gk-hook <event>`, run by Claude Code for exact pane status): same rules, never
+    // prints, always exits 0.
+    if let Some(code) = gridkeeper_lib::meter::hooks::main_from_env() {
+        std::process::exit(code);
+    }
     // Built-binary smoke test (`--gk-self-test`, run by CI): data folder, default shell in a PTY,
     // process containment; prints a report and exits. `--gk-self-test-gui` goes through run().
     if let Some(code) = gridkeeper_lib::selftest::main_from_env() {

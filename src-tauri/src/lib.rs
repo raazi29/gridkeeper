@@ -196,6 +196,8 @@ pub fn run() {
             commands::replay::replay_save_dialog,
             commands::replay::replay_save_file,
             commands::meter::meter_snapshot,
+            commands::meter::spend_ledger_read,
+            commands::meter::spend_ledger_write,
         ])
         .build(context)
         .unwrap_or_else(|e| fatal_startup_error(&e.to_string()))

@@ -41,12 +41,15 @@ pub async fn session_detach(ctx: State<'_, AppCtx>, id: SessionId) -> AppResult<
 
 #[tauri::command]
 pub async fn session_write(ctx: State<'_, AppCtx>, id: SessionId, data: String) -> AppResult<()> {
+    // Claude hook status: keys typed into a permission / question prompt end its wait.
+    ctx.meter.note_input(&id, data.as_bytes());
     ctx.sessions.write(&id, data.into_bytes())
 }
 
 /// Raw bytes input (xterm `onBinary`, e.g. X10 mouse reports with bytes > 127 that must not be UTF-8 encoded).
 #[tauri::command]
 pub async fn session_write_binary(ctx: State<'_, AppCtx>, id: SessionId, data: Vec<u8>) -> AppResult<()> {
+    ctx.meter.note_input(&id, &data);
     ctx.sessions.write(&id, data)
 }
 

@@ -203,6 +203,7 @@ fn input<'a>(fx: &'a LaunchFx, args: &'a [String], sh: &'a StatusShell, managed:
         exe: Path::new("C:/Gridkeeper/gridkeeper.exe"),
         shell: sh,
         managed,
+        hooks: false,
     }
 }
 
@@ -211,10 +212,11 @@ fn decide_injects_only_a_status_line() {
     let fx = launch_fx();
     let sh = StatusShell::GitBash("bash.exe".into());
     let d = launch::decide(&input(&fx, &[], &sh, &[]));
-    let LaunchDecision::Inject { settings_path, settings_json, chained, note } = d else { panic!("{d:?}") };
+    let LaunchDecision::Inject { settings_path, settings_json, chained, note, status, hooks } = d else { panic!("{d:?}") };
     assert_eq!(settings_path, fx.meter.join("settings-s-1.json"));
     assert!(!chained);
     assert_eq!(note, None);
+    assert_eq!((status, hooks), (MeterStatus::Metered, false));
     let v: serde_json::Value = serde_json::from_str(&settings_json).unwrap();
     assert_eq!(v.as_object().unwrap().len(), 1, "only statusLine: {settings_json}");
     let sl = &v["statusLine"];
@@ -313,6 +315,121 @@ fn decide_respects_managed_settings_and_odd_paths() {
     assert!(launch::statusline_command(Path::new("C:/it's/gk.exe"), meter_file, None, &sh).is_err());
 }
 
+#[test]
+fn decide_adds_hooks_to_the_same_file_and_never_copies_the_users() {
+    let fx = launch_fx();
+    let sh = StatusShell::GitBash("bash.exe".into());
+    // The user's own hooks and status line: their hooks are not copied (Claude Code merges hooks across
+    // settings sources), their status line is chained as before.
+    std::fs::write(
+        fx.root.join("settings.json"),
+        r#"{"hooks":{"Stop":[{"hooks":[{"type":"command","command":"notify-send done"}]}]},"statusLine":{"type":"command","command":"bash ~/.claude/user.sh"}}"#,
+    )
+    .unwrap();
+    let mut inp = input(&fx, &[], &sh, &[]);
+    inp.hooks = true;
+    let d = launch::decide(&inp);
+    let LaunchDecision::Inject { settings_json, chained, status, hooks, .. } = d else { panic!("{d:?}") };
+    assert!(chained && hooks);
+    assert_eq!(status, MeterStatus::Metered);
+    assert!(!settings_json.contains("notify-send"), "the user's hooks are not copied: {settings_json}");
+    let v: serde_json::Value = serde_json::from_str(&settings_json).unwrap();
+    let mut keys: Vec<&str> = v.as_object().unwrap().keys().map(String::as_str).collect();
+    keys.sort_unstable();
+    assert_eq!(keys, vec!["hooks", "statusLine"], "one file, two keys");
+    let state_file = shell::command_path(&fx.meter.join("s-1.hooks.json"));
+    for ev in hooks::EVENTS {
+        let cmd = v["hooks"][*ev][0]["hooks"][0]["command"].as_str().unwrap();
+        assert!(cmd.starts_with(&format!("C:/Gridkeeper/gridkeeper.exe --gk-hook {ev} --state-file ")), "{cmd}");
+        assert!(cmd.ends_with(&state_file) || cmd.ends_with(&format!("'{state_file}'")), "{cmd}");
+        assert!(!cmd.contains('\\'), "Git Bash eats backslashes: {cmd}");
+        assert_eq!(v["hooks"][*ev][0]["hooks"][0]["async"], true);
+    }
+    // Managed settings own the status line: hooks alone are injected (status says why the meter is off).
+    let managed = fx.root.join("managed-settings.json");
+    std::fs::write(&managed, r#"{"statusLine":{"type":"command","command":"corp"}}"#).unwrap();
+    let list = vec![managed.clone()];
+    let mut inp = input(&fx, &[], &sh, &list);
+    inp.hooks = true;
+    let d = launch::decide(&inp);
+    let LaunchDecision::Inject { settings_json, status, hooks, note, chained, .. } = d else { panic!("{d:?}") };
+    assert_eq!((status, hooks, chained), (MeterStatus::Managed, true, false));
+    assert!(note.unwrap().contains("managed settings set the status line"));
+    let v: serde_json::Value = serde_json::from_str(&settings_json).unwrap();
+    assert!(v.get("statusLine").is_none() && v.get("hooks").is_some(), "{settings_json}");
+    // allowManagedHooksOnly: nothing at all.
+    std::fs::write(&managed, r#"{"allowManagedHooksOnly":true}"#).unwrap();
+    assert!(matches!(launch::decide(&inp), LaunchDecision::Skip { status: MeterStatus::Managed, .. }));
+    // disableAllHooks in the user's files: nothing either.
+    std::fs::write(&managed, "{}").unwrap();
+    std::fs::write(fx.root.join("settings.json"), r#"{"disableAllHooks":true}"#).unwrap();
+    assert!(matches!(launch::decide(&inp), LaunchDecision::Skip { status: MeterStatus::Unavailable, .. }));
+}
+
+fn hook_hub(data: &Path) -> (Arc<MeterHub>, Receiver<crate::types::SessionAttention>) {
+    let (hub, _meters) = collecting_hub(data);
+    let (tx, rx) = mpsc::channel();
+    let tx = parking_lot::Mutex::new(tx);
+    hub.set_hook_sink(Arc::new(move |a: &crate::types::SessionAttention| {
+        let _ = tx.lock().send(a.clone());
+    }));
+    (hub, rx)
+}
+
+/// The hook helper writes a state file; the folder watch (no polling) turns it into a `session-attention`
+/// event with `kind = hook`. Keystrokes end a prompt's wait. Panes launched without hooks are ignored.
+#[test]
+fn watcher_turns_hook_writes_into_attention_events() {
+    let t = tempfile::tempdir().unwrap();
+    let data = t.path().join(APP_IDENTIFIER);
+    let (hub, rx) = hook_hub(&data);
+    let id = "pane-h";
+    let file = hub.dir().join(hooks::hooks_name(id));
+    // A stale file from an earlier run is deleted at launch.
+    std::fs::write(&file, r#"{"v":1,"event":"PermissionRequest","t":5,"tool":"Old"}"#).unwrap();
+    hub.start_watch().unwrap();
+    hub.hooks_launch(id);
+    assert!(!file.exists());
+    assert!(hub.hooks_active(id));
+    let args = |ev: &str| vec![ev.to_string(), hooks::STATE_FILE_FLAG.to_string(), file.to_string_lossy().into_owned()];
+    let json = br#"{"hook_event_name":"PermissionRequest","session_id":"c-1","transcript_path":"C:/x.jsonl","tool_name":"Bash","tool_input":{"command":"rm -rf /"}}"#;
+    assert_eq!(hooks::run(&args("PermissionRequest"), &mut json.as_slice(), Some(&data), hooks::now_us()), 0);
+    let ev = rx.recv_timeout(Duration::from_secs(10)).expect("hook attention event");
+    assert_eq!((ev.id.as_str(), ev.kind, ev.status.as_deref(), ev.tool.as_deref()), (id, crate::types::AttentionKind::Hook, Some("permission"), Some("Bash")));
+    let raw = std::fs::read_to_string(&file).unwrap();
+    assert!(!raw.contains("rm -rf") && !raw.contains("jsonl"), "{raw}");
+    // Enter in the pane answers the prompt.
+    hub.note_input(id, b"\x1b[B");
+    assert!(rx.recv_timeout(Duration::from_millis(200)).is_err(), "an arrow key is not an answer");
+    hub.note_input(id, b"\r");
+    let ev = rx.recv_timeout(Duration::from_secs(1)).unwrap();
+    assert_eq!((ev.status.as_deref(), ev.tool.as_deref()), (Some("tool"), Some("Bash")));
+    // The turn ends.
+    std::thread::sleep(Duration::from_millis(5));
+    assert_eq!(hooks::run(&args("Stop"), &mut br#"{"hook_event_name":"Stop"}"#.as_slice(), Some(&data), hooks::now_us()), 0);
+    let ev = loop {
+        let ev = rx.recv_timeout(Duration::from_secs(10)).expect("stopped");
+        if ev.status.as_deref() == Some("stopped") {
+            break ev;
+        }
+    };
+    assert_eq!(ev.kind, crate::types::AttentionKind::Hook);
+    // A pane launched without hooks: its hook file is ignored, typing does nothing.
+    let other = "pane-off";
+    hub.hooks_off(other);
+    let ofile = hub.dir().join(hooks::hooks_name(other));
+    let oargs = vec!["Stop".to_string(), hooks::STATE_FILE_FLAG.to_string(), ofile.to_string_lossy().into_owned()];
+    assert_eq!(hooks::run(&oargs, &mut b"{}".as_slice(), Some(&data), hooks::now_us()), 0);
+    hub.note_input(other, b"\x1b");
+    assert!(rx.recv_timeout(Duration::from_millis(500)).is_err(), "no events for a pane without hooks");
+    // Hook files never show up as meters.
+    assert!(hub.get(id).is_none() && hub.get(other).is_none());
+    // Removing the pane deletes its hook file.
+    hub.forget(id);
+    assert!(!file.exists() && !hub.hooks_active(id));
+    hub.stop();
+}
+
 // ---------------------------------------------------------------------------
 // Through the Claude adapter's launch plan
 // ---------------------------------------------------------------------------
@@ -392,10 +509,24 @@ fn claude_launch_plan_injects_settings_before_user_args() {
     );
     let json: serde_json::Value = serde_json::from_slice(&std::fs::read(&file).unwrap()).unwrap();
     assert!(json["statusLine"]["command"].as_str().unwrap().contains("--gk-statusline --meter-file"));
+    // Exact status is on by default with the meter: same file, `hooks` key, hook state reset for the pane.
+    assert!(json["hooks"]["PermissionRequest"][0]["hooks"][0]["command"].as_str().unwrap().contains("--gk-hook PermissionRequest --state-file"));
+    assert!(hub.hooks_active(id));
     let m = hub.get(id).unwrap();
     assert_eq!(m.status, MeterStatus::Metered);
     hub.forget(id);
     assert!(!file.exists());
+    assert!(!hub.hooks_active(id));
+
+    // Hooks switched off: the file has only the status line.
+    let mut fx = fx;
+    fx.settings.claude_hooks = false;
+    let id = "adapter-nohooks";
+    crate::adapters::resolve_launch(&claude_spec(&fx, id, vec![]), &fx.profiles, &fx.settings).unwrap();
+    let json: serde_json::Value = serde_json::from_slice(&std::fs::read(hub.dir().join(settings_name(id))).unwrap()).unwrap();
+    assert!(json.get("hooks").is_none() && json.get("statusLine").is_some());
+    assert!(!hub.hooks_active(id));
+    hub.forget(id);
 }
 
 #[test]

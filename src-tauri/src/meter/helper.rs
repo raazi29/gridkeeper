@@ -215,11 +215,18 @@ pub fn extract(input: &[u8], now_ms: u64) -> Option<MeterRecord> {
 /// The meter file must be `<base>\...\meter\<session>.json`, where `<base>` is Gridkeeper's own data
 /// folder (`%APPDATA%\app.gridkeeper.desktop`, sandboxes are below it). Returns the canonical path.
 pub fn validate_meter_path(path: &Path, base: &Path) -> Result<PathBuf, String> {
+    validate_data_file(path, base, &|name| super::session_of_record_name(name).is_some())
+}
+
+/// A file Gridkeeper's helpers may write: absolute, named so that `name_ok` accepts it, directly in a
+/// `meter` folder below `base` (checked on the canonical folder, so `..` and links can't leave it), and
+/// nothing but a regular file if it exists. Returns the canonical path.
+pub fn validate_data_file(path: &Path, base: &Path, name_ok: &dyn Fn(&str) -> bool) -> Result<PathBuf, String> {
     if !path.is_absolute() {
         return Err("meter file must be an absolute path".into());
     }
     let name = path.file_name().and_then(OsStr::to_str).ok_or("meter file has no name")?;
-    if super::session_of_record_name(name).is_none() {
+    if !name_ok(name) {
         return Err(format!("unexpected meter file name {name:?}"));
     }
     let parent = path.parent().ok_or("meter file has no folder")?;
