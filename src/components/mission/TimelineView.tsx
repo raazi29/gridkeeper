@@ -97,8 +97,16 @@ export const TimelineView = memo(function TimelineView(p: TimelineViewProps) {
   // Keys from Mission Control (+ / − / 0 / F) while this view is shown.
   const keyRef = useRef(p.keys);
   keyRef.current = p.keys;
-  const handlers = useRef({ zoom, showAll, reset: () => (setFixed(null), setSpan(DEFAULT_SPAN)) });
-  handlers.current = { zoom, showAll, reset: () => (setFixed(null), setSpan(DEFAULT_SPAN)) };
+  const step = (dir: 1 | -1) => {
+    const ids = p.agents.map((a) => a.id);
+    const i = p.selected ? ids.indexOf(p.selected) : -1;
+    const next = ids[Math.max(0, Math.min(ids.length - 1, i + dir))];
+    if (!next) return;
+    p.onSelect(next, { ctrlKey: false, metaKey: false, shiftKey: false });
+    requestAnimationFrame(() => tracks.current?.querySelector<HTMLElement>(`[data-tl="${CSS.escape(next)}"]`)?.scrollIntoView({ block: "nearest" }));
+  };
+  const handlers = useRef({ zoom, showAll, step, reset: () => (setFixed(null), setSpan(DEFAULT_SPAN)) });
+  handlers.current = { zoom, showAll, step, reset: () => (setFixed(null), setSpan(DEFAULT_SPAN)) };
   useEffect(() => {
     const keys = keyRef.current;
     keys.current = (e) => {
@@ -107,6 +115,7 @@ export const TimelineView = memo(function TimelineView(p: TimelineViewProps) {
       else if (e.key === "-" || e.key === "_") handlers.current.zoom(1 / 0.7);
       else if (e.key === "0") handlers.current.reset();
       else if (e.key === "f" || e.key === "F") handlers.current.showAll();
+      else if ((e.key === "ArrowDown" || e.key === "ArrowUp") && !e.shiftKey) handlers.current.step(e.key === "ArrowDown" ? 1 : -1);
       else return false;
       return true;
     };

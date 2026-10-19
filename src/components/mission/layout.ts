@@ -18,10 +18,16 @@ export function layoutRect(el: HTMLElement, root: HTMLElement): Rect | null {
       cur = null;
       break;
     }
-    // Borders of intermediate offset parents are not part of offsetLeft / offsetTop.
+    // Borders of intermediate offset parents are not part of offsetLeft / offsetTop, nor is the scroll
+    // position of a scrolled box on the way (e.g. the mission board's task list).
     if (parent !== root) {
       x += parent.clientLeft;
       y += parent.clientTop;
+    }
+    for (let a: HTMLElement | null = cur.parentElement; a && a !== root; a = a.parentElement) {
+      x -= a.scrollLeft;
+      y -= a.scrollTop;
+      if (a === parent) break;
     }
     cur = parent;
   }
