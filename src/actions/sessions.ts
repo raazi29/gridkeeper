@@ -135,6 +135,7 @@ export async function startSession(
   // Browser panes have no process.
   if (!meta0 || isBrowserMeta(meta0)) return false;
   if (isLive(useApp.getState().runtime[id])) return true;
+  userStopped.delete(id); // a stop only suppresses the retry of the run it ended
   lastResume.set(id, resume);
   if (!opts.keepRetryBudget) retried.delete(id);
   await launchSlot(meta0.agent);
@@ -146,6 +147,13 @@ export async function startSession(
   const size = getTerminalSize(id) ?? { cols: 120, rows: 32 };
   let agentSessionId: string | null = null;
   let effectiveResume = resume;
+  // Codex can't pin a conversation id up front, so `resume --last` in a folder shared by several Codex
+  // panes would make them all resume the SAME conversation. Those panes get Codex's picker instead.
+  if (meta.agent === "codex" && resume.mode === "continue") {
+    const cwd = meta.cwd.toLowerCase();
+    if (st.persisted.sessions.some((m) => m.id !== id && m.agent === "codex" && m.cwd.toLowerCase() === cwd))
+      effectiveResume = { mode: "pick" };
+  }
   if (meta.agent === "claude") {
     if (resume.mode === "continue" && meta.agentSessionId) {
       // Resume the exact conversation this pane owns (falls back to a fresh pinned id in Rust if absent).
@@ -286,25 +294,19 @@ export async function clearSession(id: SessionId) {
 }
 
 export function renameSession(id: SessionId, name: string) {
-  if (name.trim()) useApp.getState().updateSessionMeta(id, { name: name.trim() });
+  if (name.trim()) useApp.getState().updateSessionMeta(id, { name: name.trim(), titleAsName: false });
 }
 
 /** Called once after state hydration: restart sessions that were marked auto-start. */
 export async function restoreSessions() {
-  const { persisted } = useApp.getState();
+  const { persisted, runtime } = useApp.getState();
   const inGroups = new Set(persisted.workspaces.flatMap((w) => w.groups.flatMap((g) => g.sessionIds)));
   // Terminal panes only: browser panes have no process (their URL reopens when the pane mounts).
-  const toStart = autoStartable(persisted.sessions).filter((m) => inGroups.has(m.id));
+  // Skip sessions the host already knows (renderer reload): live ones are running, stopped/exited ones were stopped on purpose.
+  const toStart = autoStartable(persisted.sessions).filter((m) => inGroups.has(m.id) && !runtime[m.id]);
   // Stagger launches slightly so many agents don't all hit the disk/network in the same tick.
-  // Codex can't pin a conversation id up front, so `resume --last` in a folder shared by several Codex
-  // panes would make them all resume the SAME conversation. Those panes get Codex's picker instead.
-  const codexPerCwd = new Map<string, number>();
-  for (const m of toStart)
-    if (m.agent === "codex" && m.resumeOnRestore.mode === "continue")
-      codexPerCwd.set(m.cwd.toLowerCase(), (codexPerCwd.get(m.cwd.toLowerCase()) ?? 0) + 1);
   for (const m of toStart) {
-    const shared = m.agent === "codex" && m.resumeOnRestore.mode === "continue" && (codexPerCwd.get(m.cwd.toLowerCase()) ?? 0) > 1;
-    void startSession(m.id, shared ? { mode: "pick" } : m.resumeOnRestore);
+    void startSession(m.id, m.resumeOnRestore);
     await new Promise((r) => setTimeout(r, 120));
   }
 }

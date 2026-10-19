@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { DEFAULT_SETTINGS, STATE_VERSION, type Group, type SessionInfo, type SessionMeta, type SessionState, type Workspace } from "../lib/types";
 import { shouldApplyStartResult, useApp } from "./appStore";
 
@@ -154,5 +154,22 @@ describe("moveGroup", () => {
     useApp.getState().moveGroup("w1", 1, 1);
     useApp.getState().moveGroup("nope", 0, 1);
     expect(useApp.getState().persisted).toBe(before);
+  });
+});
+
+describe("persistence", () => {
+  it("a failed save is not marked saved: the next flush retries it", async () => {
+    vi.resetModules();
+    vi.stubGlobal("window", globalThis);
+    const stateSave = vi.fn().mockRejectedValueOnce(new Error("disk full")).mockResolvedValue(undefined);
+    vi.doMock("../lib/ipc", () => ({ ipc: { stateSave, log: vi.fn() }, errorMessage: String }));
+    const { flushPersistence, useApp: store } = await import("./appStore");
+    store.setState({ loaded: true, loadError: null, persisted: { ...store.getState().persisted, activeWorkspaceId: "changed" } });
+    await flushPersistence();
+    await flushPersistence();
+    await flushPersistence(); // saved now: nothing more to write
+    expect(stateSave).toHaveBeenCalledTimes(2);
+    vi.doUnmock("../lib/ipc");
+    vi.unstubAllGlobals();
   });
 });

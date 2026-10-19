@@ -386,6 +386,14 @@ describe("editTaskText", () => {
     expect(editTaskText(BOARD, 1, "x")).toBeNull();
   });
 
+  it("keeps literal () and [] in the text; only brackets emptied by a removed owner go", () => {
+    const doc = ["# M", "- [ ] Fix parse() crash in arr[] handling @builder (@lead)", ""].join("\n");
+    expect(parseMission(doc).tasks[0].text).toBe("Fix parse() crash in arr[] handling");
+    const out = setTaskOwners(doc, 1, ["tester"])!;
+    expect(out.split("\n")[1]).toBe("- [ ] Fix parse() crash in arr[] handling @tester");
+    expect(editTaskText(doc, 1, "Fix parse() and arr[] again")!.split("\n")[1]).toBe("- [ ] Fix parse() and arr[] again @builder @lead");
+  });
+
   it("typed @tokens replace the owners; CRLF stays", () => {
     const out = editTaskText(crlf(BOARD), 3, "one for @Builder_2")!;
     expect(out.split("\r\n")[3]).toBe("- [ ] one for @Builder_2");

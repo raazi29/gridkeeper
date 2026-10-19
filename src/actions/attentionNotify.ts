@@ -32,10 +32,9 @@ let baseTitle = APP_NAME;
 
 // ---- window focus (synchronous; DOM events, not the async window API) ----------------
 
-let windowFocused = typeof document === "undefined" ? true : document.hasFocus();
-
+// document.hasFocus() stays true while focus is inside a browser-pane iframe, where window "blur" would fire.
 export function isWindowFocused(): boolean {
-  return windowFocused && (typeof document === "undefined" || document.visibilityState === "visible");
+  return typeof document === "undefined" || (document.hasFocus() && document.visibilityState === "visible");
 }
 
 /** The session's pane is on screen: active workspace + group, view not hidden, not behind a maximized pane. */
@@ -258,15 +257,7 @@ export function installAttention(): () => void {
     const f = useApp.getState().focusedSessionId;
     if (f && isSeen(f)) useAttention.getState().markRead(f);
   };
-  const onFocus = () => {
-    windowFocused = true;
-    markFocusedRead();
-  };
-  const onBlur = () => {
-    windowFocused = false;
-  };
-  window.addEventListener("focus", onFocus);
-  window.addEventListener("blur", onBlur);
+  window.addEventListener("focus", markFocusedRead);
   document.addEventListener("visibilitychange", markFocusedRead);
 
   let prevFocus = useApp.getState().focusedSessionId;
@@ -334,8 +325,7 @@ export function installAttention(): () => void {
   return () => {
     disposed = true;
     for (const un of unlisteners) un();
-    window.removeEventListener("focus", onFocus);
-    window.removeEventListener("blur", onBlur);
+    window.removeEventListener("focus", markFocusedRead);
     document.removeEventListener("visibilitychange", markFocusedRead);
     unsubApp();
     unsubAttn();

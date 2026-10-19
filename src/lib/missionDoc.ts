@@ -94,9 +94,10 @@ function ownersOf(rest: string): { owners: string[]; text: string } {
     .replace(OWNER_RE, (_m, pre: string, raw: string) => {
       const slug = slugify(raw);
       if (slug && !owners.includes(slug)) owners.push(slug);
-      return pre;
+      return pre + "\0"; // marker: lets the next step drop only brackets this removal emptied, not a literal "()" / "[]"
     })
-    .replace(/\(\s*\)|\[\s*\]/g, "")
+    .replace(/[(\[][\s\0,;]*\0[\s\0,;]*[)\]]/g, "")
+    .replace(/\0/g, "")
     .replace(/\s{2,}/g, " ")
     .trim();
   return { owners, text };
