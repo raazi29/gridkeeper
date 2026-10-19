@@ -227,18 +227,46 @@ Download from the [latest release](https://github.com/raazi29/gridkeeper/release
 
 | | Windows 10/11 | macOS 11+ | Linux (x86_64) |
 |---|---|---|---|
-| Status | reference platform | builds and tests in CI, not yet verified by hand | builds and tests in CI, not yet verified by hand |
-| Download | `…_x64-setup.exe` (NSIS, per-user) | `.dmg` (ad-hoc signed, not notarized) | `.AppImage`, `.deb` |
+| Status | reference platform | preview: CI builds it, runs the tests and starts the built app; not yet used by hand | preview: CI builds it, runs the tests and starts the built app with its window (Xvfb); not yet used by hand |
+| Download | `…_x64-setup.exe` (NSIS, per-user) | `…_universal.dmg` (Apple Silicon and Intel; ad-hoc signed, not notarized) | `.deb` (recommended) or `.AppImage` |
 | Default terminal | PowerShell 7 (5.1 fallback) | your login shell (`$SHELL`, zsh by default) | your login shell (`$SHELL`, bash by default) |
 | Shortcuts | Ctrl+Shift+… | ⇧⌘… (⌃ keys always go to the terminal) | Ctrl+Shift+… |
+| Menu bar | none (command palette, context menus) | native menu (App, Edit, View, Window, Help); ⌘W hides the window, ⌘Q quits | none (command palette, context menus) |
+| Unread alerts | count in the title, taskbar flash | count in the title, Dock badge | count in the title |
 | GPU telemetry | yes | no | no |
 
-**macOS:** the app isn't notarized. On first launch open System Settings › Privacy & Security and click **Open
-Anyway** (or right-click the app › Open).
-**Linux:** needs WebKitGTK 4.1 (`libwebkit2gtk-4.1-0`: Ubuntu 22.04+, Debian 12+, Fedora 39+). If the window stays
-blank on some GPU drivers, start it with `WEBKIT_DISABLE_DMABUF_RENDERER=1`.
+**macOS first launch.** The app is ad-hoc signed but not notarized, so Gatekeeper blocks it the first time:
+- macOS 15 (Sequoia) and later: open Gridkeeper once and dismiss the warning, then go to System Settings › Privacy &
+  Security, scroll to *Security* and click **Open Anyway** (it is offered for about an hour after the blocked
+  attempt), and confirm with your password. Right-click › Open no longer bypasses this on macOS 15.
+- macOS 14 and earlier: right-click the app › **Open**, or use Open Anyway as above.
+- Or, after copying it to Applications: `xattr -dr com.apple.quarantine /Applications/Gridkeeper.app`.
+
+**macOS window and menu.** ⌘W or the red close button hides the main window and leaves your agents running; click
+the Dock icon (or Window › Main Window) to bring it back. ⌘Q quits and stops every agent.
+
+**macOS and Linux PATH.** Started from the Dock, Finder or a desktop launcher, Gridkeeper asks your login shell for
+its `PATH` once (at most 5 s) and adds the usual tool folders (Homebrew, `~/.local/bin` where Claude Code's native
+installer puts `claude`, nvm, fnm, asdf, mise, volta, bun, pnpm, cargo), so agent CLIs are found as in your
+terminal. `GRIDKEEPER_SHELL_PATH=0` turns the shell lookup off.
+
+**Linux.** Needs WebKitGTK 4.1 (`libwebkit2gtk-4.1-0`: Ubuntu 22.04+, Debian 12+, Fedora 39+).
+- Blank or white window: Gridkeeper already sets `WEBKIT_DISABLE_DMABUF_RENDERER=1` with the NVIDIA proprietary
+  driver and inside the AppImage. Elsewhere start it with `WEBKIT_DISABLE_DMABUF_RENDERER=1` yourself (a value you
+  set is never changed). On NVIDIA + Wayland, `__NV_DISABLE_EXPLICIT_SYNC=1` can fix "Error 71 (Protocol error)"; the
+  last resort is `WEBKIT_DISABLE_COMPOSITING_MODE=1`. If terminals render badly, set the terminal renderer to DOM in
+  Settings.
+- AppImage on Ubuntu 24.04: it needs FUSE 2, `sudo apt install libfuse2t64` (do not install the `fuse` package), or
+  run it with `--appimage-extract-and-run`. The `.deb` needs no FUSE, and the shells in its panes don't inherit
+  the AppImage's GTK environment, so prefer it for daily use.
+
 **macOS/Linux caveat:** quitting stops every agent, but if Gridkeeper itself is killed hard (SIGKILL, crash, power
 loss) its agents can keep running. On Windows the kernel cleans them up.
+
+**Checking a build:** `gridkeeper --gk-self-test` (on macOS
+`/Applications/Gridkeeper.app/Contents/MacOS/gridkeeper --gk-self-test`) checks the data folder, the default shell in
+a terminal, process cleanup and the login-shell `PATH` lookup, prints a report and exits; useful in bug reports.
+
 **Build from source on Linux:** additionally install `libwebkit2gtk-4.1-dev libgtk-3-dev
 libayatana-appindicator3-dev librsvg2-dev libssl-dev patchelf build-essential`.
 
