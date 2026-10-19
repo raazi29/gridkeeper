@@ -51,13 +51,14 @@ export function useOutputTails(root: RefObject<HTMLElement | null>, scrollSelect
       const rt = useApp.getState().runtime;
       for (const id of [...onScreen]) {
         if (stopped) return;
-        if (!rt[id] || (!isLive(rt[id]) && fetched.has(id))) continue;
+        const live = isLive(rt[id]);
+        if (!rt[id] || (!live && fetched.has(id))) continue;
         try {
           const line = lastLine(await ipc.sessionOutputTail(id, TAIL_BYTES));
-          fetched.add(id);
+          if (!live) fetched.add(id); // a live card keeps polling so its final line is caught after exit
           if (useMissionTails.getState().tails[id] !== line) useMissionTails.setState((s) => ({ tails: { ...s.tails, [id]: line } }));
         } catch {
-          fetched.add(id); // removed / never started
+          if (!live) fetched.add(id); // removed / never started
         }
       }
       if (!stopped) timer = window.setTimeout(() => void tick(), TAIL_REFRESH_MS);
