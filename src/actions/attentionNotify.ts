@@ -8,9 +8,11 @@ import { disposeAudio, playSound } from "../audio/sounds";
 import { APP_NAME } from "../lib/brand";
 import { errorMessage, ipc, onSessionAttention, onSessionState } from "../lib/ipc";
 import { isMac } from "../lib/platform";
+import { notifyPhone, type PhoneEvent } from "../lib/phoneAlerts";
 import type { SessionId, SessionInfo } from "../lib/types";
 import { findGroupOf, selectActiveGroup, useApp } from "../store/appStore";
 import { countUnread, useAttention, type Alert } from "../store/attention";
+import { useLeadControl } from "../store/leadControl";
 import { actionToast } from "../store/uiStore";
 import { jumpToSession } from "./commands";
 import {
@@ -105,6 +107,20 @@ function handleAlert(id: SessionId, alert: Alert, decision: NotifyDecision) {
       action: { label: "Jump", run: () => jumpToSession(id) },
     });
   }
+}
+
+/** The phone gets the same alerts the feed records (its own filters, Do not disturb and mutes apply there). */
+function phoneEvent(id: SessionId, alert: Alert): PhoneEvent {
+  const kind = eventKindOf(alert);
+  const g = findGroupOf(id);
+  return {
+    kind: kind === "error" || kind === "done" ? kind : "needsInput",
+    key: `s:${id}`,
+    sessionId: id,
+    workspaceId: g?.workspace.id ?? null,
+    paneName: sessionLabel(id),
+    workspaceName: g?.workspace.name,
+  };
 }
 
 // OS toasts: rate-limited globally; bursts collapse into one summary toast.
@@ -209,6 +225,7 @@ export function installAttention(): () => void {
       return decision.muted ? { muted: true, mutedReason: MUTED_REASON_TEXT[decision.reason ?? "dnd"] } : undefined;
     });
     if (alert && decision) handleAlert(id, alert, decision);
+    if (alert) void notifyPhone(phoneEvent(id, alert));
   };
 
   // Previous coarse state per session, to tell user stops from crashes.
@@ -282,6 +299,19 @@ export function installAttention(): () => void {
   });
   pruneMutedIds();
 
+  // A lead proposal that starts waiting for the user (new, or an autopilot item that gave up) goes to the phone once.
+  const toldProposals = new Set<string>();
+  const unsubProposals = useLeadControl.subscribe((s) => {
+    const waiting = s.proposals.filter((p) => p.status === "proposal");
+    for (const p of waiting) {
+      if (toldProposals.has(p.key)) continue;
+      toldProposals.add(p.key);
+      void notifyPhone({ kind: "proposal", key: `p:${p.dirKey}`, paneName: p.lead ?? undefined });
+    }
+    for (const k of toldProposals) if (!waiting.some((p) => p.key === k)) toldProposals.delete(k);
+  });
+  for (const p of useLeadControl.getState().proposals) if (p.status === "proposal") toldProposals.add(p.key);
+
   let prevUnread = -1;
   const unsubAttn = useAttention.subscribe((s) => {
     const n = countUnread(s.sessions);
@@ -309,6 +339,7 @@ export function installAttention(): () => void {
     document.removeEventListener("visibilitychange", markFocusedRead);
     unsubApp();
     unsubAttn();
+    unsubProposals();
     window.clearTimeout(flushTimer);
     flushTimer = undefined;
     pending = [];

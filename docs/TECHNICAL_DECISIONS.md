@@ -373,3 +373,17 @@ These are short architecture decision records (ADRs). Each one gives the context
 - A cross-origin frame hides its URL, history and title: back / forward cover addresses opened through Gridkeeper (not in-page link clicks), reload re-requests the last address we opened, and the page title comes from the probe's static `<title>` (SPA titles set by script are not seen). `target=_blank` links do nothing inside a pane. App shortcuts do not fire while keyboard focus is inside a page.
 - One extra request per opened http(s) address (ADR-018 updated accordingly).
 - DevTools only for pop-out windows in debug builds (the release build has no `devtools` feature, so the main window never exposes them).
+
+## ADR-020: Phone alerts through ntfy: the third network exception
+
+**Context.** Agents run for a long time; the user walks away and wants a nudge on their phone when one needs them. ADR-018 forbids network traffic of the app's own except user-initiated requests (the browser-pane probe, ADR-019, and the Skills panel).
+
+**Decision.**
+- **Opt-in, off by default.** Nothing is sent until the user turns phone alerts on in Settings › Notifications (or presses "Send test"). One HTTPS POST per alert, to the server the user chose (https://ntfy.sh or a self-hosted one; plain http only for local-network hosts), sent by the system curl with the request on stdin. No polling, no retries, no other requests.
+- **Generic text.** The frontend decides whether an event qualifies (event filter, Do not disturb, muted panes, phone quiet hours, minimum priority, only-when-away) and builds a fixed sentence; pane and workspace names only with "include names", the mission goal only with "include task names", never terminal output. Rust re-checks the switches and scrubs every field again (URLs, e-mail addresses, paths, secrets).
+- **Rate limited.** One alert per pane per 2 minutes, 10 per hour; suppressed alerts are counted into the next one. A failure pauses sending for a minute (HTTP 429: ten minutes).
+- **Secrets.** The topic acts as a password on a public server: it lives in `phone-alerts.json` (not in `workspaces.json` or diagnostics bundles) and is never logged. The optional access token is write-only from the UI and kept in Windows Credential Manager (a 0600 file on macOS / Linux).
+
+**Alternatives.** A relay run by us (a server to operate and trust); e-mail or SMS (accounts, credentials in the app); the ntfy web-push API from the webview (CSP and CORS changes for the whole UI).
+
+**Consequences.** ADR-018's "no requests of its own" now has three user-initiated exceptions. The notification text can reveal that an agent needs attention, and, with the names switches on, which pane and workspace; that is why they are separate switches.

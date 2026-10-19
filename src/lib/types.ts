@@ -809,3 +809,63 @@ export interface SessionMeter {
   /** When data was last written (ms since the epoch); null = no data yet. */
   updatedMs: number | null;
 }
+
+// ---- Phone alerts (src-tauri/src/phone.rs) ----
+
+export type PhoneEventKind = "needsInput" | "error" | "done" | "proposal" | "missionDone";
+
+/** `<data_dir>/phone-alerts.json`. Off by default. */
+export interface PhoneConfig {
+  enabled: boolean;
+  /** ntfy server base URL (https://ntfy.sh unless self-hosted). */
+  server: string;
+  /** Acts like a password on a public server. Empty until generated. */
+  topic: string;
+  events: Record<PhoneEventKind, boolean>;
+  /** 1 (min) … 5 (max): alerts below it are not sent. */
+  minPriority: number;
+  quietHours: QuietHours;
+  includeNames: boolean;
+  includeTaskNames: boolean;
+  onlyWhenAway: boolean;
+}
+
+/** One generic alert; Rust re-sanitizes it and applies the rate limits. */
+export interface PhoneAlert {
+  /** Rate-limit key ("s:<session id>", "p:<folder>", "m:<folder>"); never sent anywhere. */
+  key: string;
+  kind: PhoneEventKind;
+  title: string;
+  message: string;
+  /** 1 … 5. */
+  priority: number;
+  tags: string[];
+}
+
+export interface PhoneStatus {
+  sent: number;
+  failures: number;
+  /** Held back by the rate limits since the app started. */
+  suppressed: number;
+  lastSentMs: number | null;
+  lastError: string | null;
+  lastErrorMs: number | null;
+  failing: boolean;
+  pausedUntilMs: number | null;
+}
+
+export interface PhoneAlertsView {
+  config: PhoneConfig;
+  /** The access token itself never reaches the UI. */
+  hasToken: boolean;
+  /** Where the token is kept on this OS. */
+  tokenStorage: "credentialManager" | "file";
+  status: PhoneStatus;
+}
+
+export interface PhoneSendResult {
+  outcome: "sent" | "skipped" | "rateLimited" | "paused" | "failed";
+  detail: string | null;
+  /** A failure after a success (or the first one): tell the user once. */
+  firstFailure: boolean;
+}
