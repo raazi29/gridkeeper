@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { firstIndex, lastIndex, menuKey, moveIndex, typeaheadIndex, type NavItem } from "./menuNav";
+import { firstIndex, lastIndex, menuKey, moveIndex, placeMenu, typeaheadIndex, type NavItem } from "./menuNav";
 
 const items: NavItem[] = [
   { label: "Copy", disabled: true },
@@ -58,5 +58,39 @@ describe("menuKey", () => {
     expect(menuKey("r", items, 1, 0)).toEqual({ type: "move", index: 5 });
     expect(menuKey("c", items, 1, 0)).toEqual({ type: "none" }); // Copy and Close are disabled
     expect(typeaheadIndex(items, 5, "p")).toBe(1); // wraps
+  });
+});
+
+describe("placeMenu", () => {
+  const view = { width: 1000, height: 800 };
+  const size = { width: 200, height: 300 };
+
+  it("opens a context menu at the pointer", () => {
+    expect(placeMenu({ x: 100, y: 100 }, size, view)).toEqual({ left: 100, top: 100 });
+  });
+
+  it("flips a context menu above the pointer near the bottom and shifts it left near the right edge", () => {
+    expect(placeMenu({ x: 950, y: 700 }, size, view)).toEqual({ left: 796, top: 400 });
+  });
+
+  it("keeps a context menu inside the viewport when it fits neither below nor above the pointer", () => {
+    expect(placeMenu({ x: 10, y: 200 }, { width: 200, height: 700 }, view)).toEqual({ left: 10, top: 4 });
+  });
+
+  it("hangs a dropdown below its button", () => {
+    const rect = { top: 100, bottom: 122, left: 300, right: 400 };
+    expect(placeMenu({ x: 300, y: 124, rect }, size, view)).toEqual({ left: 300, top: 124 });
+  });
+
+  it("opens a dropdown above its button near the bottom (never over the button)", () => {
+    const rect = { top: 700, bottom: 722, left: 300, right: 400 };
+    const p = placeMenu({ x: 300, y: 724, rect }, size, view);
+    expect(p).toEqual({ left: 300, top: 398 });
+    expect(p.top + size.height).toBeLessThanOrEqual(rect.top);
+  });
+
+  it("uses the roomier side when the dropdown fits on neither", () => {
+    const rect = { top: 300, bottom: 322, left: 300, right: 400 };
+    expect(placeMenu({ x: 300, y: 324, rect }, { width: 200, height: 600 }, view)).toEqual({ left: 300, top: 196 });
   });
 });

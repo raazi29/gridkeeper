@@ -472,8 +472,25 @@ input[type="number"].input {
   line-height: 1.55;
   color: var(--term-fg);
   white-space: pre-wrap;
-  word-break: break-all;
+  overflow-wrap: anywhere; /* long paths still break; ordinary words wrap whole */
   user-select: text;
+}
+.confirm-list {
+  list-style: none;
+  padding-left: 22px;
+  white-space: normal;
+}
+.confirm-list li {
+  position: relative;
+}
+.confirm-list li + li {
+  margin-top: 3px;
+}
+.confirm-list li::before {
+  content: "•";
+  position: absolute;
+  left: -12px;
+  color: var(--text-2);
 }
 .code-inline {
   display: block;
@@ -1464,7 +1481,7 @@ input[type="number"].input {
 .modal-backdrop {
   position: fixed;
   inset: 0;
-  z-index: 100;
+  z-index: var(--z-modal);
   display: flex;
   justify-content: center;
   align-items: center;
@@ -1576,7 +1593,7 @@ input[type="number"].input {
 /* ---------- menu ---------- */
 .menu {
   position: fixed;
-  z-index: 200;
+  z-index: var(--z-menu);
   min-width: 184px;
   padding: 4px;
   border-radius: var(--radius-m);
@@ -1639,13 +1656,16 @@ input[type="number"].input {
   position: fixed;
   right: 12px;
   bottom: calc(var(--statusbar-h) + 10px);
-  z-index: 300;
+  z-index: var(--z-toast);
   display: flex;
   flex-direction: column;
   gap: 6px;
   width: 360px;
   max-width: calc(100vw - 24px);
   pointer-events: none;
+}
+.toast:nth-last-child(n + 5) {
+  display: none;
 }
 .toast {
   position: relative;

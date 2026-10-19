@@ -93,3 +93,37 @@ export function menuKey(key: string, items: readonly NavItem[], index: number, d
       return { type: "none" };
   }
 }
+
+// ---- placement (pure) ------------------------------------------------------------------------------
+
+const EDGE = 4;
+
+/**
+ * Top-left corner for a root menu panel of `size` in a viewport of `view`, always fully inside it (4 px
+ * margin). With `rect` (a dropdown hanging from a button) the panel opens below the button, else above
+ * it, else wherever it fits best, never covering the button when either side has room; horizontally it
+ * starts at the button's left edge and shifts left near the right edge. Without `rect` (a context menu at
+ * the pointer) it opens at the point and flips above it near the bottom.
+ */
+export function placeMenu(
+  anchor: { x: number; y: number; rect?: { top: number; bottom: number; left: number; right: number } },
+  size: { width: number; height: number },
+  view: { width: number; height: number },
+): { left: number; top: number } {
+  const maxLeft = Math.max(EDGE, view.width - size.width - EDGE);
+  const maxTop = Math.max(EDGE, view.height - size.height - EDGE);
+  const clampTop = (t: number) => Math.min(Math.max(EDGE, t), maxTop);
+  const r = anchor.rect;
+  if (r) {
+    const left = Math.min(Math.max(EDGE, r.left), maxLeft);
+    const below = r.bottom + 2;
+    const above = r.top - 2 - size.height;
+    if (below + size.height <= view.height - EDGE) return { left, top: below };
+    if (above >= EDGE) return { left, top: above };
+    // Neither side has room for the whole panel: take the roomier side and let the panel scroll.
+    return { left, top: clampTop(view.height - r.bottom > r.top ? below : above) };
+  }
+  const left = Math.min(Math.max(EDGE, anchor.x), maxLeft);
+  const top = anchor.y + size.height > view.height - EDGE ? anchor.y - size.height : anchor.y;
+  return { left, top: clampTop(top) };
+}

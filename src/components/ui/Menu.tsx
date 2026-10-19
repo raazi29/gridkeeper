@@ -7,7 +7,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { popModal, pushModal } from "../../store/uiStore";
-import { firstIndex, menuKey, type NavItem } from "./menuNav";
+import { firstIndex, menuKey, placeMenu, type NavItem } from "./menuNav";
 import "../../styles/menus.css";
 
 export interface MenuAction {
@@ -34,7 +34,15 @@ interface Level {
   items: MenuItem[];
 }
 
-export function Menu({ x, y, items, onClose }: { x: number; y: number; items: MenuItem[]; onClose: () => void }) {
+/** The element a dropdown hangs from: below it when that fits, else above it (never over it). */
+export interface MenuAnchorRect {
+  top: number;
+  bottom: number;
+  left: number;
+  right: number;
+}
+
+export function Menu({ x, y, items, onClose, anchorRect }: { x: number; y: number; items: MenuItem[]; onClose: () => void; anchorRect?: MenuAnchorRect }) {
   const root = useRef<HTMLDivElement>(null);
   const prevFocus = useRef<HTMLElement | null>(null);
   /** Open submenu index per level (path[0] = index in the root menu whose submenu is open). */
@@ -141,7 +149,7 @@ export function Menu({ x, y, items, onClose }: { x: number; y: number; items: Me
           key={d === 0 ? "root" : `${d}:${path.slice(0, d).join(".")}`}
           level={d}
           items={lv.items}
-          anchor={d === 0 ? { x, y } : () => button(d - 1, path[d - 1])}
+          anchor={d === 0 ? { x, y, rect: anchorRect } : () => button(d - 1, path[d - 1])}
           openIndex={path[d] ?? -1}
           autoFocus={focusLevel === d}
           onFocused={() => setFocusLevel(null)}
@@ -174,7 +182,7 @@ function MenuPanel({
 }: {
   level: number;
   items: MenuItem[];
-  anchor: { x: number; y: number } | (() => HTMLElement | null);
+  anchor: { x: number; y: number; rect?: MenuAnchorRect } | (() => HTMLElement | null);
   openIndex: number;
   autoFocus: boolean;
   onFocused: () => void;
@@ -193,9 +201,7 @@ function MenuPanel({
     const vw = window.innerWidth;
     const vh = window.innerHeight;
     if (typeof anchor !== "function") {
-      const left = Math.max(4, Math.min(anchor.x, vw - r.width - 4));
-      const top = Math.max(4, anchor.y + r.height > vh - 4 ? Math.max(4, anchor.y - r.height) : anchor.y);
-      setPos({ left, top: Math.min(top, Math.max(4, vh - r.height - 4)) });
+      setPos(placeMenu(anchor, { width: r.width, height: r.height }, { width: vw, height: vh }));
     } else {
       const a = anchor()?.getBoundingClientRect();
       if (!a) return;
@@ -272,22 +278,41 @@ export interface MenuState {
   x: number;
   y: number;
   items: MenuItem[];
+  /** Set for dropdowns: the panel opens below this box, or above it near the bottom of the window. */
+  anchorRect?: MenuAnchorRect;
+}
+
+/** Where a menu opens: the pointer (context menu) or, with `anchorRect`, the button it hangs from. */
+export interface MenuOpenEvent {
+  clientX: number;
+  clientY: number;
+  anchorRect?: MenuAnchorRect;
+  preventDefault?: () => void;
+  stopPropagation?: () => void;
+}
+
+/** A dropdown's open event for the element it hangs from (pass to `open` when `openAt` is not at hand). */
+export function anchorOf(el: Element): MenuOpenEvent {
+  const r = el.getBoundingClientRect();
+  return { clientX: r.left, clientY: r.bottom + 2, anchorRect: { top: r.top, bottom: r.bottom, left: r.left, right: r.right } };
 }
 
 /** Local context-menu state helper: `open(event, items)` + render `element`. */
 export function useContextMenu() {
   const [state, setState] = useState<MenuState | null>(null);
   const close = useCallback(() => setState(null), []);
-  const open = useCallback((e: { clientX: number; clientY: number; preventDefault?: () => void; stopPropagation?: () => void }, items: MenuItem[]) => {
+  const open = useCallback((e: MenuOpenEvent, items: MenuItem[]) => {
     e.preventDefault?.();
     e.stopPropagation?.();
-    setState({ x: e.clientX, y: e.clientY, items });
+    setState({ x: e.clientX, y: e.clientY, items, anchorRect: e.anchorRect });
   }, []);
-  /** Open anchored under an element (for "…" buttons). */
+  /** Open anchored under an element (for "…" buttons); above it when there is no room below. */
   const openAt = useCallback((el: HTMLElement, items: MenuItem[]) => {
-    const r = el.getBoundingClientRect();
-    setState({ x: r.left, y: r.bottom + 2, items });
+    const a = anchorOf(el);
+    setState({ x: a.clientX, y: a.clientY, items, anchorRect: a.anchorRect });
   }, []);
-  const element = state ? <Menu key={`${state.x},${state.y}`} x={state.x} y={state.y} items={state.items} onClose={close} /> : null;
+  const element = state ? (
+    <Menu key={`${state.x},${state.y}`} x={state.x} y={state.y} items={state.items} onClose={close} anchorRect={state.anchorRect} />
+  ) : null;
   return { open, openAt, close, element, isOpen: state !== null };
 }

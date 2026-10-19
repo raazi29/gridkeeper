@@ -60,6 +60,16 @@
   --modal-header-h: 42px;
   --gutter: 6px;
 
+  /* ---- stacking: one scale for everything fixed / portaled. Layers inside a pane (xterm 11, scanlines 12,
+     drop indicator 20, browser frames 7) stay local to the pane. ---- */
+  --z-pane-fx: 50; /* effects over the panes, under every overlay (hyperspace jump) */
+  --z-overlay: 100; /* full-window views: Mission Control, Fleet */
+  --z-popover: 200; /* non-modal floating panels: Comms, theme quick switcher */
+  --z-modal: 300; /* dialogs and their backdrops; above the overlay or popover they were opened from */
+  --z-menu: 400; /* context and dropdown menus; menus open from dialogs and overlays too */
+  --z-toast: 500; /* toasts, above everything interactive */
+  --z-fx: 600; /* pointer-events: none flourishes (saber duel) */
+
   /* ---- motion ---- */
   --ease: cubic-bezier(0.2, 0, 0, 1);
   --dur: 120ms;

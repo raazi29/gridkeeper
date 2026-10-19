@@ -158,7 +158,7 @@
 
 .saber-duel {
   position: fixed;
-  z-index: 900;
+  z-index: var(--z-fx);
   width: 46px;
   height: 26px;
   pointer-events: none;

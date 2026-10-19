@@ -160,7 +160,7 @@
   border: 1px solid var(--border-strong);
   border-radius: var(--radius-l);
   box-shadow: var(--elev-3);
-  z-index: 900;
+  z-index: var(--z-popover);
   overflow: hidden;
   animation: rise-in var(--dur-slow) var(--ease);
 }
@@ -267,7 +267,7 @@
 .attn-fleet-backdrop {
   position: fixed;
   inset: 0;
-  z-index: 950;
+  z-index: var(--z-overlay);
   background: var(--backdrop);
   display: flex;
   padding: 24px;
@@ -312,6 +312,13 @@
   height: var(--modal-header-h);
   padding: 0 10px 0 16px;
   border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+  min-width: 0;
+  white-space: nowrap;
+}
+.attn-fleet-head .segmented {
+  align-self: center;
+  flex-wrap: nowrap;
 }
 .attn-fleet-title {
   display: inline-flex;

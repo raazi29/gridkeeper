@@ -403,13 +403,13 @@ export const PaneHeader = memo(function PaneHeader({ sessionId, groupId, index, 
             }
           >
             {profile && <span className="pane-chip-dot" style={{ background: profile.color }} />}
-            {profile?.name ?? "Default"}
+            <span className="pane-chip-text">{profile?.name ?? "Default"}</span>
           </span>
         )}
         {branch && (
-          <span className="pane-chip" title={`Worktree: ${meta.worktree?.path}`}>
+          <span className="pane-chip pane-chip--branch" title={`Worktree branch ${branch}\n${meta.worktree?.path ?? ""}`}>
             <IconBranch />
-            {branch}
+            <span className="pane-chip-text">{branch}</span>
           </span>
         )}
         {!isBrowser && (
