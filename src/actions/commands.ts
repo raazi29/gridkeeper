@@ -20,6 +20,8 @@ import {
 import { nextAttentionTarget, useAttention, useAttentionUi } from "../store/attention";
 import { useMission } from "../store/mission";
 import { toggleSkills } from "../store/skills";
+import { openBrain } from "../store/brain";
+import { rememberText } from "../components/brain/remember";
 import { openReplay } from "../store/replay";
 import { confirmDialog, useUi } from "../store/uiStore";
 import { focusTerminal } from "../terminal/registry";
@@ -465,6 +467,8 @@ export const COMMANDS: Command[] = [
   { id: "formation.launch", title: "Launch formation (agent team template)…", category: "Workspace", run: () => useMission.getState().openFormation() },
   { id: "view.skills", title: "Skills: discover & add…", category: "Workspace", run: toggleSkills },
   { id: "mission.replay", title: "Mission replay… (timelapse video of a recorded mission)", category: "View", run: () => openReplay() },
+  { id: "brain.open", title: "Brain: open (the team's long-term project memory)", category: "Workspace", run: () => openBrain() },
+  { id: "brain.add", title: "Brain: add memory…", category: "Workspace", run: () => rememberText() },
   ...EXPERIENCE_COMMANDS,
 ];
 

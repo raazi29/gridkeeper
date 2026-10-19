@@ -49,6 +49,7 @@ anything.
 | `persistence.rs` | Versioned, atomic, lenient `workspaces.json` (sanitize, migrate, read-only on newer versions). |
 | `git.rs` | Repo info, `git worktree add`, read-only status/diff for the Changes drawer, branch summaries for sign-off (`git_branch_summary`). |
 | *(mission file)* | `mission_read` / `mission_write` (atomic, conflict check) / `mission_watch` (filesystem watch, no polling → `mission-changed`) for `<projectDir>/.gridkeeper/mission.md`. |
+| `brain.rs`, `commands/brain.rs` | Brain (long-term project memory) in `<project>/.gridkeeper/brain/`: `brain_list` / `brain_read` / `brain_write` (atomic, redacted, 16 KiB cap, conflict check) / `brain_approve` (inbox → notes) / `brain_delete` (returns the text for Undo) / `brain_search` (local BM25-style ranking, prefix matching) / `brain_share` (marked `.gitignore` block). `INDEX.md` is regenerated from the notes (debounced after each change, by the mission watcher on agents' edits, by `brain_list` when stale). The mission watch also watches `brain/` recursively and emits `mission-changed` with `file: "brain"`. |
 | `ports.rs` | Listening TCP ports attributed to session trees: `GetExtendedTcpTable` (Windows), `/proc/net/tcp{,6}` + `/proc/<pid>/fd` (Linux), `lsof` (macOS). |
 | `browser.rs` | URL validation, `curl.exe` embed probe (`frame_verdict`, `html_title`), pop-out `WebviewWindow`s. |
 | `diagnostics.rs` | CPU/RAM attribution via one Toolhelp snapshot (host / WebView2 / session trees), export bundle. macOS / Linux: one sysinfo walk (`procs.rs`); the webview bucket is the WebKit helper processes, best effort. |
@@ -90,6 +91,7 @@ anything.
 | `browser/BrowserLayer.tsx`, `frameHosts.ts`, `nav.ts`, `OpenUrlDialog.tsx`, `PortsList.tsx` | Browser panes: one persistent iframe layer positioned over host boxes. |
 | `components/*` | Shell, sidebar, dialogs, palette, Fleet, Broadcast, Comms, Inspector, Diagnostics, ChangesDrawer, settings, welcome, theme switcher, menus. |
 | `components/mission/*` | Mission Control (mission board from `mission.md`, lanes, sign-off with branch evidence, "brief team…" / "hand off…"), Formations UI, activity river, session log. |
+| `lib/brain.ts`, `store/brain.ts`, `actions/brainCapture.ts`, `components/brain/*` | Brain: note format helpers, the brief line, capture rules (board / review / lead decisions → inbox suggestions, scrubbed, deduplicated), panel state + per-project prefs (localStorage: capture, auto-approve, briefs), the panel, "add memory" dialog and the "remember…" selection chip over Mission Control. |
 | `keybindings/combo.ts`, `index.ts` | `DEFAULT_BINDINGS` (+ `MAC_DEFAULT_OVERRIDES`), `forbiddenReason(combo, os)`, capture-phase listener. On macOS the stored `ctrl` token means ⌘ and `meta` means ⌃ (saved bindings keep working; display `⇧⌘P`). |
 | `theme/themes.ts`, `applyTheme.ts`, `saber.ts`, `effectPrefs.ts` | 12 themes (pure data), CSS variable application, saber colours, effect prefs. |
 | `styles/*.css` | `tokens.css` (derived tokens), `signature.css` (theme-specific accents), feature CSS. |
@@ -110,6 +112,7 @@ anything.
 | `appveyor.yml`, `scripts/ci/appveyor.{sh,ps1}` | The CI that runs while GitHub Actions is unavailable (AppVeyor free plan: one job at a time, 60 min each; images Visual Studio 2022, Ubuntu2204, macos-sonoma). Same steps as the workflow. |
 | `scripts/ci/self-test.sh` | Runs a built binary's `--gk-self-test`, then `--gk-self-test-gui` (Linux under Xvfb: required; macOS: optional; Windows: skipped; `GK_GUI_SELF_TEST` overrides). `dev` mode serves `dist/` with `vite preview` on the dev URL for debug builds. |
 | `<project>/.gridkeeper/mission.md` | Not in this repo: the shared task board Mission Control reads and writes in each project folder (`# Mission: <goal>`, `## Tasks`, `- [ ] text @owner`; `[~]` doing, `[x]` done, `[!]` blocked). Created with a self-ignoring `.gitignore`. |
+| `<project>/.gridkeeper/brain/` | Not in this repo: the team's long-term memory. `notes/<slug>.md` (confirmed), `inbox/<slug>.md` (suggested, waiting for the user), generated `INDEX.md`. Front matter `title / kind / tags / source / created / updated / confidence / supersedes` + a few lines (format: `skills/agent-mission/SKILL.md`). Git-ignored with the rest of `.gridkeeper/` unless "share via git" adds the exception block (notes + INDEX.md committable, inbox stays local). |
 | `docs/assets/` | Hero banner, social preview, showcase media, `logo/` (brand guide + tools), `readme/` (animated crawl + saber dividers + `tools/gen-readme-art.mjs`). |
 | `docs/research-notes/` | Raw verified findings (CLI flags, terminal stack, market/agents). |
 

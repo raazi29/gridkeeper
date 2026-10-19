@@ -27,6 +27,7 @@ import { AgentGlyph } from "../../layout/icons";
 import { findGroupOf, isLive, selectActiveGroup, selectActiveWorkspace, useApp } from "../../store/appStore";
 import { useAttention } from "../../store/attention";
 import { openFlightLog, useFlightLog } from "../../store/flightlog";
+import { openBrain } from "../../store/brain";
 import { LEAD_BOX, useMission } from "../../store/mission";
 import { dirKey, useMissionFile } from "../../store/missionDoc";
 import { acquireRateSampler, formatRate, latestRate, useRates } from "../../store/rates";
@@ -698,6 +699,7 @@ export function MissionControl() {
           <span className="mc-head-actions">
             <FlightLogChip />
             <ReplayHeaderControls projectDir={projectDir} />
+            <button type="button" className="mc-btn" title="Brain: the team's long-term project memory (.gridkeeper/brain)" onClick={() => openBrain({ dir: projectDir })}>brain</button>
             <button
               type="button"
               className="mc-btn"

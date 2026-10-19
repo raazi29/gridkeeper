@@ -13,6 +13,7 @@ import { GroupGrid } from "../layout/GroupGrid";
 import { selectActiveGroup, selectActiveWorkspace, useApp } from "../store/appStore";
 import { useUi } from "../store/uiStore";
 import { AttentionLayer } from "./AttentionLayer";
+import { BrainLayer } from "./brain/BrainLayer";
 import { CommandPalette } from "./CommandPalette";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { ContextMenuHost } from "./ContextMenuHost";
@@ -92,6 +93,7 @@ export function Shell() {
       <AttentionLayer />
       <MissionLayer />
       <SkillsLayer />
+      <BrainLayer />
       <ExperienceLayer />
       <ContextMenuHost />
     </div>

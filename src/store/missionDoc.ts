@@ -79,6 +79,7 @@ let unlisten: Promise<(() => void) | null> | null = null;
 function ensureListener() {
   if (unlisten) return;
   unlisten = onMissionChanged((ev) => {
+    if (ev.file === "brain") return; // brain notes (store/brain.ts), not the board
     const key = dirKey(ev.projectDir);
     for (const dir of holds.keys()) if (dirKey(dir) === key) void reloadMission(dir);
   }).catch(() => null);
