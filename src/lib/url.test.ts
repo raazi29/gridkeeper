@@ -32,6 +32,7 @@ describe("normalizeUrlInput", () => {
     expect(normalizeUrlInput("192.168.1.20")).toBe("http://192.168.1.20/");
     expect(normalizeUrlInput("devbox:8080")).toBe("http://devbox:8080/");
     expect(normalizeUrlInput("myhost.lan:3000/x")).toBe("http://myhost.lan:3000/x");
+    expect(normalizeUrlInput("example.com:443/x")).toBe("https://example.com/x");
     expect(normalizeUrlInput("devbox:99999")).toBeNull();
   });
   it("turns Windows paths into file URLs", () => {
