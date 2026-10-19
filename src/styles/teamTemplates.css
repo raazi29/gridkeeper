@@ -1,0 +1,42 @@
+/* Team templates tab (components/teamTemplates/TeamTemplates.tsx); builds on the .fm-* formation styles. */
+
+.tt-paste {
+  min-height: 120px;
+  font-size: var(--fs-xs);
+}
+.tt-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--fs-xs);
+  color: var(--text-1);
+}
+.tt-tag {
+  padding: 1px 6px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-s);
+  background: var(--bg-1);
+  color: var(--text-2);
+}
+.tt-prompts {
+  align-items: start;
+}
+.tt-prompt {
+  font-size: var(--fs-xs);
+  line-height: 1.45;
+  color: var(--text-1);
+  user-select: text;
+  overflow-wrap: anywhere;
+}
+.tt-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 10px;
+}
+.tt-json {
+  max-height: 260px;
+}
+.tt-count {
+  font-size: var(--fs-xs);
+}

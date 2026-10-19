@@ -167,8 +167,9 @@ export const ipc = {
   replayList: (projectDir: string) => invoke<ReplayInfo[]>("replay_list", { projectDir }),
   replayRead: (projectDir: string, name: string) => invoke<string>("replay_read", { projectDir, name }),
   replayDelete: (projectDir: string, name: string) => invoke<void>("replay_delete", { projectDir, name }),
-  /** Native save dialog (run by Rust); null when cancelled. The token authorizes one replaySaveFile to that path. */
-  replaySaveDialog: (defaultName: string, kind: ReplayExportKind) =>
+  /** Native save dialog (run by Rust); null when cancelled. The token authorizes one replaySaveFile to that path.
+   *  "json" saves a team template (actions/teamTemplates.ts) through the same one-time-token path. */
+  replaySaveDialog: (defaultName: string, kind: ReplayExportKind | "json") =>
     invoke<ReplaySaveTarget | null>("replay_save_dialog", { defaultName, kind }),
   /** Raw binary body (no JSON number[]: a 20 MB video stays 20 MB on the wire). Returns the written path. */
   replaySaveFile: (token: string, bytes: Uint8Array) =>

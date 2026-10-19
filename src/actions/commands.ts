@@ -19,6 +19,7 @@ import {
 } from "../store/appStore";
 import { nextAttentionTarget, useAttention, useAttentionUi } from "../store/attention";
 import { useMission } from "../store/mission";
+import { openTeamTemplates } from "../store/teamTemplates";
 import { toggleSkills } from "../store/skills";
 import { openReplay } from "../store/replay";
 import { confirmDialog, useUi } from "../store/uiStore";
@@ -463,6 +464,8 @@ export const COMMANDS: Command[] = [
   { id: "view.profiles", title: "Accounts (Claude, Codex, …)", category: "View", run: () => toggleDialog("profiles") },
   { id: "view.mission", title: "Mission Control (team view of this workspace)", category: "View", run: () => useMission.getState().toggle() },
   { id: "formation.launch", title: "Launch formation (agent team template)…", category: "Workspace", run: () => useMission.getState().openFormation() },
+  { id: "teamTemplate.import", title: "Team template: import…", category: "Workspace", run: () => openTeamTemplates("import") },
+  { id: "teamTemplate.export", title: "Team template: export…", category: "Workspace", run: () => openTeamTemplates("export") },
   { id: "view.skills", title: "Skills: discover & add…", category: "Workspace", run: toggleSkills },
   { id: "mission.replay", title: "Mission replay… (timelapse video of a recorded mission)", category: "View", run: () => openReplay() },
   ...EXPERIENCE_COMMANDS,

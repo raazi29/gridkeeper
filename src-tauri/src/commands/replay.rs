@@ -40,7 +40,7 @@ pub async fn replay_delete(project_dir: String, name: String) -> Result<(), AppE
     tauri::async_runtime::spawn_blocking(move || crate::replay::delete(&project_dir, &name)).await.map_err(join_err)?
 }
 
-/// Native save dialog for an export (`kind` = "mp4" | "webm" | "gif"). Returns null when cancelled,
+/// Native save dialog for an export (`kind` = "mp4" | "webm" | "gif", or "json" for a team template). Returns null when cancelled,
 /// else the chosen path and a one-time token for `replay_save_file`.
 #[tauri::command]
 pub async fn replay_save_dialog(
@@ -53,13 +53,14 @@ pub async fn replay_save_dialog(
     let label = match kind {
         "gif" => "GIF animation",
         "webm" => "WebM video",
+        "json" => "Gridkeeper team template",
         _ => "MP4 video",
     };
     tauri::async_runtime::spawn_blocking(move || {
         let mut dialog = app
             .dialog()
             .file()
-            .set_title("Export mission replay")
+            .set_title(if kind == "json" { "Export team template" } else { "Export mission replay" })
             .set_file_name(name)
             .add_filter(label, &[kind])
             .set_can_create_directories(true);
