@@ -13,7 +13,6 @@
     "clipboard-manager:allow-read-text",
     "notification:default",
     "core:window:allow-set-title",
-    "core:window:allow-destroy",
     "core:window:allow-request-user-attention"
   ]
 }
