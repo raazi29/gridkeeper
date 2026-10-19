@@ -27,6 +27,7 @@ import { portChipLabel } from "../lib/browserPanes";
 import { usePorts } from "../store/ports";
 import { copyText } from "../components/util/pick";
 import { MeterChip } from "../components/MeterChip";
+import { HookChip } from "../components/HookChip";
 import { IconGlobe } from "./icons";
 import { t, useT } from "../i18n";
 
@@ -385,6 +386,7 @@ export const PaneHeader = memo(function PaneHeader({ sessionId, groupId, index, 
           </span>
         )}
         {!isBrowser && <RoleTag role={meta.role} />}
+        {!isBrowser && <HookChip sessionId={sessionId} />}
         {!isBrowser && <MeterChip sessionId={sessionId} variant="pane" />}
         {portLabel && (
           <button

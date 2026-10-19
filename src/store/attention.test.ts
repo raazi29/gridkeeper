@@ -2,7 +2,9 @@ import { beforeEach, describe, expect, it } from "vitest";
 import type { SessionAttention } from "../lib/types";
 import {
   FEED_LIMIT,
+  HOOK_STALE_MS,
   countUnread,
+  hookWaitReason,
   nextAttentionTarget,
   reduceAttention,
   useAttention,
@@ -148,5 +150,131 @@ describe("attention store", () => {
     st.apply("a", ev({ kind: "active" }), false);
     st.markAllRead(); // nothing unread
     expect(useAttention.getState().sessions).toBe(before);
+  });
+});
+
+describe("hook precedence (Claude Code hooks)", () => {
+  const hook = (status: string, extra: Partial<SessionAttention> = {}): AttnInput => ev({ kind: "hook", status, ...extra });
+  const S = 1000;
+
+  /** Inputs at explicit times (ms after T). */
+  function runAt(steps: [AttnInput, number][], seen = false) {
+    let state: SessionAttn | undefined;
+    const alerts: string[] = [];
+    for (const [i, at] of steps) {
+      const r = reduceAttention(state, i, seen, T + at);
+      state = r.next;
+      if (r.alert) alerts.push(`${r.alert.category}:${r.alert.kind}:${r.alert.message}`);
+    }
+    return { state, alerts };
+  }
+
+  it("permission is waiting with the tool name, alerts once, and heuristics can't hide it", () => {
+    const r = runAt([
+      [hook("working"), 0],
+      [hook("tool", { tool: "Bash" }), 1 * S],
+      [ev({ kind: "active" }), 1.5 * S],
+      [hook("permission", { tool: "Bash" }), 2 * S],
+      // The dialog repaint, the quiet afterwards and Claude's own bell ~6 s later change nothing.
+      [ev({ kind: "active" }), 2.1 * S],
+      [ev({ kind: "idle", status: "done", activeMs: 9000 }), 7 * S],
+      [ev({ kind: "bell" }), 8 * S],
+      [ev({ kind: "notify", body: "Claude needs your permission" }), 8.1 * S],
+    ]);
+    expect(r.state).toMatchObject({ state: "waiting", unread: true, lastMessage: "Needs permission · Bash", hook: { state: "permission", tool: "Bash" } });
+    expect(r.alerts).toEqual(["bell:waiting:Needs permission · Bash"]);
+  });
+
+  it("a prompt right after another waiting alert doesn't alert twice", () => {
+    const r = runAt([
+      [ev({ kind: "bell" }), 0],
+      [hook("permission", { tool: "Edit" }), 1 * S],
+    ]);
+    expect(r.state).toMatchObject({ state: "waiting", lastMessage: "Needs permission · Edit" });
+    expect(r.alerts).toEqual(["bell:waiting:Needs your attention"]);
+  });
+
+  it("answered prompt: running the tool, then the Stop hook is the only 'done'", () => {
+    const r = runAt([
+      [hook("working"), 0],
+      [hook("permission", { tool: "Bash" }), 1 * S],
+      [hook("tool", { tool: "Bash" }), 5 * S],
+      // A long, quiet tool: the output heuristic must not call it idle (or done).
+      [ev({ kind: "idle", status: "done", activeMs: 4000 }), 60 * S],
+      [hook("working"), 90 * S],
+      [hook("stopped", { activeMs: 95_000 }), 95 * S],
+      // The final repaint and its quiet: no second alert, no flip to working.
+      [ev({ kind: "active" }), 96 * S],
+      [ev({ kind: "idle", status: "done", activeMs: 5000 }), 100 * S],
+    ]);
+    expect(r.state).toMatchObject({ state: "done", unread: true, lastMessage: "Finished after 1m 35s", hook: { state: "stopped" } });
+    expect(r.alerts).toEqual(["bell:waiting:Needs permission · Bash", "idle:done:Finished after 1m 35s"]);
+    const mid = runAt([
+      [hook("tool", { tool: "Bash" }), 0],
+      [ev({ kind: "idle" }), 30 * S],
+    ]);
+    expect(mid.state).toMatchObject({ state: "working", lastMessage: "Running Bash" });
+  });
+
+  it("a stale working hook lets the heuristic fill the gap (quietly)", () => {
+    const r = runAt([
+      [hook("working"), 0],
+      [ev({ kind: "idle", status: "done", activeMs: 9000 }), HOOK_STALE_MS + 1],
+    ]);
+    expect(r.state).toMatchObject({ state: "idle" });
+    expect(r.alerts).toEqual([]);
+    // New work after a finished turn (no hook for it yet) still shows as working once the repaint has settled.
+    const later = runAt([
+      [hook("stopped", { activeMs: 10_000 }), 0],
+      [ev({ kind: "active" }), 30 * S],
+    ]);
+    expect(later.state?.state).toBe("working");
+  });
+
+  it("short turns end quietly, interrupts are quiet, stop failures are errors", () => {
+    expect(runAt([[hook("working"), 0], [hook("stopped", { activeMs: 1200 }), 1.2 * S]]).alerts).toEqual([]);
+    const i = runAt([[hook("tool", { tool: "Bash" }), 0], [hook("stopped", { reason: "interrupt" }), S]]);
+    expect(i.state).toMatchObject({ state: "idle", lastMessage: "Interrupted" });
+    expect(i.alerts).toEqual([]);
+    const f = runAt([[hook("working"), 0], [hook("stopped", { reason: "rate_limit" }), S]]);
+    expect(f.state).toMatchObject({ state: "error", lastMessage: "Stopped: rate limit" });
+    expect(f.alerts).toEqual(["error:error:Stopped: rate limit"]);
+  });
+
+  it("idle prompt and session events are quiet; done stays until seen", () => {
+    const r = runAt([
+      [hook("working"), 0],
+      [hook("stopped", { activeMs: 30_000 }), 30 * S],
+      [hook("idle-prompt"), 90 * S],
+    ]);
+    expect(r.state).toMatchObject({ state: "done", unread: true, lastMessage: "Waiting for your next prompt" });
+    expect(r.alerts).toHaveLength(1);
+    const seen = runAt([[hook("idle-prompt"), 0]], true);
+    expect(seen.state).toMatchObject({ state: "idle", unread: false });
+    const q = runAt([[hook("input", { tool: "AskUserQuestion" }), 0]]);
+    expect(q.state).toMatchObject({ state: "waiting", lastMessage: "Asks you a question" });
+    const bogus = runAt([[hook("bogus"), 0]]);
+    expect(bogus.state?.hook).toBeUndefined();
+    expect(bogus.alerts).toEqual([]);
+  });
+
+  it("start / exit drop the hook state (heuristics rule again)", () => {
+    const r = runAt([
+      [hook("permission", { tool: "Bash" }), 0],
+      [{ type: "exit", code: 0, userStopped: true }, S],
+      [{ type: "start" }, 2 * S],
+      [ev({ kind: "bell" }), 3 * S],
+    ]);
+    expect(r.state?.hook).toBeUndefined();
+    expect(r.alerts).toEqual(["bell:waiting:Needs permission · Bash", "bell:waiting:Needs your attention"]);
+  });
+
+  it("hookWaitReason names the prompt", () => {
+    const at = (h: SessionAttn["hook"]): SessionAttn => ({ state: "waiting", unread: false, at: 0, hook: h });
+    expect(hookWaitReason(at({ state: "permission", tool: "Bash", at: 0 }))).toBe("is waiting for permission to use Bash");
+    expect(hookWaitReason(at({ state: "permission", tool: "mcp__github__create_issue", at: 0 }))).toBe("is waiting for permission to use github create_issue");
+    expect(hookWaitReason(at({ state: "input", tool: "ExitPlanMode", at: 0 }))).toMatch(/plan/);
+    expect(hookWaitReason(at({ state: "tool", tool: "Bash", at: 0 }))).toBeNull();
+    expect(hookWaitReason(undefined)).toBeNull();
   });
 });

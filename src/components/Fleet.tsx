@@ -23,6 +23,7 @@ import { formatCpu, formatMb, taskManagerCpu } from "./util/text";
 import { buildSessionMenu } from "./menus/sessionMenu";
 import { useContextMenu } from "./ui/Menu";
 import { CostMeterHint, MeterChip } from "./MeterChip";
+import { SpendToday } from "./spend/SpendToday";
 import "../styles/attention.css";
 
 /** Tile lamp label in the UI language: the attention states' labels plus the two process-only lamps. */
@@ -244,7 +245,10 @@ export function FleetOverlay() {
           {visible.length === 0 && <div className="attn-empty">{filter === "all" ? t("fleet.emptyAll") : t("fleet.emptyFilter")}</div>}
           {visible.map((g) => (
             <section key={g.id} className="attn-fleet-section">
-              <h3 className="attn-fleet-ws">{g.name}</h3>
+              <h3 className="attn-fleet-ws">
+                {g.name}
+                <SpendToday workspaceId={g.id} variant="fleet" />
+              </h3>
               <div className="attn-fleet-grid">
                 {g.ids.map((id) => (
                   <FleetTile key={id} id={id} selected={id === selected} onSelect={setSelected} onJump={jump} onMenu={openMenu} tileRef={observe} />

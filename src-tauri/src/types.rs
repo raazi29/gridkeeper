@@ -173,8 +173,9 @@ pub struct SessionInfo {
 pub const EVT_SESSION_STATE: &str = "session-state";
 
 /// Emitted with payload `SessionAttention` when a session asks for attention
-/// (BEL / OSC 9 / OSC 777 / OSC 99), reports a status (OSC 7501), or its
-/// output activity starts / stops (heuristic).
+/// (BEL / OSC 9 / OSC 777 / OSC 99), reports a status (OSC 7501), its
+/// output activity starts / stops (heuristic), or a Claude Code hook reports
+/// its exact state (`kind = hook`, see `meter::hooks`).
 pub const EVT_SESSION_ATTENTION: &str = "session-attention";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -191,6 +192,10 @@ pub enum AttentionKind {
     Idle,
     /// Output started arriving steadily.
     Active,
+    /// Claude Code hook (opt-in, see `meter::hooks`): `status` = ready | working | tool | permission |
+    /// input | idle-prompt | stopped | ended; `tool` = tool name when known; `reason` = a short token
+    /// (stop failure type, `interrupt`, session start / end reason).
+    Hook,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -208,9 +213,12 @@ pub struct SessionAttention {
     /// OSC 7501 `kind` for blocked states: permission | question | auth.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reason: Option<String>,
-    /// Idle events: how long the active run lasted.
+    /// Idle events: how long the active run lasted. Hook `stopped`: how long the turn took.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub active_ms: Option<u64>,
+    /// Hook events: the tool name (e.g. `Bash`, `mcp__github__create_issue`), never its input.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tool: Option<String>,
 }
 
 /// Binary frame types on the per-session output `Channel` (first byte of each message).
@@ -636,6 +644,13 @@ pub struct Settings {
     /// Native browser panes: target=_blank / window.open opens in a new pane ("pane") or the same one ("same").
     #[serde(default = "default_browser_new_window")]
     pub browser_new_window: String,
+    /// Exact status for Claude panes from Claude Code hooks (`meter::hooks`). Injected into the same
+    /// `--settings` file as the meter, so it only applies while `cost_meter` is on.
+    #[serde(default = "default_true")]
+    pub claude_hooks: bool,
+    /// Daily spend guard per workspace id (frontend: src/lib/spend.ts). Missing = no guard.
+    #[serde(default)]
+    pub spend_guards: BTreeMap<String, SpendGuard>,
 }
 
 fn default_browser_engine() -> String {
@@ -644,6 +659,27 @@ fn default_browser_engine() -> String {
 
 fn default_browser_new_window() -> String {
     "pane".into()
+}
+
+/// Daily budget of one workspace, in USD of Claude Code's own estimate (API-equivalent on subscriptions).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct SpendGuard {
+    pub budget_usd: f64,
+    /// Toast at this share of the budget (percent, 1-99).
+    pub warn_pct: u8,
+    /// At 100 %: "warn" | "pause" (Autopilot) | "pauseNotify". A string, so unknown values never fail loading.
+    pub action: String,
+}
+
+impl Default for SpendGuard {
+    fn default() -> Self {
+        Self { budget_usd: 10.0, warn_pct: 80, action: "warn".into() }
+    }
+}
+
+fn default_true() -> bool {
+    true
 }
 
 fn default_right_click_action() -> String {
@@ -772,6 +808,8 @@ impl Default for Settings {
             cost_meter_hint_dismissed: false,
             browser_engine: default_browser_engine(),
             browser_new_window: default_browser_new_window(),
+            claude_hooks: true,
+            spend_guards: BTreeMap::new(),
         }
     }
 }

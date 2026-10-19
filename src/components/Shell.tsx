@@ -34,6 +34,7 @@ import { ChangesDrawer } from "./ChangesDrawer";
 import { installPortsWatch } from "../store/ports";
 import { installMeterWatch } from "../store/meter";
 import { useT } from "../i18n";
+import { SpendGuardLayer } from "./spend/SpendGuardLayer";
 import "../browser/browser.css";
 
 export function Shell() {
@@ -91,6 +92,7 @@ export function Shell() {
       <DialogHost />
       <ConfirmDialog />
       <Toasts />
+      <SpendGuardLayer />
       <AttentionLayer />
       <MissionLayer />
       <SkillsLayer />

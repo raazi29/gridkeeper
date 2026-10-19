@@ -67,7 +67,10 @@ export interface NativeMenuCommand {
   /** Command id from src/actions/commands.ts, e.g. "view.settings". */
   command: string;
 }
-export type AttentionKind = "bell" | "notify" | "status" | "idle" | "active";
+export type AttentionKind = "bell" | "notify" | "status" | "idle" | "active" | "hook";
+
+/** `status` of a `hook` attention event (Claude Code hooks, opt-in; see src-tauri/src/meter/hooks.rs). */
+export type HookState = "ready" | "working" | "tool" | "permission" | "input" | "idle-prompt" | "stopped" | "ended";
 
 export interface SessionAttention {
   id: SessionId;
@@ -75,12 +78,14 @@ export interface SessionAttention {
   /** Notification title (control chars stripped, <= 200 chars). */
   title?: string;
   body?: string;
-  /** status: OSC 7501 state (idle|working|done|blocked|error|clear|…); idle: "done" when the run counts as finished. */
+  /** status: OSC 7501 state (idle|working|done|blocked|error|clear|…); idle: "done" when the run counts as finished; hook: a HookState. */
   status?: string;
-  /** OSC 7501 blocked kind: permission | question | auth. */
+  /** OSC 7501 blocked kind: permission | question | auth. hook: a short token (stop failure type, "interrupt", session start / end reason). */
   reason?: string;
-  /** idle: duration of the active run that just ended. */
+  /** idle: duration of the active run that just ended. hook "stopped": how long the turn took. */
   activeMs?: number;
+  /** hook: the tool name (never its input). */
+  tool?: string;
 }
 
 /** First byte of every binary message on a session output channel. */
@@ -388,6 +393,21 @@ export interface Settings {
   browserEngine: BrowserEngineSetting;
   /** Native browser panes: where target=_blank / window.open links go. */
   browserNewWindow: BrowserNewWindow;
+  /** Exact status for Claude panes from Claude Code hooks (same --settings file as the meter: applies while costMeter is on). */
+  claudeHooks?: boolean;
+  /** Daily spend guard per workspace id (src/lib/spend.ts). */
+  spendGuards?: Record<string, SpendGuard>;
+}
+
+/** What happens when a workspace reaches its daily budget. Agents are never stopped automatically. */
+export type SpendAction = "warn" | "pause" | "pauseNotify";
+
+/** Daily budget of one workspace in USD of Claude Code's own estimate (API-equivalent on subscriptions). */
+export interface SpendGuard {
+  budgetUsd: number;
+  /** Toast at this share of the budget (percent, 1-99). */
+  warnPct: number;
+  action: SpendAction;
 }
 
 export type BrowserEngineSetting = "native" | "frame";
@@ -556,6 +576,8 @@ export const DEFAULT_SETTINGS: Settings = {
   costMeterHintDismissed: false,
   browserEngine: "native",
   browserNewWindow: "pane",
+  claudeHooks: true,
+  spendGuards: {},
 };
 
 // ---- Mission (shared task board file) ------------------------------------------------------------

@@ -1,5 +1,7 @@
-//! Claude launch side of the meter: decide whether a pane is metered, write its settings file and
-//! hand the Claude adapter the `--settings` argument.
+//! Claude launch side of the meter: decide whether a pane is metered (and gets hooks, see
+//! [`super::hooks`]), write its settings file and hand the Claude adapter the `--settings` argument.
+//! One file carries both keys: `statusLine` (the meter) and `hooks` (exact status). Claude Code merges
+//! `hooks` across all settings sources, so the user's own hooks run unchanged next to Gridkeeper's.
 //!
 //! Reads (read-only, config only, never credentials or transcripts) to keep the user's own status
 //! line working: `statusLine` and `disableAllHooks` from the account's `settings.json` (under its
@@ -15,6 +17,7 @@ use serde::Deserialize;
 use serde_json::Value;
 
 use super::helper;
+use super::hooks;
 use super::shell::{self, StatusShell};
 use crate::types::{MeterStatus, SessionSpec, Settings};
 
@@ -36,16 +39,22 @@ pub struct LaunchInput<'a> {
     pub exe: &'a Path,
     pub shell: &'a StatusShell,
     pub managed: &'a [PathBuf],
+    /// Add Claude Code hooks for exact status (Settings › "Exact status for Claude panes").
+    pub hooks: bool,
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum LaunchDecision {
     Inject {
         settings_path: PathBuf,
-        /// `{"statusLine":{...}}`: exactly what `--settings` points at.
+        /// `{"statusLine":{...},"hooks":{...}}`: exactly what `--settings` points at.
         settings_json: String,
         chained: bool,
         note: Option<String>,
+        /// `Metered`, or `Managed` when managed settings own the status line and only hooks are injected.
+        status: MeterStatus,
+        /// The file has a `hooks` key.
+        hooks: bool,
     },
     Skip {
         status: MeterStatus,
@@ -147,18 +156,30 @@ pub fn default_managed_paths() -> Vec<PathBuf> {
     v
 }
 
-/// Why managed settings keep Gridkeeper's status line from running, if they do.
-pub fn managed_block(managed: &[PathBuf]) -> Option<String> {
+/// What managed settings keep from running.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ManagedBlock {
+    /// A managed `statusLine` wins over ours (hooks still run).
+    StatusLine(String),
+    /// `allowManagedHooksOnly` / `disableAllHooks`: neither status line commands nor our hooks run.
+    All(String),
+}
+
+/// Why managed settings keep Gridkeeper's status line (or its hooks) from running, if they do.
+pub fn managed_block(managed: &[PathBuf]) -> Option<ManagedBlock> {
+    let mut status_line = None;
     for path in managed {
         let Some(s) = read_subset(path) else { continue };
-        if s.status_line.is_some_and(|v| !v.is_null()) {
-            return Some("meter unavailable: your organization's managed settings set the status line".into());
-        }
         if s.allow_managed_hooks_only == Some(true) || s.disable_all_hooks == Some(true) {
-            return Some("meter unavailable: your organization's managed settings turn off status line commands".into());
+            return Some(ManagedBlock::All(
+                "meter unavailable: your organization's managed settings turn off status line commands and hooks".into(),
+            ));
+        }
+        if s.status_line.is_some_and(|v| !v.is_null()) {
+            status_line = Some(ManagedBlock::StatusLine("meter unavailable: your organization's managed settings set the status line".into()));
         }
     }
-    None
+    status_line
 }
 
 /// The `statusLine.command` Claude Code runs: `<exe> --gk-statusline --meter-file <file> [--chain-b64 <b64>]`,
@@ -172,9 +193,16 @@ pub fn statusline_command(exe: &Path, meter_file: &Path, chain: Option<&str>, sh
     shell::command_line(sh, &shell::command_path(exe), &args)
 }
 
-/// The whole `--settings` file: only `statusLine` (every other key keeps its file-based value).
-pub fn settings_json(command: &str) -> String {
-    serde_json::json!({ "statusLine": { "type": "command", "command": command, "padding": 0 } }).to_string()
+/// The whole `--settings` file: `statusLine` and / or `hooks` (every other key keeps its file-based value).
+pub fn settings_json(status_command: Option<&str>, hooks: Option<Value>) -> String {
+    let mut root = serde_json::Map::new();
+    if let Some(command) = status_command {
+        root.insert("statusLine".into(), serde_json::json!({ "type": "command", "command": command, "padding": 0 }));
+    }
+    if let Some(h) = hooks {
+        root.insert("hooks".into(), h);
+    }
+    Value::Object(root).to_string()
 }
 
 pub fn decide(input: &LaunchInput<'_>) -> LaunchDecision {
@@ -185,37 +213,60 @@ pub fn decide(input: &LaunchInput<'_>) -> LaunchDecision {
     if !super::valid_session_id(input.session_id) {
         return skip(MeterStatus::Unavailable, "meter unavailable: this session id can't name a file");
     }
-    if let Some(reason) = managed_block(input.managed) {
-        return skip(MeterStatus::Managed, &reason);
-    }
+    let managed_status_line = match managed_block(input.managed) {
+        Some(ManagedBlock::All(reason)) => return skip(MeterStatus::Managed, &reason),
+        Some(ManagedBlock::StatusLine(reason)) => Some(reason),
+        None => None,
+    };
     let user = user_status_line(input.config_root, input.cwd);
     if user.hooks_disabled {
-        return skip(MeterStatus::Unavailable, "meter off: Claude's disableAllHooks setting turns status lines off");
+        return skip(MeterStatus::Unavailable, "meter off: Claude's disableAllHooks setting turns status lines and hooks off");
     }
-    let mut notes = Vec::new();
-    let chain = match user.command {
-        Some(c) if c.contains(helper::FLAG) => None, // never chain to ourselves
-        Some(c) if c.len() > helper::MAX_CHAIN_COMMAND => {
-            notes.push("your own status line command is longer than 4 KiB, so it is hidden in this pane while the meter is on");
-            None
+    const BAD_PATH: &str = "meter unavailable: Gridkeeper's install or data folder path contains a quote or control character";
+    let mut notes: Vec<String> = Vec::new();
+    let mut chained = false;
+    let mut command = None;
+    match &managed_status_line {
+        Some(reason) => notes.push(reason.clone()),
+        None => {
+            let chain = match user.command {
+                Some(c) if c.contains(helper::FLAG) => None, // never chain to ourselves
+                Some(c) if c.len() > helper::MAX_CHAIN_COMMAND => {
+                    notes.push("your own status line command is longer than 4 KiB, so it is hidden in this pane while the meter is on".into());
+                    None
+                }
+                other => other,
+            };
+            let meter_file = input.meter_dir.join(super::record_name(input.session_id));
+            match statusline_command(input.exe, &meter_file, chain.as_deref(), input.shell) {
+                Ok(c) => {
+                    chained = chain.is_some();
+                    command = Some(c);
+                }
+                Err(_) => return skip(MeterStatus::Unavailable, BAD_PATH),
+            }
         }
-        other => other,
-    };
-    let meter_file = input.meter_dir.join(super::record_name(input.session_id));
-    let command = match statusline_command(input.exe, &meter_file, chain.as_deref(), input.shell) {
-        Ok(c) => c,
-        Err(_) => {
-            return skip(
-                MeterStatus::Unavailable,
-                "meter unavailable: Gridkeeper's install or data folder path contains a quote or control character",
-            );
+    }
+    let hooks_value = if input.hooks {
+        let state_file = input.meter_dir.join(hooks::hooks_name(input.session_id));
+        match hooks::hooks_json(input.exe, &state_file, input.shell) {
+            Ok(v) => Some(v),
+            Err(_) => return skip(MeterStatus::Unavailable, BAD_PATH),
         }
+    } else {
+        None
     };
+    if command.is_none() && hooks_value.is_none() {
+        return skip(MeterStatus::Managed, managed_status_line.as_deref().unwrap_or("meter unavailable"));
+    }
+    let hooks = hooks_value.is_some();
     LaunchDecision::Inject {
         settings_path: input.meter_dir.join(super::settings_name(input.session_id)),
-        settings_json: settings_json(&command),
-        chained: chain.is_some(),
+        settings_json: settings_json(command.as_deref(), hooks_value),
+        chained,
         note: (!notes.is_empty()).then(|| notes.join("; ")),
+        status: if command.is_some() { MeterStatus::Metered } else { MeterStatus::Managed },
+        hooks,
     }
 }
 
@@ -223,11 +274,13 @@ pub fn decide(input: &LaunchInput<'_>) -> LaunchDecision {
 /// with `--settings`, or `None` (meter off, not available, or the pane passes its own `--settings`).
 /// Every outcome is reported to the UI through the hub.
 pub fn prepare_claude(spec: &SessionSpec, settings: &Settings, config_root: Option<&Path>, via_cmd: bool) -> Option<PathBuf> {
+    let hub = super::hub()?;
     if !settings.cost_meter {
+        hub.hooks_off(&spec.id);
         return None;
     }
-    let hub = super::hub()?;
     let unavailable = |note: &str| {
+        hub.hooks_off(&spec.id);
         hub.note_launch(&spec.id, MeterStatus::Unavailable, Some(note.to_string()), false);
         None
     };
@@ -254,9 +307,10 @@ pub fn prepare_claude(spec: &SessionSpec, settings: &Settings, config_root: Opti
         exe,
         shell: &sh,
         managed: hub.managed_settings(),
+        hooks: settings.claude_hooks,
     };
     match decide(&input) {
-        LaunchDecision::Inject { settings_path, settings_json, chained, note } => {
+        LaunchDecision::Inject { settings_path, settings_json, chained, note, status, hooks } => {
             let arg = settings_path.to_string_lossy().into_owned();
             if via_cmd && crate::adapters::discovery::validate_cmd_args(std::slice::from_ref(&arg)).is_err() {
                 return unavailable("meter unavailable: the data folder path can't pass through the claude.cmd shim");
@@ -265,10 +319,16 @@ pub fn prepare_claude(spec: &SessionSpec, settings: &Settings, config_root: Opti
                 tracing::warn!(error = %e, "could not write the meter settings file");
                 return unavailable("meter unavailable: could not write its settings file");
             }
-            hub.note_launch(&spec.id, MeterStatus::Metered, note, chained);
+            if hooks {
+                hub.hooks_launch(&spec.id);
+            } else {
+                hub.hooks_off(&spec.id);
+            }
+            hub.note_launch(&spec.id, status, note, chained);
             Some(settings_path)
         }
         LaunchDecision::Skip { status, note } => {
+            hub.hooks_off(&spec.id);
             hub.note_launch(&spec.id, status, Some(note), false);
             None
         }

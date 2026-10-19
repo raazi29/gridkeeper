@@ -407,6 +407,32 @@ describe("autopilot", () => {
     expect(writes).toEqual([]);
   });
 
+  it("never delivers into a permission prompt a Claude hook reports, even when the lamp says idle", async () => {
+    useAttention.setState((s) => ({
+      sessions: { ...s.sessions, B1: { state: "idle", unread: false, at: Date.now(), hook: { state: "permission", tool: "Bash", at: Date.now() } } },
+    }));
+    putOutbox(item("0001.md", "to: builder-1\n---\none"));
+    await start("autopilot");
+    await flush(1000);
+    expect(writes).toEqual([]);
+    expect(proposals()[0].status).toBe("queued");
+    expect(proposals()[0].reason).toMatch(/waiting for permission to use Bash/);
+    // Answered (the hook reports the tool running, then the turn ends): delivered on the next transition.
+    useAttention.setState((s) => ({
+      sessions: { ...s.sessions, B1: { state: "done", unread: false, at: Date.now(), hook: { state: "stopped", at: Date.now() } } },
+    }));
+    await flush(500);
+    expect(typed()).toEqual([["B1", "[from lead] one"]]);
+  });
+
+  it("Send (manual) refuses too while a hook reports a question", async () => {
+    useAttention.setState((s) => ({
+      sessions: { ...s.sessions, B2: { state: "working", unread: false, at: Date.now(), hook: { state: "input", tool: "AskUserQuestion", at: Date.now() } } },
+    }));
+    const { handoffBlocker } = await import("./handoff");
+    expect(await handoffBlocker("B2")).toMatch(/waiting for an answer to its question/);
+  });
+
   it("one automatic delivery per target per 20 s", async () => {
     putOutbox(item("0001.md", "to: builder-1\n---\none"), item("0002.md", "to: builder-1\n---\ntwo"));
     await start("autopilot");

@@ -2,9 +2,14 @@
 // A separate small zustand store so attention churn never re-renders subscribers of the app store.
 // Pure functions (reduceAttention, nextAttentionTarget, …) carry the logic and are unit-tested;
 // event wiring lives in actions/attentionNotify.ts.
+//
+// Sources, by confidence: Claude Code hooks (`hook` events, opt-in, Claude panes) report the exact state; once a
+// pane run has sent one, output heuristics (`active` / `idle`) and raw bells only fill gaps (see reduceHook and
+// the `hook` checks below). Without hooks everything works as before.
 
 import { create } from "zustand";
 import { t, type MessageKey } from "../i18n";
+import { hookMessage, hookWaiting, isHookState, toolLabel, type HookInfo } from "../lib/hookStatus";
 import type { SessionAttention, SessionId } from "../lib/types";
 
 export type AttnState = "working" | "waiting" | "done" | "error" | "idle";
@@ -21,6 +26,8 @@ export interface SessionAttn {
   lifecycle?: boolean;
   /** ms epoch of the last change. */
   at: number;
+  /** Exact state from Claude Code hooks, once this run reported one (then heuristics only fill gaps). */
+  hook?: HookInfo;
 }
 
 export type AttnInput =
@@ -38,7 +45,7 @@ export interface Alert {
   /** Notification title from the program (OSC 777 / 99 / 7501), if any. */
   title?: string;
   /** What raised it: lets notification rules tell a BEL / OSC notify from a "waiting for you" status. */
-  source?: "bell" | "notify" | "status" | "idle" | "active" | "exit" | "failed";
+  source?: "bell" | "notify" | "status" | "idle" | "active" | "hook" | "exit" | "failed";
 }
 
 export interface Reduction {
@@ -64,6 +71,14 @@ function reasonText(reason: string | undefined): string | undefined {
   const key = reason ? REASON_TEXT[reason] : undefined;
   return key ? t(key) : undefined;
 }
+/** Hook "working" / "tool" older than this no longer outweighs an output-quiet heuristic (a missed hook). */
+export const HOOK_STALE_MS = 120_000;
+/** Output right after a hook "stopped" / "ready" is the final repaint, not new work. */
+export const HOOK_SETTLE_MS = 5_000;
+/** A hook prompt arriving this soon after another "waiting" alert doesn't alert again. */
+export const HOOK_DUP_ALERT_MS = 5_000;
+/** Turns shorter than this end quietly (as the heuristic's "done" threshold). */
+export const HOOK_MIN_TURN_MS = 3_000;
 
 export function formatDuration(ms: number): string {
   const s = Math.max(0, Math.round(ms / 1000));
@@ -85,8 +100,12 @@ function joinText(title?: string, body?: string): string | undefined {
 export function reduceAttention(prev: SessionAttn | undefined, input: AttnInput, seen: boolean, now: number): Reduction {
   const base: SessionAttn = prev ?? { state: "idle", unread: false, at: now };
   const flag = (unread: boolean) => (seen ? false : unread || base.unread);
+  // Attention events keep the run's hook state; start / exit / failure end the run (and drop it).
+  const keepHook = input.type === "attention" && base.hook ? { hook: base.hook } : {};
   const alertState = (state: AttnState, kind: Alert["kind"], category: Alert["category"], message: string, title?: string, lifecycle?: boolean): Reduction => ({
-    next: lifecycle ? { state, unread: flag(true), lastMessage: message, lifecycle: true, at: now } : { state, unread: flag(true), lastMessage: message, at: now },
+    next: lifecycle
+      ? { state, unread: flag(true), lastMessage: message, lifecycle: true, at: now, ...keepHook }
+      : { state, unread: flag(true), lastMessage: message, at: now, ...keepHook },
     alert: { category, kind, message, title, source: input.type === "attention" ? input.ev.kind : input.type === "start" ? undefined : input.type },
   });
   const quiet = (state: AttnState, lastMessage = base.lastMessage): Reduction => ({
@@ -108,17 +127,31 @@ export function reduceAttention(prev: SessionAttn | undefined, input: AttnInput,
     }
     case "attention": {
       const ev = input.ev;
+      const hook = base.hook;
       switch (ev.kind) {
+        case "hook":
+          return reduceHook(base, ev, seen, now);
         case "active":
+          // Hooks know better: a prompt stays a prompt; the repaint right after a turn ends is not work.
+          if (hook && (hookWaiting(hook) || (hook.state !== "working" && hook.state !== "tool" && now - hook.at < HOOK_SETTLE_MS))) return { next: base };
           return quiet("working");
         case "idle":
+          if (hook) {
+            // Never a second "done" (the Stop hook reported it); a quiet tool run stays "working" unless the
+            // hook state is old enough to have been missed.
+            if (hookWaiting(hook)) return { next: base };
+            if ((hook.state === "working" || hook.state === "tool") && now - hook.at < HOOK_STALE_MS) return { next: base };
+            return base.state === "working" ? quiet("idle") : { next: base };
+          }
           // A late idle never overwrites "needs input".
           if (base.state === "waiting") return { next: base };
           if (ev.status === "done") return alertState("done", "done", "idle", t("attention.msg.finishedAfter", { duration: formatDuration(ev.activeMs ?? 0) }));
           return base.state === "working" ? quiet("idle") : { next: base };
         case "bell":
-          return alertState("waiting", "waiting", "bell", t("attention.msg.bell"));
         case "notify":
+          // With hooks, Claude's own bells / notifications duplicate a hook event (permission, idle prompt).
+          if (hook) return { next: base };
+          if (ev.kind === "bell") return alertState("waiting", "waiting", "bell", t("attention.msg.bell"));
           return alertState("waiting", "waiting", "bell", joinText(ev.title, ev.body) ?? t("attention.msg.notification"), ev.title);
         case "status": {
           const st = (ev.status ?? "").toLowerCase();
@@ -136,6 +169,50 @@ export function reduceAttention(prev: SessionAttn | undefined, input: AttnInput,
     }
   }
   return { next: base };
+}
+
+/** A `hook` event: the exact state replaces the current one (alerts only where a person is needed). */
+function reduceHook(base: SessionAttn, ev: SessionAttention, seen: boolean, now: number): Reduction {
+  if (!isHookState(ev.status)) return { next: base };
+  const hook: HookInfo = { state: ev.status, at: now, ...(ev.tool ? { tool: ev.tool } : {}), ...(ev.reason ? { reason: ev.reason } : {}) };
+  const turn = ev.activeMs !== undefined ? formatDuration(ev.activeMs) : undefined;
+  const message = hookMessage(hook, turn);
+  const set = (state: AttnState, unread = base.unread, lastMessage = message): Reduction => ({
+    next: { state, unread: seen ? false : unread, lastMessage, at: now, hook },
+  });
+  const alert = (state: AttnState, kind: Alert["kind"], category: Alert["category"]): Reduction => ({
+    next: { state, unread: seen ? false : true, lastMessage: message, at: now, hook },
+    alert: { category, kind, message, source: "hook" },
+  });
+  // done / error persist until the user has seen them.
+  const settled = base.unread && (base.state === "done" || base.state === "error") ? base.state : "idle";
+  switch (hook.state) {
+    case "permission":
+    case "input":
+      // One alert per prompt: a "waiting" alert a moment ago (another source, or the same prompt) is enough.
+      if (base.state === "waiting" && now - base.at < HOOK_DUP_ALERT_MS) return set("waiting");
+      return alert("waiting", "waiting", "bell");
+    case "tool":
+    case "working":
+      return set("working");
+    case "stopped":
+      if (hook.reason === "interrupt") return set("idle");
+      if (hook.reason) return alert("error", "error", "error");
+      if (ev.activeMs !== undefined && ev.activeMs < HOOK_MIN_TURN_MS) return set(settled);
+      return alert("done", "done", "idle");
+    case "idle-prompt":
+    case "ready":
+    case "ended":
+      return set(settled, base.unread, hook.state === "ready" ? (base.lastMessage ?? message) : message);
+  }
+}
+
+/** Why typing into this session now would answer a prompt (exact, from hooks), or null. */
+export function hookWaitReason(a: SessionAttn | undefined): string | null {
+  const h = a?.hook;
+  if (!h || !hookWaiting(h)) return null;
+  if (h.state === "permission") return h.tool ? `is waiting for permission to use ${toolLabel(h.tool)}` : "is waiting for a permission answer";
+  return h.tool === "ExitPlanMode" ? "is waiting for its plan to be approved" : "is waiting for an answer to its question";
 }
 
 export const needsAttention = (a: SessionAttn | undefined): boolean => !!a && (a.unread || a.state === "waiting");

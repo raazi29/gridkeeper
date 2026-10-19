@@ -25,6 +25,7 @@ import { THEMES, getTheme } from "../theme/themes";
 import { HyperspaceToggle, MissionFxToggle, SaberSettings, ThemeEffects } from "./AppearanceExtras";
 import { ThemeCard } from "./ThemeCard";
 import { BrowserSettings } from "../browser/BrowserSettings";
+import { ClaudeHooksSetting, SpendGuardSettings } from "./spend/SpendGuardSettings";
 
 type Section = "appearance" | "terminal" | "agents" | "keys" | "interface" | "notifications";
 const SECTIONS: { id: Section; label: MessageKey }[] = [
@@ -340,6 +341,8 @@ function AgentsSection() {
         );
       })}
       <CostMeterSetting />
+      <ClaudeHooksSetting />
+      <SpendGuardSettings />
     </div>
   );
 }

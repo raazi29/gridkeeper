@@ -240,6 +240,9 @@ export const ipc = {
   brainSearch: (projectDir: string, query: string) => invoke<BrainHit[]>("brain_search", { projectDir, query }),
   /** Share the brain through git (notes/*.md + INDEX.md committable) or keep it local (default). */
   brainShare: (projectDir: string, share: boolean) => invoke<BrainShare>("brain_share", { projectDir, share }),
+  /** Spend guard ledger (`<data>/spend-ledger.json`, owned by src/store/spend.ts); null = none yet. */
+  spendLedgerRead: () => invoke<string | null>("spend_ledger_read"),
+  spendLedgerWrite: (text: string) => invoke<void>("spend_ledger_write", { text }),
 };
 
 export function onSessionState(cb: (info: SessionInfo) => void): Promise<UnlistenFn> {

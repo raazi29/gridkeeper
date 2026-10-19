@@ -239,8 +239,9 @@ export function installAttention(): () => void {
   track(
     onSessionAttention((ev) => {
       const rt = useApp.getState().runtime[ev.id];
-      // Activity events can race the exit event: ignore them for sessions that are not live.
-      if ((ev.kind === "active" || ev.kind === "idle") && rt && (rt.state.state === "exited" || rt.state.state === "failed")) return;
+      // Activity and hook events can race the exit event (Claude's SessionEnd hook fires as it exits): ignore them
+      // for sessions that are not live.
+      if ((ev.kind === "active" || ev.kind === "idle" || ev.kind === "hook") && rt && (rt.state.state === "exited" || rt.state.state === "failed")) return;
       apply(ev.id, { type: "attention", ev });
     }),
   );

@@ -23,7 +23,8 @@ anything.
 | Path | What lives there |
 |---|---|
 | `lib.rs` | App setup: plugins (single-instance, opener, dialog, clipboard, notification), `generate_handler![…]` (every IPC command), the `Exit` handler (`shutdown_all`). Sandbox mode (`GRIDKEEPER_SANDBOX`) skips the single-instance lock and uses its own data and WebView2 folders. |
-| `main.rs` | Entry point: `--gk-statusline` (meter helper) and `--gk-self-test` are handled before Tauri starts; otherwise `gridkeeper_lib::run()`. |
+| `main.rs` | Entry point: `--gk-statusline` (meter helper), `--gk-hook <event>` (Claude hook helper) and `--gk-self-test` are handled before Tauri starts; otherwise `gridkeeper_lib::run()`. |
+| `meter/` | Claude cost & context meter and exact status: `launch.rs` writes the per-pane `--settings` file (`statusLine` + `hooks`; the user's hooks are never copied, Claude Code merges hooks across settings sources), `helper.rs` (status line helper), `hooks.rs` (hook helper + per-pane hook state machine → `session-attention` with `kind: "hook"`), `ledger.rs` (stores the spend guard's `spend-ledger.json`), `mod.rs` (`MeterHub`: `<data>\meter` watch). Research: `docs/research-notes/cost-token-sources.md`, `claude-hooks-status.md`. |
 | `selftest.rs` | `--gk-self-test` (headless: env fix-up + login-shell PATH, data folder probe, default shell in a PTY answering a typed command, forced-stop containment of a tree with an orphaned grandchild; one line per check, exit 0/1) and `--gk-self-test-gui` (real window as sandbox `self-test`; passes when the frontend's boot calls `state_load`). Run by CI on the built binary (section 10). |
 | `app_menu.rs` | The native macOS menu (App, Edit, View, Window, Help) as plain data + a macOS-only builder. Edit items are native; custom items emit `native-menu` → `src/lib/nativeMenu.ts`. |
 | `state.rs` | `AppCtx`, the context shared by all commands (session manager, stores, paths). |
@@ -76,7 +77,8 @@ anything.
 | `lib/accounts.ts`, `lib/roles.ts`, `lib/browserPanes.ts`, `lib/pressure.ts`, `lib/brand.ts` | Pure helpers. |
 | `store/appStore.ts` | zustand: `persisted` (saved, debounced 400 ms) + `runtime` (live `SessionInfo` by id). |
 | `store/uiStore.ts` | Dialogs, palette, toasts, shared diagnostics poll. |
-| `store/attention.ts` | Attention state machine per session (working / waiting / done / error / idle, unread). |
+| `store/attention.ts` | Attention state machine per session (working / waiting / done / error / idle, unread). Claude hook states (`hook` events) take precedence; heuristics then only fill gaps. |
+| `lib/spend.ts`, `store/spend.ts`, `components/spend/*` | Spend guard: daily budget per workspace over the cost meter (ledger of per-day deltas per conversation, local midnight), warn toast, 100 % action (warn / pause Autopilot / + OS notification), banner with raise budget / resume. Never stops agents. |
 | `store/activity.ts`, `store/rates.ts`, `store/mission.ts` | Mission Control: activity ring (500), output rates (polled only while open), mission UI state. |
 | `store/ports.ts` | Ports, polled only while a view shows them. |
 | `actions/sessions.ts` | **The only place that turns intent into `session_*` calls**: start/stop/restart/close, restore, `LAUNCH_GAP_MS`. |
@@ -137,6 +139,8 @@ anything.
 13. Accounts are isolated home directories selected with each CLI's documented variable; status comes from the CLI's own status command; credentials are never read.
 14. Attention is detected in Rust from BEL/OSC signals and output activity (`pty/attention.rs`) and reduced in `store/attention.ts`; notifications, Comms, Fleet and Mission Control consume it.
 15. Built-in tools are read-only or sandboxed: Changes drawer (`git status`/`diff` only), ports (TCP table), browser panes (Windows: a child webview per pane without IPC, hidden with a snapshot placeholder while DOM overlays cover it; elsewhere / legacy setting: sandboxed iframes in one persistent layer; pop-outs as separate webviews without IPC).
+14. Attention is detected in Rust from BEL/OSC signals and output activity (`pty/attention.rs`), plus exact Claude Code hook states for Claude panes when the meter and "exact status" are on (`meter/hooks.rs`), and reduced in `store/attention.ts` (hooks first, heuristics fill gaps); notifications, Comms, Fleet, Mission Control and Autopilot (never types into a permission / question prompt) consume it.
+15. Built-in tools are read-only or sandboxed: Changes drawer (`git status`/`diff` only), ports (TCP table), browser panes (sandboxed iframes in one persistent layer, pop-outs as separate webviews without IPC).
 16. `GRIDKEEPER_SANDBOX=<name>` (`[a-z0-9-]{1,32}`) runs an isolated instance: data in `%APPDATA%\app.gridkeeper.desktop\sandboxes\<name>`, its own WebView2 profile, no single-instance lock, title `Gridkeeper [sandbox: <name>]`, `ipc.appInfo().sandbox`. That is how tests run next to the live app (section 6).
 17. Team coordination is a plain file: `<projectDir>/.gridkeeper/mission.md`, which every agent CLI can edit. Rust reads/writes it atomically (conflict check on modified time) and watches it with filesystem notifications (`mission-changed`); Mission Control renders it as a board and sign-off shows each builder's branch evidence (`git_branch_summary`).
 

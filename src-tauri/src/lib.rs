@@ -236,6 +236,8 @@ pub fn run() {
             commands::brain::brain_delete,
             commands::brain::brain_search,
             commands::brain::brain_share,
+            commands::meter::spend_ledger_read,
+            commands::meter::spend_ledger_write,
         ])
         .build(context)
         .unwrap_or_else(|e| fatal_startup_error(&e.to_string()))
