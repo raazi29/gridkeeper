@@ -152,7 +152,7 @@ pub fn shell_path_args(shell: &Path) -> Option<Vec<String>> {
     let name = shell.file_name()?.to_str()?.trim_start_matches('-');
     let args: Vec<String> = match name {
         "bash" | "zsh" | "sh" | "dash" | "ash" | "ksh" | "mksh" => {
-            vec!["-i".into(), "-l".into(), "-c".into(), format!("printf '%s' \"{PATH_START}$PATH{PATH_END}\"")]
+            vec!["-i".into(), "-l".into(), "-c".into(), format!("printf '%s' \"{PATH_START}${{PATH}}{PATH_END}\"")]
         }
         "fish" => vec![
             "-i".into(),
@@ -613,7 +613,9 @@ mod tests {
         for sh in ["/bin/zsh", "/bin/bash", "/usr/bin/dash", "/bin/sh", "-zsh"] {
             let a = args(sh).unwrap_or_else(|| panic!("{sh}"));
             assert_eq!(&a[..3], ["-i", "-l", "-c"], "{sh}");
-            assert!(a[3].contains("$PATH") && a[3].contains(PATH_START) && a[3].contains(PATH_END));
+            // `$PATH__GK…` would be read as one (unset) variable: braces end the name before the marker.
+            assert!(a[3].contains("${PATH}"), "{sh}: {}", a[3]);
+            assert!(a[3].contains(PATH_START) && a[3].contains(PATH_END));
         }
         let fish = args("/opt/homebrew/bin/fish").unwrap();
         assert!(fish[3].contains("string join : $PATH"));
