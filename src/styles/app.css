@@ -1493,6 +1493,9 @@ input[type="number"].input {
   align-items: flex-start;
   padding-top: 12vh;
 }
+.modal-backdrop.is-top .modal {
+  max-height: calc(88vh - 24px); /* the 12vh top offset counts too: never past the bottom edge */
+}
 @keyframes fade-in {
   from {
     opacity: 0;

@@ -53,6 +53,7 @@ import { Button } from "../ui/Button";
 import { anchorOf, type MenuItem, type MenuOpenEvent } from "../ui/Menu";
 import { Modal } from "../ui/Modal";
 import { copyText, pickFolder, revealPath } from "../util/pick";
+import { shortPath } from "../util/text";
 import { beginTaskDrag, endTaskDrag } from "./mcDrag";
 import { RoleTag, roleStyle } from "./RoleTag";
 import "../../styles/missionBoard.css";
@@ -754,7 +755,7 @@ function Board({
       {error && <div className="mb-error">last re-read failed: {error}</div>}
       <div className="mc-node-actions mb-actions">
         <span className="mc-path mb-path" title={file.path}>
-          {file.path}
+          {shortPath(file.path, 48)}
         </span>
         <button type="button" className="mc-btn" title="Edit the raw Markdown file (saved with a conflict check)" onClick={onEdit}>
           edit file…

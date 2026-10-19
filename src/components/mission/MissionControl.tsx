@@ -795,7 +795,10 @@ export function MissionControl() {
           <WorkspaceCost ids={allIds} />
           <CostMeterHint ids={allIds} variant="mc" />
           <span className="mc-spacer" />
-          <span className="mc-keys" title="Keyboard (selected card)">
+          <span
+            className="mc-keys"
+            title="Keyboard, on the selected card: ←↑↓→ select · Enter jump · R restart · S stop/start · M message · Del close · F2 rename · Alt+←→ reorder · Alt+↑↓ move to the previous / next lane · Shift+F10 menu · Esc close Mission Control"
+          >
             <kbd>←↑↓→</kbd> select · <kbd>enter</kbd> jump · <kbd>r</kbd> restart · <kbd>s</kbd> stop/start · <kbd>m</kbd> message · <kbd>del</kbd> close ·{" "}
             <kbd>F2</kbd> rename · <kbd>alt+←→</kbd> reorder · <kbd>alt+↑↓</kbd> move lane · <kbd>⇧F10</kbd> menu · <kbd>esc</kbd> close
           </span>

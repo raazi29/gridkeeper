@@ -340,14 +340,15 @@
 .mb-task.is-drop-after::after {
   bottom: -1px;
 }
-.mb-board.is-dragging .mb-group {
-  border: 1px dashed transparent;
+/* drop target highlight as an outline: starting a drag never moves the rows */
+.mb-group,
+.mb-done-toggle {
   border-radius: var(--radius-s);
-  padding: 0 2px 2px;
 }
 .mb-board.is-dragging .mb-group.is-drop,
 .mb-done-toggle.is-drop {
-  border: 1px dashed var(--accent);
+  outline: 1px dashed var(--accent);
+  outline-offset: 1px;
   background: color-mix(in srgb, var(--accent) 7%, transparent);
 }
 .mb-drop-empty {
