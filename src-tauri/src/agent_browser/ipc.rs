@@ -179,10 +179,13 @@ impl Server {
         if self.stop.swap(true, Ordering::AcqRel) {
             return;
         }
-        // Unblock the accept call with a throwaway connection.
-        let _ = connect(&self.endpoint, Duration::from_millis(300));
+        // Unblock the accept call with a throwaway connection. If that fails (the socket file was deleted
+        // with its folder), the accept thread can't be woken: leave it blocked rather than hang here.
+        let woke = connect(&self.endpoint, Duration::from_millis(300)).is_ok();
         if let Some(t) = self.thread.take() {
-            let _ = t.join();
+            if woke {
+                let _ = t.join();
+            }
         }
         #[cfg(unix)]
         let _ = std::fs::remove_file(&self.endpoint);

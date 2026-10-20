@@ -557,10 +557,12 @@ fn frame_encoding_and_file_names() {
 // hub without a browser: injection state, auth, routing, take-over, confirmations, lifecycle
 // ---------------------------------------------------------------------------
 
+// Fields drop in declaration order: the hub (and its socket, which on Unix can live in the data folder)
+// must go before the temporary folder is deleted.
 struct Fx {
-    _dir: tempfile::TempDir,
     hub: Arc<Hub>,
     events: Arc<Mutex<Vec<UiEvent>>>,
+    _dir: tempfile::TempDir,
 }
 
 fn hub_fx(serve: bool, roots: Vec<(String, u32)>) -> Fx {
