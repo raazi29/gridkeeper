@@ -5,6 +5,8 @@
 # headless everywhere, plus the real window under Xvfb on Linux (informational on macOS).
 # Mirrors .github/workflows/ci.yml. Any failing command fails the build.
 set -euo pipefail
+# AppVeyor sets CI=True; the Tauri CLI parses CI as its --ci flag and accepts only "true" or "false".
+export CI=true
 
 step() { printf '\n==> %s\n' "$*"; }
 
@@ -43,6 +45,9 @@ if [ "${APPVEYOR_REPO_TAG:-false}" = "true" ]; then
   if [ "$(uname)" = "Darwin" ]; then
     # One dmg for Apple Silicon and Intel: both slices are compiled, then merged with lipo
     # (bundle: src-tauri/target/universal-apple-darwin/release/bundle/dmg/Gridkeeper_<version>_universal.dmg).
+    # Two release compiles (one per slice) must fit AppVeyor's 60-minute job limit: thin LTO and parallel
+    # codegen here instead of the profile's fat LTO with one codegen unit (slightly larger binary).
+    export CARGO_PROFILE_RELEASE_LTO=thin CARGO_PROFILE_RELEASE_CODEGEN_UNITS=16
     step "Rust targets for a universal macOS build"
     rustup target add aarch64-apple-darwin x86_64-apple-darwin
     step "tauri build --target universal-apple-darwin (${APPVEYOR_REPO_TAG_NAME:-tag})"

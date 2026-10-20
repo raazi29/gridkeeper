@@ -4,6 +4,8 @@
 # Runs under Windows PowerShell 5.1, where a failing native command doesn't throw: every step checks the
 # exit code itself. Mirrors .github/workflows/ci.yml.
 $ErrorActionPreference = "Continue"
+# AppVeyor sets CI=True; the Tauri CLI parses CI as its --ci flag and accepts only "true" or "false".
+$env:CI = "true"
 
 function Step([string]$name, [scriptblock]$body) {
   Write-Host "==> $name" -ForegroundColor Cyan
