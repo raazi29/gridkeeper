@@ -403,7 +403,7 @@ mod imp {
     use std::os::unix::net::{UnixListener, UnixStream};
     use std::path::{Path, PathBuf};
     use std::sync::Arc;
-    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
     use std::time::Duration;
 
     use super::{Conn, Handler, Server};
@@ -427,7 +427,10 @@ mod imp {
     }
 
     pub fn new_endpoint(data_dir: &Path) -> io::Result<String> {
-        let file = format!("ab-{}.sock", std::process::id());
+        // Unique per hub, not just per process: hubs in one process (parallel tests) would otherwise share a path,
+        // and the second bind unlinks the first listener's socket so its stop() never unblocks its accept.
+        static SEQ: AtomicU32 = AtomicU32::new(0);
+        let file = format!("ab-{}-{}.sock", std::process::id(), SEQ.fetch_add(1, Ordering::Relaxed));
         let mut candidates: Vec<PathBuf> = Vec::new();
         if let Some(rt) = std::env::var_os("XDG_RUNTIME_DIR").filter(|v| !v.is_empty()) {
             candidates.push(PathBuf::from(rt).join("gridkeeper"));
