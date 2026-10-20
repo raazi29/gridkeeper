@@ -96,7 +96,7 @@ pub(crate) struct Dialog {
 }
 
 pub(crate) struct Tab {
-    pub gen: u64,
+    pub generation: u64,
     pub target_id: String,
     pub cdp_session: String,
     pub context_id: String,
@@ -113,9 +113,9 @@ pub(crate) struct Tab {
 }
 
 impl Tab {
-    fn new(gen: u64, target_id: String, cdp_session: String, context_id: String) -> Self {
+    fn new(generation: u64, target_id: String, cdp_session: String, context_id: String) -> Self {
         Self {
-            gen,
+            generation,
             target_id,
             cdp_session,
             context_id,
@@ -199,7 +199,7 @@ pub(crate) struct Download {
 }
 
 pub(crate) struct BrowserHandle {
-    pub gen: u64,
+    pub generation: u64,
     pub cdp: Arc<Cdp>,
     pub process: BrowserProcess,
     pub label: String,
@@ -230,7 +230,7 @@ pub(crate) struct TabRef {
     pub cdp: Arc<Cdp>,
     pub session: String,
     pub target: String,
-    pub gen: u64,
+    pub generation: u64,
 }
 
 pub struct Hub {
@@ -245,7 +245,7 @@ pub struct Hub {
     emit: UiEmit,
     roots: RootsFn,
     pub(crate) dev_ports: PortsFn,
-    gen: std::sync::atomic::AtomicU64,
+    generation: std::sync::atomic::AtomicU64,
 }
 
 static HUB: OnceLock<Arc<Hub>> = OnceLock::new();
@@ -311,7 +311,7 @@ impl Hub {
             emit: opts.emit,
             roots: opts.roots,
             dev_ports: opts.dev_ports,
-            gen: std::sync::atomic::AtomicU64::new(0),
+            generation: std::sync::atomic::AtomicU64::new(0),
         });
         if opts.serve && !hub.endpoint.is_empty() {
             let weak = Arc::downgrade(&hub);
@@ -931,7 +931,7 @@ impl Hub {
         let b = {
             let mut g = self.inner.lock();
             let Some(b) = g.browser.take() else { return };
-            g.stopping_gen = b.gen;
+            g.stopping_gen = b.generation;
             Self::forget_tabs_locked(&mut g, true);
             b
         };
@@ -952,7 +952,7 @@ impl Hub {
             let mut g = self.inner.lock();
             let b = g.browser.take();
             if let Some(b) = &b {
-                g.stopping_gen = b.gen;
+                g.stopping_gen = b.generation;
             }
             b
         };
@@ -984,8 +984,8 @@ impl Hub {
 
     pub(crate) fn tab_ref_locked(&self, g: &Inner, sid: &str) -> Option<TabRef> {
         let b = g.browser.as_ref()?;
-        let t = g.sessions.get(sid)?.tab.as_ref().filter(|t| t.gen == b.gen)?;
-        Some(TabRef { sid: sid.to_string(), cdp: Arc::clone(&b.cdp), session: t.cdp_session.clone(), target: t.target_id.clone(), gen: t.gen })
+        let t = g.sessions.get(sid)?.tab.as_ref().filter(|t| t.generation == b.generation)?;
+        Some(TabRef { sid: sid.to_string(), cdp: Arc::clone(&b.cdp), session: t.cdp_session.clone(), target: t.target_id.clone(), generation: t.generation })
     }
 
     pub(crate) fn ensure_browser(self: &Arc<Self>) -> Result<Arc<BrowserHandle>, String> {
@@ -1012,7 +1012,7 @@ impl Hub {
         )?;
         let profile = self.dir.join("profile");
         std::fs::create_dir_all(&profile).map_err(|e| format!("could not create the browser profile folder: {e}"))?;
-        let gen = self.gen.fetch_add(1, std::sync::atomic::Ordering::AcqRel) + 1;
+        let generation = self.generation.fetch_add(1, std::sync::atomic::Ordering::AcqRel) + 1;
         let args = chrome::launch_args(&profile, !cfg.show_window);
         let launched = chrome::launch(&exe, &args).map_err(|e| format!("could not start {}: {e}", chrome::label(&exe)))?;
         let (tx, rx) = mpsc::channel::<super::events::Ev>();
@@ -1029,7 +1029,7 @@ impl Hub {
         )
         .map_err(|e| format!("could not start the DevTools reader: {e}"))?;
         let weak = Arc::downgrade(self);
-        crate::pty::spawn_guarded("agent-browser-events".into(), move || super::events::event_loop(weak, gen, rx))
+        crate::pty::spawn_guarded("agent-browser-events".into(), move || super::events::event_loop(weak, generation, rx))
             .map_err(|e| format!("could not start the event thread: {e}"))?;
         let version = match cdp.call("Browser.getVersion", json!({}), None, Duration::from_secs(20)) {
             Ok(v) => v,
@@ -1050,21 +1050,21 @@ impl Hub {
             None => chrome::label(&exe).to_string(),
         };
         let pid = launched.process.pid;
-        let handle = Arc::new(BrowserHandle { gen, cdp, process: launched.process, label });
+        let handle = Arc::new(BrowserHandle { generation, cdp, process: launched.process, label });
         let start_janitor = {
             let mut g = self.inner.lock();
             Self::forget_tabs_locked(&mut g, true);
             g.browser = Some(Arc::clone(&handle));
             g.last_use = Instant::now();
             g.no_tabs_since = Some(Instant::now());
-            let start = g.janitor_gen != gen;
-            g.janitor_gen = gen;
+            let start = g.janitor_gen != generation;
+            g.janitor_gen = generation;
             start
         };
         tracing::info!(pid, browser = %handle.label, "agent browser started");
         if start_janitor {
             let weak = Arc::downgrade(self);
-            let _ = crate::pty::spawn_guarded("agent-browser-janitor".into(), move || janitor_loop(weak, gen));
+            let _ = crate::pty::spawn_guarded("agent-browser-janitor".into(), move || janitor_loop(weak, generation));
         }
         Ok(handle)
     }
@@ -1108,7 +1108,7 @@ impl Hub {
             g.by_cdp.insert(session.clone(), sid.to_string());
             g.no_tabs_since = None;
             let s = g.sessions.entry(sid.to_string()).or_default();
-            s.tab = Some(Tab::new(b.gen, target.clone(), session.clone(), ctx.clone()));
+            s.tab = Some(Tab::new(b.generation, target.clone(), session.clone(), ctx.clone()));
             s.watch.as_ref().map(|w| (w.max_w, w.max_h))
         };
         for (m, p) in [
@@ -1135,7 +1135,7 @@ impl Hub {
             None,
             CDP_TIMEOUT,
         );
-        let t = TabRef { sid: sid.to_string(), cdp: Arc::clone(cdp), session, target, gen: b.gen };
+        let t = TabRef { sid: sid.to_string(), cdp: Arc::clone(cdp), session, target, generation: b.generation };
         if let Some((w, h)) = watch {
             self.start_screencast(&t, w, h);
         }
@@ -1183,16 +1183,16 @@ impl Hub {
     }
 
     /// The browser pipe closed.
-    pub(crate) fn on_browser_closed(&self, gen: u64) {
+    pub(crate) fn on_browser_closed(&self, generation: u64) {
         let lost: Vec<String> = {
             let mut g = self.inner.lock();
-            if !g.browser.as_ref().is_some_and(|b| b.gen == gen) {
+            if !g.browser.as_ref().is_some_and(|b| b.generation == generation) {
                 return; // an older browser, or stopped on purpose
             }
             let had: Vec<String> = g.sessions.iter().filter(|(_, s)| s.tab.is_some()).map(|(id, _)| id.clone()).collect();
             g.browser = None;
             Self::forget_tabs_locked(&mut g, true);
-            if g.stopping_gen != gen {
+            if g.stopping_gen != generation {
                 g.error = Some("The browser exited unexpectedly; it restarts on the next tool call.".into());
             }
             had
@@ -1205,12 +1205,12 @@ impl Hub {
         self.emit_state();
     }
 
-    fn janitor_tick(&self, gen: u64) -> bool {
+    fn janitor_tick(&self, generation: u64) -> bool {
         let idle = Duration::from_secs(u64::from(self.config.lock().idle_minutes) * 60);
         let now = Instant::now();
         let (close, stop) = {
             let g = self.inner.lock();
-            if !g.browser.as_ref().is_some_and(|b| b.gen == gen) {
+            if !g.browser.as_ref().is_some_and(|b| b.generation == generation) {
                 return false;
             }
             let rows: Vec<JanitorRow> = g
@@ -1273,18 +1273,18 @@ pub(crate) fn plan_janitor(
     (close, if idle_stop { Some("idle") } else if empty_stop { Some("no agent tabs") } else { None })
 }
 
-fn janitor_loop(weak: Weak<Hub>, gen: u64) {
+fn janitor_loop(weak: Weak<Hub>, generation: u64) {
     loop {
         {
             let Some(hub) = weak.upgrade() else { return };
             let mut g = hub.inner.lock();
-            if !g.browser.as_ref().is_some_and(|b| b.gen == gen) {
+            if !g.browser.as_ref().is_some_and(|b| b.generation == generation) {
                 return;
             }
             let _ = hub.cv.wait_for(&mut g, JANITOR_TICK);
         }
         let Some(hub) = weak.upgrade() else { return };
-        if !hub.janitor_tick(gen) {
+        if !hub.janitor_tick(generation) {
             return;
         }
     }
@@ -1304,7 +1304,7 @@ fn cleanup_launch_files(dir: &Path) {
 #[cfg(test)]
 pub(crate) mod tests_support {
     /// A tab record without a browser (event routing tests).
-    pub fn tab(gen: u64, target: &str, session: &str) -> super::Tab {
-        super::Tab::new(gen, target.to_string(), session.to_string(), format!("ctx-{target}"))
+    pub fn tab(generation: u64, target: &str, session: &str) -> super::Tab {
+        super::Tab::new(generation, target.to_string(), session.to_string(), format!("ctx-{target}"))
     }
 }

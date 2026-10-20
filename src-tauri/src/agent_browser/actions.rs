@@ -190,12 +190,12 @@ impl Hub {
     }
 
     fn world(&self, t: &TabRef) -> Result<i64, String> {
-        if let Some(w) = self.inner.lock().sessions.get(&t.sid).and_then(|s| s.tab.as_ref()).filter(|tab| tab.gen == t.gen).and_then(|tab| tab.world) {
+        if let Some(w) = self.inner.lock().sessions.get(&t.sid).and_then(|s| s.tab.as_ref()).filter(|tab| tab.generation == t.generation).and_then(|tab| tab.world) {
             return Ok(w);
         }
         let r = self.tab_call_value(t, "Page.createIsolatedWorld", json!({ "frameId": t.target, "worldName": page::WORLD_NAME }))?;
         let id = r.get("executionContextId").and_then(Value::as_i64).ok_or("the browser returned no isolated world")?;
-        if let Some(tab) = self.inner.lock().sessions.get_mut(&t.sid).and_then(|s| s.tab.as_mut()).filter(|tab| tab.gen == t.gen) {
+        if let Some(tab) = self.inner.lock().sessions.get_mut(&t.sid).and_then(|s| s.tab.as_mut()).filter(|tab| tab.generation == t.generation) {
             tab.world = Some(id);
         }
         Ok(id)
@@ -244,7 +244,7 @@ impl Hub {
         let grace_end = begin + START_GRACE.min(timeout);
         let mut g = self.inner.lock();
         loop {
-            let Some(tab) = g.sessions.get(&t.sid).and_then(|s| s.tab.as_ref()).filter(|tab| tab.gen == t.gen) else { return false };
+            let Some(tab) = g.sessions.get(&t.sid).and_then(|s| s.tab.as_ref()).filter(|tab| tab.generation == t.generation) else { return false };
             if tab.dialog.is_some() {
                 return true;
             }

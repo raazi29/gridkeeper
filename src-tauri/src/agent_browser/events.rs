@@ -57,18 +57,18 @@ pub(crate) struct PendingAck {
     frame: Value,
 }
 
-pub(crate) fn event_loop(weak: Weak<Hub>, gen: u64, rx: mpsc::Receiver<Ev>) {
+pub(crate) fn event_loop(weak: Weak<Hub>, generation: u64, rx: mpsc::Receiver<Ev>) {
     let mut acks: Vec<PendingAck> = Vec::new();
     loop {
         let wait = acks.iter().map(|a| a.due).min().map(|d| d.saturating_duration_since(Instant::now())).unwrap_or(Duration::from_secs(3600));
         match rx.recv_timeout(wait) {
             Ok(Ev::Cdp(ev)) => {
                 let Some(hub) = weak.upgrade() else { return };
-                hub.on_event(gen, ev, &mut acks);
+                hub.on_event(generation, ev, &mut acks);
             }
             Ok(Ev::Closed) | Err(mpsc::RecvTimeoutError::Disconnected) => {
                 if let Some(hub) = weak.upgrade() {
-                    hub.on_browser_closed(gen);
+                    hub.on_browser_closed(generation);
                 }
                 return;
             }
@@ -79,7 +79,7 @@ pub(crate) fn event_loop(weak: Weak<Hub>, gen: u64, rx: mpsc::Receiver<Ev>) {
         }
         let Some(hub) = weak.upgrade() else { return };
         let now = Instant::now();
-        let cdp = hub.inner.lock().browser.as_ref().filter(|b| b.gen == gen).map(|b| Arc::clone(&b.cdp));
+        let cdp = hub.inner.lock().browser.as_ref().filter(|b| b.generation == generation).map(|b| Arc::clone(&b.cdp));
         acks.retain(|a| {
             if a.due > now {
                 return true;
@@ -97,19 +97,19 @@ fn is_real_url(u: &str) -> bool {
 }
 
 impl Hub {
-    pub(crate) fn on_event(self: &Arc<Self>, gen: u64, ev: CdpEvent, acks: &mut Vec<PendingAck>) {
+    pub(crate) fn on_event(self: &Arc<Self>, generation: u64, ev: CdpEvent, acks: &mut Vec<PendingAck>) {
         let p = &ev.params;
         match ev.session_id.as_deref() {
-            None => self.on_browser_event(gen, &ev.method, p),
-            Some(cdp_session) => self.on_tab_event(gen, cdp_session, &ev.method, p, acks),
+            None => self.on_browser_event(generation, &ev.method, p),
+            Some(cdp_session) => self.on_tab_event(generation, cdp_session, &ev.method, p, acks),
         }
     }
 
-    fn browser_cdp(&self, gen: u64) -> Option<Arc<super::cdp::Cdp>> {
-        self.inner.lock().browser.as_ref().filter(|b| b.gen == gen).map(|b| Arc::clone(&b.cdp))
+    fn browser_cdp(&self, generation: u64) -> Option<Arc<super::cdp::Cdp>> {
+        self.inner.lock().browser.as_ref().filter(|b| b.generation == generation).map(|b| Arc::clone(&b.cdp))
     }
 
-    fn on_browser_event(self: &Arc<Self>, gen: u64, method: &str, p: &Value) {
+    fn on_browser_event(self: &Arc<Self>, generation: u64, method: &str, p: &Value) {
         match method {
             "Target.targetCreated" | "Target.targetInfoChanged" => {
                 let info = &p["targetInfo"];
@@ -144,7 +144,7 @@ impl Hub {
                 }
                 if let Some((sid, url)) = close_popup {
                     self.inner.lock().popups.remove(&target);
-                    if let Some(c) = self.browser_cdp(gen) {
+                    if let Some(c) = self.browser_cdp(generation) {
                         let _ = c.send("Target.closeTarget", json!({ "targetId": target }), None);
                     }
                     let msg = format!("The page tried to open a new window ({}); it was closed. Use browser_navigate to open it in your tab.", policy::log_url(&url));
@@ -188,26 +188,26 @@ impl Hub {
                     self.emit_state();
                 }
             }
-            "Browser.downloadWillBegin" => self.on_download_begin(gen, p),
-            "Browser.downloadProgress" => self.on_download_progress(gen, p),
+            "Browser.downloadWillBegin" => self.on_download_begin(generation, p),
+            "Browser.downloadProgress" => self.on_download_progress(generation, p),
             _ => {}
         }
     }
 
-    fn on_tab_event(self: &Arc<Self>, gen: u64, cdp_session: &str, method: &str, p: &Value, acks: &mut Vec<PendingAck>) {
+    fn on_tab_event(self: &Arc<Self>, generation: u64, cdp_session: &str, method: &str, p: &Value, acks: &mut Vec<PendingAck>) {
         let mut g = self.inner.lock();
         let Some(sid) = g.by_cdp.get(cdp_session).cloned() else {
             // A frame for a tab we no longer track: ack so Chromium doesn't stall, then ignore.
             if method == "Page.screencastFrame" {
                 drop(g);
-                if let Some(c) = self.browser_cdp(gen) {
+                if let Some(c) = self.browser_cdp(generation) {
                     let _ = c.send("Page.stopScreencast", json!({}), Some(cdp_session));
                 }
             }
             return;
         };
         let Some(s) = g.sessions.get_mut(&sid) else { return };
-        let Some(tab) = s.tab.as_mut().filter(|t| t.gen == gen) else { return };
+        let Some(tab) = s.tab.as_mut().filter(|t| t.generation == generation) else { return };
         let main = tab.target_id.clone();
         let mut notify = false;
         let mut emit = false;
@@ -320,7 +320,7 @@ impl Hub {
                 if kind == "alert" || kind == "beforeunload" {
                     s.notice(format!("A JavaScript {kind} dialog appeared and was accepted: {}", policy::truncate(&message, 300)));
                     drop(g);
-                    if let Some(c) = self.browser_cdp(gen) {
+                    if let Some(c) = self.browser_cdp(generation) {
                         let _ = c.send("Page.handleJavaScriptDialog", json!({ "accept": true }), Some(cdp_session));
                     }
                     return;
@@ -348,7 +348,7 @@ impl Hub {
                 g.by_cdp.remove(cdp_session);
                 g.by_target.remove(&target);
                 drop(g);
-                if let Some(c) = self.browser_cdp(gen) {
+                if let Some(c) = self.browser_cdp(generation) {
                     let _ = c.send("Target.disposeBrowserContext", json!({ "browserContextId": ctx }), None);
                 }
                 self.cv.notify_all();
@@ -373,7 +373,7 @@ impl Hub {
                     acks.push(PendingAck { due, session: cdp_session.to_string(), frame });
                 } else {
                     // The viewer went away: stop the stream (ack this frame so nothing is left pending).
-                    if let Some(c) = self.browser_cdp(gen) {
+                    if let Some(c) = self.browser_cdp(generation) {
                         let _ = c.send("Page.screencastFrameAck", json!({ "sessionId": frame }), Some(cdp_session));
                         let _ = c.send("Page.stopScreencast", json!({}), Some(cdp_session));
                     }
@@ -402,7 +402,7 @@ impl Hub {
     // Downloads: they land in <data>\agent-browser\downloads\<session>\<guid>; the user decides.
     // -----------------------------------------------------------------------
 
-    fn on_download_begin(self: &Arc<Self>, gen: u64, p: &Value) {
+    fn on_download_begin(self: &Arc<Self>, generation: u64, p: &Value) {
         let guid = p["guid"].as_str().unwrap_or("").to_string();
         if guid.is_empty() || guid.contains(['/', '\\', '.']) {
             return;
@@ -459,7 +459,7 @@ impl Hub {
                 }
             };
             if let Some(ctx) = cancel {
-                if let Some(c) = hub.browser_cdp(gen) {
+                if let Some(c) = hub.browser_cdp(generation) {
                     let mut params = json!({ "guid": guid });
                     if let Some(ctx) = ctx {
                         params["browserContextId"] = Value::String(ctx);
