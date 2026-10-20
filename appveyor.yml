@@ -5,7 +5,8 @@
 #     debug app binary's self-tests: `--gk-self-test` everywhere (data folder, default shell in a PTY, process
 #     containment) and `--gk-self-test-gui` (real window + IPC; Linux under Xvfb, macOS informational)
 #   - tags v*: installers (the commit was tested when it landed on main), uploaded as build artifacts, after the
-#     same self-tests pass against the release binary. macOS builds one universal dmg (Apple Silicon + Intel).
+#     same self-tests pass against the release binary. macOS builds one Intel dmg (Apple Silicon runs it
+#     through Rosetta 2); a tag ending in -macos builds only that dmg.
 # Releases stay manual: download the artifacts and attach them with `gh release create` (docs/HANDOFF.md §5).
 
 version: "{build}"
@@ -59,5 +60,5 @@ for:
     build_script:
       - bash scripts/ci/appveyor.sh
     artifacts:
-      - path: src-tauri/target/universal-apple-darwin/release/bundle/dmg/*.dmg
+      - path: src-tauri/target/release/bundle/dmg/*.dmg
         name: macos-dmg

@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # AppVeyor, Ubuntu / macOS images: system libraries (Linux), Node 22 and Rust if missing, then test (branch
-# builds) or build the installers (tag builds: AppImage + deb on Linux, one universal (Apple Silicon + Intel)
-# ad-hoc signed dmg on macOS). Both paths end with the built binary's self-tests (scripts/ci/self-test.sh):
-# headless everywhere, plus the real window under Xvfb on Linux (informational on macOS).
+# builds) or build the installers (tag builds: AppImage + deb on Linux, one Intel ad-hoc signed dmg on
+# macOS, which Apple Silicon runs through Rosetta 2). Both paths end with the built binary's self-tests
+# (scripts/ci/self-test.sh): headless everywhere, plus the real window under Xvfb on Linux (informational on macOS).
 # Mirrors .github/workflows/ci.yml. Any failing command fails the build.
 set -euo pipefail
 # AppVeyor sets CI=True; the Tauri CLI parses CI as its --ci flag and accepts only "true" or "false".
@@ -40,20 +40,23 @@ echo "host: $(uname -sm)"
 step "npm ci"
 npm ci
 
+# A "vX.Y.Z-macos" tag builds only the macOS dmg (to add it to an existing release).
+if [ "${APPVEYOR_REPO_TAG:-false}" = "true" ] && [ "$(uname)" != "Darwin" ] && [[ "${APPVEYOR_REPO_TAG_NAME:-}" == *-macos ]]; then
+  echo "Tag ${APPVEYOR_REPO_TAG_NAME} builds only the macOS dmg; nothing to do here."
+  exit 0
+fi
+
 if [ "${APPVEYOR_REPO_TAG:-false}" = "true" ]; then
   # Bundle targets come from tauri.linux.conf.json / tauri.macos.conf.json.
   if [ "$(uname)" = "Darwin" ]; then
-    # One dmg for Apple Silicon and Intel: both slices are compiled, then merged with lipo
-    # (bundle: src-tauri/target/universal-apple-darwin/release/bundle/dmg/Gridkeeper_<version>_universal.dmg).
-    # Two release compiles (one per slice) must fit AppVeyor's 60-minute job limit: thin LTO and parallel
-    # codegen here instead of the profile's fat LTO with one codegen unit (slightly larger binary).
-    export CARGO_PROFILE_RELEASE_LTO=thin CARGO_PROFILE_RELEASE_CODEGEN_UNITS=16
-    step "Rust targets for a universal macOS build"
-    rustup target add aarch64-apple-darwin x86_64-apple-darwin
-    step "tauri build --target universal-apple-darwin (${APPVEYOR_REPO_TAG_NAME:-tag})"
-    npx tauri build --target universal-apple-darwin
-    bin=src-tauri/target/universal-apple-darwin/release/gridkeeper
-    lipo -info "$bin"
+    # AppVeyor's macOS VM is an Intel machine where a debug compile alone takes ~40 minutes, so a universal
+    # (two-slice) release build can't fit the 60-minute job limit. One native Intel dmg instead
+    # (bundle: src-tauri/target/release/bundle/dmg/Gridkeeper_<version>_x64.dmg); Apple Silicon Macs run it
+    # through Rosetta 2. Lighter optimization than the release profile so the compile fits as well.
+    export CARGO_PROFILE_RELEASE_LTO=off CARGO_PROFILE_RELEASE_CODEGEN_UNITS=256 CARGO_PROFILE_RELEASE_OPT_LEVEL=1
+    step "tauri build (${APPVEYOR_REPO_TAG_NAME:-tag}, Intel)"
+    npx tauri build
+    bin=src-tauri/target/release/gridkeeper
   else
     step "tauri build (${APPVEYOR_REPO_TAG_NAME:-tag})"
     npx tauri build

@@ -29,6 +29,11 @@ Step "Rust" { cargo --version }
 
 Step "npm ci" { npm ci }
 
+if ($env:APPVEYOR_REPO_TAG -eq "true" -and $env:APPVEYOR_REPO_TAG_NAME -like "*-macos") {
+  Write-Host "Tag $env:APPVEYOR_REPO_TAG_NAME builds only the macOS dmg; nothing to do on Windows."
+  exit 0
+}
+
 if ($env:APPVEYOR_REPO_TAG -eq "true") {
   # Unsigned NSIS installer (tauri.conf.json bundle targets).
   Step "tauri build ($env:APPVEYOR_REPO_TAG_NAME)" { npx tauri build }
