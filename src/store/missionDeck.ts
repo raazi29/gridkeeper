@@ -31,7 +31,7 @@ interface Stored {
   pinned: Record<string, SessionId[]>;
 }
 
-const DEFAULTS: Stored = { view: "graph", tool: "pan", minimap: true, starfield: false, panel: "auto", panelWidth: PANEL_DEFAULT, boardBy: "agent", pinned: {} };
+const DEFAULTS: Stored = { view: "graph", tool: "pan", minimap: false, starfield: false, panel: "auto", panelWidth: PANEL_DEFAULT, boardBy: "agent", pinned: {} };
 
 export function clampPanelWidth(w: number): number {
   return Math.round(Math.min(PANEL_MAX, Math.max(PANEL_MIN, Number.isFinite(w) ? w : PANEL_DEFAULT)));
@@ -45,7 +45,7 @@ function read(): Stored {
     return {
       view: v.view === "board" || v.view === "timeline" || v.view === "list" ? v.view : "graph",
       tool: v.tool === "select" ? "select" : "pan",
-      minimap: v.minimap !== false,
+      minimap: v.minimap === true,
       starfield: v.starfield === true,
       panel: v.panel === "open" || v.panel === "closed" ? v.panel : "auto",
       panelWidth: clampPanelWidth(v.panelWidth ?? PANEL_DEFAULT),
