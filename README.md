@@ -5,7 +5,7 @@
 <p align="center">
   <a href="https://github.com/raazi29/gridkeeper/releases/latest"><img alt="Release v0.2.0" src="https://img.shields.io/badge/release-v0.2.0-4cc2ff?style=flat-square&labelColor=0b1220" /></a>
   <img alt="Platform: Windows | macOS | Linux" src="https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-4cc2ff?style=flat-square&labelColor=0b1220" />
-  <a href="https://github.com/raazi29/gridkeeper/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/raazi29/gridkeeper/actions/workflows/ci.yml/badge.svg?branch=main" /></a>
+  <a href="https://ci.appveyor.com/project/raazi29/gridkeeper"><img alt="CI (AppVeyor)" src="https://ci.appveyor.com/api/projects/status/github/raazi29/gridkeeper?branch=main&svg=true" /></a>
   <a href="LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-3ddc84?style=flat-square&labelColor=0b1220" /></a>
   <img alt="Built with Tauri 2" src="https://img.shields.io/badge/Tauri-2.12-24c8db?style=flat-square&labelColor=0b1220&logo=tauri&logoColor=white" />
   <img alt="Rust" src="https://img.shields.io/badge/Rust-stable-f46623?style=flat-square&labelColor=0b1220&logo=rust&logoColor=white" />
@@ -101,6 +101,40 @@ before you merge.
 - **Edit the plan in place:** quick-add tasks (`n`, Tab completes `@owners`), double-click to edit, assign from a menu, delete with Undo, filter by agent / unassigned / blocked. Edits are conflict-checked against what agents write.
 - **Brief the team** in one dialog (a role-specific line per agent; agents that are asking you something are skipped) and **hand off** finished work to the reviewer with the exact branch and diff command.
 - **Sign-off with evidence:** commits ahead, files and lines changed, uncommitted leftovers and the last commit; *Review diff* opens the branch's committed changes file by file.
+- **A canvas you can zoom and pan:** `Ctrl+wheel` or pinch zooms (25–200 %), the wheel, `Space`+drag or a drag on empty canvas pans, `F` fits. A minimap (`Shift+M`, off by default) shows boxes and cards by state.
+- **Four views** (`1`–`4`): the graph, a board of tasks per agent or per lane, a timeline of each agent's state over time with task and message markers, and a sortable list.
+- **Find and focus:** `Ctrl+F` over agents and tasks, role and state filter chips, spotlight a lane or agent, pin cards (`P`) to the top of their lane.
+- **Bulk actions:** select several agents (Ctrl/Shift+click, `Shift`+drag) and message, restart, stop, move or assign them in one go, through the usual confirmations. An agent side panel shows state, tasks, branch evidence, usage, CPU / RAM and the last output lines.
+- **Motion you can turn off:** messages travel as small animations along the links, moved cards glide, and an optional effects layer adds a briefing crawl; all of it follows *Reduce motion*.
+
+### Brain: project memory that outlives the session
+
+`.gridkeeper/brain/` holds the team's long-term memory as plain Markdown: one note per file in `notes/` (a decision,
+convention, gotcha, how-to, fact or context, with tags and a source), suggestions waiting for you in `inbox/`, and an
+`INDEX.md` that Gridkeeper regenerates from the notes. Briefs and formation starter prompts tell agents to read
+`INDEX.md` first and to suggest new memories in `inbox/`. Gridkeeper also suggests some itself from the mission board
+(finished tasks with `- note:` lines, approved reviews, resolved blockers) and from lead decisions; nothing becomes
+a note until you approve it, unless you turn on auto-approve for the project. The Brain panel (palette or the
+*brain* button in Mission Control) searches, filters, edits, supersedes and forgets notes, with Undo. Notes are local
+by default; sharing them through git (Brain panel settings) adds a marked `.gitignore` block so `notes/` and `INDEX.md` can be committed, while
+the inbox stays local. The format is documented in the `agent-mission` skill, so agents can keep it up without
+Gridkeeper.
+
+### Test runs and the merge assistant
+
+*Run tests* on an agent card, a sign-off card, a lane or the session menu runs the project's test command in that
+agent's worktree, in the background, contained like any session (the whole process tree ends on cancel, time limit or
+finish). The command is detected from `package.json`, `Cargo.toml`, pytest config, `go.mod` or a Makefile, or set per
+workspace and per lane. Cards show the result (`tests ✓ 412 · 38s`, `tests ✗ 3 failed`), pinned to the commit that
+was tested; a failure can be handed back to the agent after you confirm the message.
+
+*merge…* on a sign-off card is Gridkeeper's first git write operation, and it is deliberately cautious. The preview
+writes nothing: commits, diffstat and conflicts (via `git merge-tree`). The merge runs in the main checkout as a
+fast-forward, merge commit or squash of exactly the previewed commit, and is refused, with a reason, when that checkout
+has another branch, local changes or an operation in progress, or when either branch moved since the preview.
+An optional gate requires a passing test run on that commit. The dialog shows the exact git commands; a failed step
+is rolled back (`merge --abort`, or `reset --merge` after a squash) and checked. Removing the worktree and branch afterwards is a separate confirmation (never
+`--force`, `branch -d` only when merged). See ADR-022 and ADR-023 in [docs/TECHNICAL_DECISIONS.md](docs/TECHNICAL_DECISIONS.md).
 
 ### Mission replay: share what your agents did
 
@@ -130,12 +164,56 @@ Read the SKILL.md and every file first (scripts are flagged), then add it to the
 updates or removed. Network requests happen only when you use the panel, and Gridkeeper never runs anything a skill
 contains.
 
+### Team templates
+
+Launch formation › *Templates* exports a team as one `.gridkeeper-team.json` file (groups, roles, agents, starter
+prompts, starter tasks, a recommended lead mode) or imports one, with a preview of every session, worktree command
+and prompt before anything starts. Import drops account ids, arguments, environment variables, absolute paths and
+recognised secret formats, and accepts only built-in agents and catalog presets. Six built-in templates (feature
+squad, bug bash, refactor with a safety net, docs sprint, security review, solo + reviewer) are in the gallery.
+Schema and rules: [docs/team-templates.md](docs/team-templates.md).
+
+### Flight log
+
+A local record of mission work: a streak of days with at least one completed mission task (with shields that cover a
+missed day), ranks by total tasks, medals, and totals for tasks, missions, commits and agents. It lives in the
+Mission Control header, keeps only counts and hashes, and can be turned off or reset in Settings › Interface.
+
 ### Cost & context meter (Claude Code)
 
 Turn it on in Settings › Agents and each Claude pane shows `$0.42 · 37%`: Claude Code's own cost estimate and how
 full the context window is (amber from 80 %). Mission Control totals the workspace. Gridkeeper reads only the
 documented status-line fields (no transcripts, no credentials) and your own status line keeps working. Codex and
 Gemini CLI don't report usage to other programs, so they show "n/a".
+
+**Exact status from hooks.** With the meter on, the same per-pane `--settings` file also adds Claude Code hooks
+(*Exact status for Claude panes*, on by default). Claude Code merges them with your own hooks, which keep running
+unchanged and are never read. Panes then show exactly when Claude needs permission (with the tool name), asks a
+question, runs a tool or has finished, instead of inferring it from terminal output, and Autopilot and hand-offs
+never type into a permission or question prompt. Gridkeeper keeps only the event, tool name, notification type and
+session id.
+
+**Daily spend guard.** A budget per workspace, counted from local midnight over the meter's numbers. A toast warns at
+the share you set; at 100 % it warns, pauses that project's Autopilot, or pauses and sends an OS notification, and a
+banner offers *Raise budget* / *Resume*. Agents are never stopped. Amounts are Claude Code's estimate
+(API-equivalent on a subscription).
+
+### Phone alerts (ntfy)
+
+Opt-in, in Settings › Notifications: a short, generic push to your phone through [ntfy](https://ntfy.sh) (the public
+server or your own) when an agent needs input, hits an error, a lead proposal waits for you, a mission is done or, if you choose, a pane finishes.
+Never terminal output; pane and workspace names only if you allow them. One HTTPS request per alert, at most one per
+pane every 2 minutes and 10 per hour, no retries. Do not disturb, mutes and phone quiet hours apply. Settings shows
+a QR code to subscribe; the optional access token is kept in Windows Credential Manager (a 0600 file elsewhere).
+
+### Native browser panes (Windows)
+
+On Windows each browser pane is a real WebView2 view of its own (a Tauri child webview laid over the pane), so sites
+that refuse embedding, such as GitHub and sign-in pages, work in the grid, with in-page history, real titles,
+new-window links (opened in a new pane or the same one) and downloads. App shortcuts keep working while a page has
+focus. When a menu or dialog covers a pane, it shows a still picture of the page. *Browser engine* in Settings ›
+Interface switches back to the sandboxed iframe engine (*Embedded frame (legacy)*), which is also what macOS and Linux
+use. See ADR-021.
 
 ### Agent browser
 
@@ -158,12 +236,12 @@ log. Pages can contain prompt injections, so keep personal logins out of this br
 <tr>
 <td width="33%" valign="top">🧩 <b>Agent grid</b><br/>Workspaces → groups → panes in a grid, columns or rows. Resizable splits, drag to reorder, maximize any pane.</td>
 <td width="33%" valign="top">👥 <b>Many accounts, truly separate</b><br/>Several Claude Code, Codex and Hermes logins side by side, one isolated home folder per account. Credentials are never read.</td>
-<td width="33%" valign="top">🛰️ <b>Mission Control &amp; Formations</b><br/>A shared task board your agents read and update, a live team view (lead, lanes, sign-off with git evidence) and one-click agent teams with their own worktrees.</td>
+<td width="33%" valign="top">🛰️ <b>Mission Control &amp; Formations</b><br/>A shared task board your agents read and update, a zoomable live team view (lead, lanes, sign-off with git evidence; graph, board, timeline and list views) and one-click agent teams with their own worktrees.</td>
 </tr>
 <tr>
-<td valign="top">🔔 <b>Knows when an agent needs you</b><br/>Attention lamps, unread badges, Windows notifications, a Comms feed. <code>Ctrl+Shift+J</code> jumps to the next alert.</td>
+<td valign="top">🔔 <b>Knows when an agent needs you</b><br/>Attention lamps, unread badges, Windows notifications, a Comms feed; exact Claude Code status from hooks. <code>Ctrl+Shift+J</code> jumps to the next alert.</td>
 <td valign="top">🚀 <b>Fleet &amp; Broadcast</b><br/>Every session in every workspace as live tiles; type once and send to several agents (always with confirmation).</td>
-<td valign="top">🌐 <b>Browser panes &amp; ports</b><br/>Preview dev servers next to the terminals. Listening ports are detected per session; a <code>:5173</code> chip opens them.</td>
+<td valign="top">🌐 <b>Browser panes, ports &amp; agent browser</b><br/>Preview dev servers next to the terminals (native WebView2 panes on Windows). A <code>:5173</code> chip opens a detected port. Agents can get a browser tab of their own.</td>
 </tr>
 <tr>
 <td valign="top">🔀 <b>Changes drawer</b><br/>Branch, ahead/behind and coloured diffs for the workspace and every worktree. Read-only by design.</td>
@@ -181,9 +259,19 @@ log. Pages can contain prompt injections, so keep personal logins out of this br
 <td valign="top">🧰 <b>Skills panel</b><br/>Find trending Agent Skills, review every file, add them to the project pinned to a commit.</td>
 </tr>
 <tr>
-<td valign="top">💰 <b>Cost &amp; context meter</b><br/>Claude Code's cost estimate and context fill per pane and per workspace, from documented status-line data only.</td>
+<td valign="top">💰 <b>Cost meter &amp; spend guard</b><br/>Claude Code's cost estimate and context fill per pane and per workspace, from documented status-line data only, plus an optional daily budget per workspace.</td>
 <td valign="top">🖐️ <b>Drag and drop everywhere</b><br/>Agents between lanes, lanes into phases, tasks between states and onto agents. All with keyboard alternatives.</td>
 <td valign="top">🍎 <b>macOS &amp; Linux (preview)</b><br/>Same app on your login shell, ⌘ shortcuts on macOS, built and tested in CI on all three systems.</td>
+</tr>
+<tr>
+<td valign="top">📚 <b>Brain</b><br/>Long-term project memory in <code>.gridkeeper/brain/</code>: Markdown notes, suggestions you approve, a generated index, search, optional sharing through git.</td>
+<td valign="top">✅ <b>Test runs &amp; merge assistant</b><br/>Contained test runs per agent or lane, results pinned to a commit; a previewed, guarded merge with rollback and worktree clean-up.</td>
+<td valign="top">📋 <b>Team templates</b><br/>Export and import a team as <code>.gridkeeper-team.json</code>, sanitized on import, or start from six built-in templates.</td>
+</tr>
+<tr>
+<td valign="top">📱 <b>Phone alerts</b><br/>Opt-in pushes through ntfy with generic text, rate-limited, respecting Do not disturb and quiet hours.</td>
+<td valign="top">🏅 <b>Flight log</b><br/>A local streak, ranks and medals from completed mission tasks. Counts only, can be turned off.</td>
+<td valign="top">🌍 <b>12 languages</b><br/>Including right-to-left Arabic. Follows the system language or a choice in Settings.</td>
 </tr>
 </table>
 
@@ -360,6 +448,7 @@ These commands have no default shortcut and run from the palette (they can be bo
 - Layout: grid / columns / rows
 - Switch workspace…, go to session…, accounts, launch formation…
 - Browser: new pane (start page), reload, pop out, open in system browser; Ports: refresh
+- Brain: open, add memory…; Team template: import…, export…; Agent browser
 - Themes: choose theme…, next / previous theme, theme: *name*
 
 **Inside a terminal** (fixed, not configurable):
@@ -384,7 +473,8 @@ Ctrl+Shift+C/V.
 | Document | What's in it |
 |---|---|
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Process model, threading, output data flow, session lifecycle, state and restore, security model |
-| [docs/TECHNICAL_DECISIONS.md](docs/TECHNICAL_DECISIONS.md) | ADR-001 … ADR-019: why Tauri, xterm.js, ConPTY, Job Objects, sandboxed browser panes… |
+| [docs/TECHNICAL_DECISIONS.md](docs/TECHNICAL_DECISIONS.md) | ADR-001 … ADR-023: why Tauri, xterm.js, ConPTY, Job Objects, browser panes, phone alerts, the merge assistant, test runs… |
+| [docs/team-templates.md](docs/team-templates.md) | Team template schema, import / export and the built-in gallery |
 | [docs/PERFORMANCE.md](docs/PERFORMANCE.md) | Measured CPU / RAM / GPU on the target machine, and how to reproduce |
 | [docs/RESEARCH.md](docs/RESEARCH.md) | Research questions, evidence and sources |
 | [docs/HANDOFF.md](docs/HANDOFF.md) | Project map and working notes for the next contributor (human or agent) |
@@ -438,9 +528,19 @@ xterm.js 6 in the system WebView2.
   - **Lead control:** Off / Advisor / Autopilot per project, `team.md` status for the lead, `outbox/` instruction files, auto-review of finished branches, rate limits and a Pause button (also in the status bar).
   - **Drag and drop:** cards between lanes, onto the lead box or a new lane; lanes reorder; tasks between states, reordered, or onto an agent to assign. Lanes and the lead box collapse.
   - **Board editing:** quick add, inline edit, assign menu, delete with Undo, filters, keyboard control.
+  - **Canvas and views:** zoom and pan, minimap (`Shift+M`, off by default), graph / board / timeline / list views, find, role and state filters, spotlight, pins, multi-selection with bulk actions, a resizable agent panel, message animations and optional effects (off under *Reduce motion*).
+- **Brain:** project memory in `.gridkeeper/brain/` (`notes/`, `inbox/`, generated `INDEX.md`), suggestions captured from the mission board and lead decisions, local search, approve / edit / supersede / forget, optional sharing through git.
+- **Test runs:** detected or configured test command per workspace and lane, run in the session's worktree inside its own process container, 2 MiB output ring, time limit, queue; results on cards and in the activity log.
+- **Merge assistant:** preview (commits, diffstat, conflicts), fast-forward / merge commit / squash of the previewed commit in the main checkout, refusals instead of repairs, optional test gate, rollback, separate worktree and branch clean-up.
 - **Mission replay:** event-only recordings in `.gridkeeper/replay/`, rendered to MP4 / WebM / GIF in the app.
+- **Flight log:** local streak, ranks and medals from completed mission tasks (Mission Control header; Settings › Interface).
+- **Team templates:** `.gridkeeper-team.json` export / import with a preview and a sanitizer, plus a built-in gallery (Launch formation › Templates).
 - **Skills panel:** discover Agent Skills on GitHub (user-initiated), review every file, install into `.claude/skills` / `.agents/skills` at a pinned commit, update check, remove.
 - **Cost & context meter (opt-in):** Claude Code panes show cost and context use from the documented status-line JSON; totals in Mission Control and Fleet.
+- **Exact Claude status (hooks):** with the meter on, Claude Code hooks in the same `--settings` file report permission prompts, questions, tool use and turn ends; your own hooks keep running.
+- **Spend guard:** daily budget per workspace with a warning share and an action at 100 % (warn, pause Autopilot, pause + notify).
+- **Phone alerts (opt-in):** generic ntfy pushes, rate-limited, with their own quiet hours and minimum priority.
+- **Agent browser:** a shared headless Edge / Chrome with one tab per opted-in Claude Code or Codex session, take over, confirmations for forms, scripts, uploads and downloads.
 - **Formations:** launch a planned agent team (groups, sessions, `git worktree add -b` per member) after one confirmation. Optional starter prompts are held while an agent shows a trust / permission / login question, so nothing is auto-approved.
 - **Quick launch:** *+ New* in the header and one-click agent cards in empty groups start a session in the
   workspace folder; the full dialog handles worktrees, arguments and launching several at once.
@@ -450,7 +550,7 @@ xterm.js 6 in the system WebView2.
 - **Per-pane zoom:** Ctrl+Shift+= / Ctrl+Shift+- / Ctrl+Shift+0 change one pane's font size; the PTY is resized to match.
 - **Paste guard:** pasting more than 20 lines or 64 KiB into a program that has not enabled bracketed paste asks first (Settings › Terminal; programs like Claude Code and Codex are never asked).
 - **Command palette** over commands, sessions in all workspaces, and workspaces.
-- **Browser panes:** preview dev servers, docs and PRs in the grid next to the terminals (*+ New › Browser* / *Open URL…*, `Ctrl+Shift+L`, or `Ctrl+Shift+click` a link in a terminal). Address bar with back / forward / reload, open in the system browser, pop-out window; the pane name can follow the page title. Pages run in a sandboxed frame with no access to Gridkeeper; sites that refuse embedding (e.g. GitHub) and local `file:` pages open in a pop-out Gridkeeper window. Pages keep their state across layout changes, maximize and group switches.
+- **Browser panes:** preview dev servers, docs and PRs in the grid next to the terminals (*+ New › Browser* / *Open URL…*, `Ctrl+Shift+L`, or `Ctrl+Shift+click` a link in a terminal). Address bar with back / forward / reload, open in the system browser, pop-out window; the pane name can follow the page title. On Windows each pane is a native WebView2 child view by default (in-page history, new-window links, downloads, app shortcuts from inside the page). With *Embedded frame (legacy)* and on macOS / Linux, pages run in a sandboxed frame with no access to Gridkeeper; sites that refuse embedding (e.g. GitHub) and local `file:` pages open in a pop-out Gridkeeper window. Pages keep their state across layout changes, maximize and group switches.
 - **Ports:** dev servers your sessions start are detected from the Windows TCP table (listening sockets inside each session's process tree). A `:5173` chip on the pane header opens or focuses a browser pane on it; the Inspector, the browser start page and *Open URL…* list them too. Checked only while one of those views is open or when a session's activity changes, never on a constant timer.
 - **Changes (`Ctrl+Shift+H`, read-only):** a drawer with branch, ahead/behind and changed files for the workspace folder and every session worktree, plus a coloured unified diff (staged / unstaged / new files, capped at 2 MB). It never stages, commits, checks out or resets.
 - **Persistence:** a versioned, atomically written workspace file with a backup. A damaged file is preserved, never silently overwritten.
@@ -562,16 +662,17 @@ status bar), with silenced alerts marked *muted* and the reason.
 <details>
 <summary><b>Settings and data locations</b></summary>
 
-Settings (`Ctrl+,`) has six sections, and everything is saved in `workspaces.json` (theme effects are per machine).
+Settings (`Ctrl+,`) has six sections, and they are saved in `workspaces.json` (theme effects and the language are
+per machine; phone alerts have their own file).
 
 | Section | Settings |
 |---|---|
-| Appearance | Theme gallery, saber colour, glow / holo band / scanlines, density, terminal font, reduce motion, hyperspace jump, focus and presentation modes. |
-| Notifications | Events, delivery, sound set and volume, Do not disturb, quiet hours, agent kinds, mute list. |
+| Appearance | Theme gallery, saber colour, glow / holo band / scanlines, Mission Control effects, density, terminal font, reduce motion, hyperspace jump, focus and presentation modes. |
+| Notifications | Events, delivery, sound set and volume, Do not disturb, quiet hours, agent kinds, mute list, phone alerts (ntfy). |
 | Terminal | Renderer: Auto (WebGL) / WebGL / DOM. Font family (default Cascadia Mono), size 8–32, line height 1–2. Scrollback lines per view (default 5,000; 100–200,000). Output buffer KiB per session in the backend (default 2,048; 256–65,536), used for replay and Copy output. Default layout. Cursor blink. |
-| Agents | Executable paths for Claude Code, Codex and PowerShell, with detected path and version. |
+| Agents | Executable paths for Claude Code, Codex and PowerShell, with detected path and version. Cost meter, exact status for Claude panes (hooks), spend guard per workspace. |
 | Keybindings | Rebind with a key recorder. Forbidden combos are rejected. |
-| Interface | Resource usage in the status bar, sidebar as a rail, inspector panel. |
+| Interface | Language, resource usage in the status bar, sidebar as a rail, inspector panel, browser engine (and new-window links), flight log. |
 
 Everything lives under `%APPDATA%\app.gridkeeper.desktop\`:
 
@@ -579,6 +680,10 @@ Everything lives under `%APPDATA%\app.gridkeeper.desktop\`:
 |---|---|
 | `workspaces.json` | Settings, workspaces, groups, layouts, session definitions (no secrets). `.bak` is the previous good version and `.tmp` is the in-flight write. `workspaces.corrupt-<timestamp>.json` holds preserved damaged files. |
 | `profiles.json` | Account entries (agent, name, folder, colour). |
+| `phone-alerts.json` | Phone alert settings, including the ntfy topic (not in diagnostics bundles). |
+| `spend-ledger.json` | The spend guard's daily totals per workspace. |
+| `meter\` | Per-pane `--settings` files and status / hook state for the cost meter. |
+| `agent-browser\` | The agent browser's own profile, per-session MCP config, opt-ins and allowlist. |
 | `logs\gridkeeper.YYYY-MM-DD.log` | JSON-lines logs, redacted, daily rotation, 7 files kept. The level is set with the `GRIDKEEPER_LOG` env var (e.g. `GRIDKEEPER_LOG=debug,gridkeeper_lib::pty=trace`). |
 | `diagnostics\gridkeeper-diagnostics-<timestamp>.json` | Exported diagnostics bundles (redacted, home directory shown as `~`). |
 
@@ -689,7 +794,8 @@ are `window.__gridkeeper`, `window.__gridkeeperTerminals.list()/text(id)` and `w
 - **Hide view frees the scrollback:** Show replays only the backend buffer (default 2 MiB per session).
 - **Diagnostics leave out the ConPTY host process** (`conhost.exe`). It belongs to neither the host, WebView2 nor a session tree in the in-app numbers. `sample.ps1` reports it separately.
 - **npm `.cmd` shims** run through `cmd.exe /d /c`, so arguments with cmd metacharacters are rejected. Prefer native `.exe` installs.
-- **Browser panes are iframes** (ADR-019): back / forward cover addresses opened through Gridkeeper, not link clicks inside the page; the pane name follows the page's static `<title>` only; `target=_blank` links do nothing inside a pane; app shortcuts don't fire while the keyboard focus is inside a page; DevTools exist only for pop-out windows in debug builds. Opening an http(s) address fetches it once with `curl.exe` to check whether it may be embedded; an HTTPS dev server with a self-signed certificate probes as "TLS error" (use *Show anyway*).
+- **Native browser panes (Windows):** while a menu, dialog or toast covers a pane, the pane shows a still picture of the page. They use Tauri's unstable multi-webview API (ADR-021).
+- **Iframe browser panes** (macOS / Linux, or *Embedded frame (legacy)*; ADR-019): back / forward cover addresses opened through Gridkeeper, not link clicks inside the page; the pane name follows the page's static `<title>` only; `target=_blank` links do nothing inside a pane; app shortcuts don't fire while the keyboard focus is inside a page; DevTools exist only for pop-out windows in debug builds. Opening an http(s) address fetches it once with `curl.exe` to check whether it may be embedded; an HTTPS dev server with a self-signed certificate probes as "TLS error" (use *Show anyway*).
 - **Port detection** sees TCP listeners only (not UDP), and only inside a session's process tree. A server started detached from the session (e.g. a Windows service or `start` into another console tree) is not attributed.
 - **Job assignment race:** a process spawned in the first microseconds after launch, before Job assignment, could escape cleanup (portable-pty doesn't create processes suspended). Not observed in practice.
 - **The installer is not code-signed** and there is no auto-update yet (see [docs/ROADMAP.md](docs/ROADMAP.md)).
