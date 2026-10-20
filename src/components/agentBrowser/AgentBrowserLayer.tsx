@@ -2,9 +2,10 @@
 // with take-over), the shared browser's status, the per-agent action log and the allowlist; plus the
 // floating confirmation prompts, which show even when the view is closed (a tool call is waiting).
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { useShallow } from "zustand/react/shallow";
-import type { AgentBrowserActivity, AgentBrowserPrompt, AgentBrowserSession, SessionId } from "../../lib/types";
+import type { AgentBrowserActivity, AgentBrowserSession, SessionId } from "../../lib/types";
+import { useT, type Translator } from "../../i18n";
 import { isLive, useApp } from "../../store/appStore";
 import { ErrorBoundary } from "../ErrorBoundary";
 import { IconGrid, IconWarn } from "../icons";
@@ -29,12 +30,16 @@ import {
 } from "./store";
 import "./agentBrowser.css";
 
+const bold = (c: ReactNode) => <b>{c}</b>;
+const mono = (c: ReactNode) => <span className="mono">{c}</span>;
+
 export function AgentBrowserLayer() {
+  const t = useT();
   const open = useAgentBrowser((s) => s.open);
   useEffect(() => installAgentBrowserWatch(), []);
   return (
     <>
-      <ErrorBoundary key={open ? "open" : "closed"} scope="Agent browser">
+      <ErrorBoundary key={open ? "open" : "closed"} scope={t("agentBrowser.title")}>
         {open && <AgentBrowserView />}
       </ErrorBoundary>
       <PromptStack />
@@ -54,10 +59,8 @@ function useNames(): Record<SessionId, { name: string; live: boolean }> {
   }, [rows]);
 }
 
-const INJECTION_NOTE =
-  "Web pages can contain prompt injections: text on a page may try to give the agent instructions. Watch what it does, keep personal logins out of this browser, and never give an agent credentials it does not need.";
-
 function AgentBrowserView() {
+  const t = useT();
   const st = useAgentBrowser((s) => s.state);
   const mode = useAgentBrowser((s) => s.mode);
   const selected = useAgentBrowser((s) => s.selected);
@@ -69,24 +72,24 @@ function AgentBrowserView() {
     <Modal
       title={
         <span className="ab-title">
-          Agent browser
-          <span className="ab-title-sub">one shared browser, a tab per agent</span>
+          {t("agentBrowser.title")}
+          <span className="ab-title-sub">{t("agentBrowser.subtitle")}</span>
         </span>
       }
       headerExtra={<BrowserStatus />}
-      ariaLabel="Agent browser"
+      ariaLabel={t("agentBrowser.title")}
       onClose={closeAgentBrowser}
       width={1220}
       className="ab-modal"
     >
       <div className="ab-note" role="note">
         <IconWarn size={13} />
-        <span>{INJECTION_NOTE}</span>
+        <span>{t("agentBrowser.injectionNote")}</span>
       </div>
       {sessions.length === 0 ? (
         <EmptyState />
       ) : mode === "focus" && sel ? (
-        <FocusView row={sel} name={names[sel.sessionId]?.name ?? "session"} live={!!names[sel.sessionId]?.live} />
+        <FocusView row={sel} name={names[sel.sessionId]?.name ?? t("command.sessionFallbackName")} live={!!names[sel.sessionId]?.live} />
       ) : (
         <GridView rows={sessions} names={names} />
       )}
@@ -96,6 +99,7 @@ function AgentBrowserView() {
 }
 
 function BrowserStatus() {
+  const t = useT();
   const st = useAgentBrowser((s) => s.state);
   if (!st) return null;
   return (
@@ -104,17 +108,17 @@ function BrowserStatus() {
         <>
           <span className="ab-dot is-on" aria-hidden />
           <span className="ab-status-text" title={st.executable ?? undefined}>
-            {st.browser ?? "browser"} · pid {st.pid}
+            {t("agentBrowser.status.running", { browser: st.browser ?? t("agentBrowser.status.browserFallback"), pid: st.pid })}
           </span>
-          <Button size="sm" variant="ghost" onClick={() => void stopBrowser()} title="Close the shared browser now; tabs reopen at their last page on the next tool call">
-            Close browser
+          <Button size="sm" variant="ghost" onClick={() => void stopBrowser()} title={t("agentBrowser.status.closeTitle")}>
+            {t("agentBrowser.status.close")}
           </Button>
         </>
       ) : (
         <>
           <span className="ab-dot" aria-hidden />
           <span className="ab-status-text" title={st.executable ?? undefined}>
-            {st.executable ? `not running (starts on the first tool call, stops after ${st.idleMinutes} idle min)` : "no Edge / Chrome / Chromium found"}
+            {st.executable ? t("agentBrowser.status.notRunning", { minutes: st.idleMinutes }) : t("agentBrowser.status.noBrowser")}
           </span>
         </>
       )}
@@ -128,37 +132,33 @@ function BrowserStatus() {
 }
 
 function EmptyState() {
+  const t = useT();
   return (
     <div className="ab-empty">
-      <p>
-        No agent has a browser yet. Tick <b>Give this agent a browser</b> in the New session dialog, or use the session menu ›{" "}
-        <b>Agent browser</b> on a Claude Code or Codex pane and restart it.
-      </p>
-      <p>
-        The agent then gets browser tools (navigate, snapshot, click, type, console and network errors, screenshots) for its own tab in one shared, headless
-        Edge / Chrome with a separate profile. You watch the tab here and can take it over at any time.
-      </p>
+      <p>{t.rich("agentBrowser.empty.intro", { b: bold })}</p>
+      <p>{t("agentBrowser.empty.detail")}</p>
     </div>
   );
 }
 
-function statusBits(row: AgentBrowserSession, live: boolean): { text: string; cls: string }[] {
+function statusBits(row: AgentBrowserSession, live: boolean, t: Translator): { text: string; cls: string }[] {
   const bits: { text: string; cls: string }[] = [];
-  if (row.stopped) bits.push({ text: "stopped", cls: "is-err" });
-  if (row.takenOver) bits.push({ text: "you control it", cls: "is-accent" });
-  if (row.dialog) bits.push({ text: "dialog open", cls: "is-warn" });
-  if (row.busy && !row.takenOver) bits.push({ text: "working", cls: "is-ok" });
-  if (!live) bits.push({ text: "not running", cls: "" });
-  else if (!row.launched) bits.push({ text: row.enabled ? "restart to apply" : "no tools in this run", cls: "is-warn" });
-  else if (!row.connected) bits.push({ text: "tools not connected", cls: "" });
-  if (needsRestart(row, live) && row.launched) bits.push({ text: "restart to apply", cls: "is-warn" });
+  if (row.stopped) bits.push({ text: t("agentBrowser.bit.stopped"), cls: "is-err" });
+  if (row.takenOver) bits.push({ text: t("agentBrowser.bit.youControl"), cls: "is-accent" });
+  if (row.dialog) bits.push({ text: t("agentBrowser.bit.dialogOpen"), cls: "is-warn" });
+  if (row.busy && !row.takenOver) bits.push({ text: t("agentBrowser.bit.working"), cls: "is-ok" });
+  if (!live) bits.push({ text: t("agentBrowser.bit.notRunning"), cls: "" });
+  else if (!row.launched) bits.push({ text: row.enabled ? t("agentBrowser.bit.restartToApply") : t("agentBrowser.bit.noTools"), cls: "is-warn" });
+  else if (!row.connected) bits.push({ text: t("agentBrowser.bit.toolsNotConnected"), cls: "" });
+  if (needsRestart(row, live) && row.launched) bits.push({ text: t("agentBrowser.bit.restartToApply"), cls: "is-warn" });
   return bits;
 }
 
 function Bits({ row, live }: { row: AgentBrowserSession; live: boolean }) {
+  const t = useT();
   return (
     <span className="ab-bits">
-      {statusBits(row, live).map((b) => (
+      {statusBits(row, live, t).map((b) => (
         <span key={b.text} className={`ab-bit ${b.cls}`}>
           {b.text}
         </span>
@@ -168,13 +168,14 @@ function Bits({ row, live }: { row: AgentBrowserSession; live: boolean }) {
 }
 
 function GridView({ rows, names }: { rows: AgentBrowserSession[]; names: Record<SessionId, { name: string; live: boolean }> }) {
+  const t = useT();
   return (
     <div className="ab-grid">
       {rows.map((r) => {
         const n = names[r.sessionId];
-        const name = n?.name ?? "session";
+        const name = n?.name ?? t("command.sessionFallbackName");
         return (
-          <button key={r.sessionId} type="button" className="ab-tile" onClick={() => focusSession(r.sessionId)} title={`Open ${name}'s tab`}>
+          <button key={r.sessionId} type="button" className="ab-tile" onClick={() => focusSession(r.sessionId)} title={t("agentBrowser.tile.openTitle", { name })}>
             <span className="ab-tile-head">
               <span className="ab-tile-name">{name}</span>
               <Bits row={r} live={!!n?.live} />
@@ -182,7 +183,7 @@ function GridView({ rows, names }: { rows: AgentBrowserSession[]; names: Record<
             {r.hasTab ? (
               <ScreencastView sessionId={r.sessionId} maxWidth={480} maxHeight={300} label={name} className="ab-tile-screen" />
             ) : (
-              <span className="ab-tile-empty">{r.launchNote ?? (r.launched ? "No tab yet (opens on the agent's first browser tool call)" : "The browser tools apply when the agent starts")}</span>
+              <span className="ab-tile-empty">{r.launchNote ?? (r.launched ? t("agentBrowser.tile.noTabYet") : t("agentBrowser.tile.appliesAtStart"))}</span>
             )}
             <span className="ab-tile-url" title={r.url ?? undefined}>
               {r.title ? `${r.title} · ` : ""}
@@ -196,13 +197,14 @@ function GridView({ rows, names }: { rows: AgentBrowserSession[]; names: Record<
 }
 
 function FocusView({ row, name, live }: { row: AgentBrowserSession; name: string; live: boolean }) {
+  const t = useT();
   const log = useAgentBrowser((s) => s.log[row.sessionId]);
   const [text, setText] = useState("");
   return (
     <div className="ab-focus">
       <div className="ab-focus-bar">
         <Button size="sm" variant="ghost" icon={<IconGrid size={13} />} onClick={showGrid}>
-          All tabs
+          {t("agentBrowser.focus.allTabs")}
         </Button>
         <span className="ab-focus-name">{name}</span>
         <Bits row={row} live={live} />
@@ -212,31 +214,31 @@ function FocusView({ row, name, live }: { row: AgentBrowserSession; name: string
           variant={row.takenOver ? "primary" : "default"}
           disabled={!row.hasTab || row.stopped}
           onClick={() => void takeOver(row.sessionId, !row.takenOver)}
-          title={row.takenOver ? "Give the tab back to the agent (its waiting calls continue)" : "Control the tab yourself; the agent's browser calls wait until you hand it back"}
+          title={row.takenOver ? t("agentBrowser.focus.handBackTitle") : t("agentBrowser.focus.takeOverTitle")}
         >
-          {row.takenOver ? "Hand back to agent" : "Take over"}
+          {row.takenOver ? t("agentBrowser.focus.handBack") : t("agentBrowser.focus.takeOver")}
         </Button>
         <Button
           size="sm"
           variant={row.stopped ? "default" : "danger"}
           onClick={() => void setStopped(row.sessionId, !row.stopped)}
-          title={row.stopped ? "Let the agent use its browser tools again" : "Close the agent's tab and refuse its browser calls until you allow them again or it restarts"}
+          title={row.stopped ? t("agentBrowser.focus.allowTitle") : t("agentBrowser.focus.stopTitle")}
         >
-          {row.stopped ? "Allow browsing" : "Stop agent browsing"}
+          {row.stopped ? t("agentBrowser.focus.allow") : t("agentBrowser.focus.stop")}
         </Button>
       </div>
       <div className="ab-url" title={row.url ?? undefined}>
         {row.title && <span className="ab-url-title">{row.title}</span>}
-        <span className="mono">{row.url ?? "no page yet"}</span>
+        <span className="mono">{row.url ?? t("agentBrowser.focus.noPage")}</span>
       </div>
-      {row.dialog && <div className="ab-dialog">JavaScript dialog: {row.dialog} (the agent answers it with browser_handle_dialog)</div>}
+      {row.dialog && <div className="ab-dialog">{t("agentBrowser.focus.dialog", { message: row.dialog })}</div>}
       <div className="ab-focus-cols">
         <div className="ab-focus-main">
           {row.hasTab ? (
             <ScreencastView sessionId={row.sessionId} maxWidth={1280} maxHeight={800} interactive={row.takenOver} label={name} className="ab-focus-screen" />
           ) : (
             <div className="ab-screen ab-focus-screen">
-              <div className="ab-screen-empty">{row.stopped ? "Browsing is stopped for this agent." : (row.launchNote ?? "No tab yet: it opens on the agent's first browser tool call.")}</div>
+              <div className="ab-screen-empty">{row.stopped ? t("agentBrowser.focus.stopped") : (row.launchNote ?? t("agentBrowser.focus.noTabYet"))}</div>
             </div>
           )}
           {row.takenOver && (
@@ -249,8 +251,8 @@ function FocusView({ row, name, live }: { row: AgentBrowserSession; name: string
                 setText("");
               }}
             >
-              <input className="input mono" value={text} onChange={(e) => setText(e.target.value)} placeholder="Type or paste text into the focused field, then Enter" aria-label="Text to insert into the page" />
-              <span className="ab-type-hint">Click the page to focus it; keys and the mouse go to the page while you control it.</span>
+              <input className="input mono" value={text} onChange={(e) => setText(e.target.value)} placeholder={t("agentBrowser.focus.typePlaceholder")} aria-label={t("agentBrowser.focus.typeLabel")} />
+              <span className="ab-type-hint">{t("agentBrowser.focus.typeHint")}</span>
             </form>
           )}
         </div>
@@ -266,11 +268,12 @@ function timeOf(ms: number): string {
 }
 
 function ActionLog({ log }: { log: AgentBrowserActivity[] }) {
+  const t = useT();
   return (
-    <div className="ab-log" aria-label="Browser actions">
-      <div className="ab-log-head">Actions (this run)</div>
+    <div className="ab-log" aria-label={t("agentBrowser.log.label")}>
+      <div className="ab-log-head">{t("agentBrowser.log.title")}</div>
       {log.length === 0 ? (
-        <div className="ab-log-empty">Nothing yet.</div>
+        <div className="ab-log-empty">{t("agentBrowser.log.empty")}</div>
       ) : (
         <ol className="ab-log-list">
           {[...log].reverse().map((e, i) => (
@@ -286,6 +289,7 @@ function ActionLog({ log }: { log: AgentBrowserActivity[] }) {
 }
 
 function Settings() {
+  const t = useT();
   const st = useAgentBrowser((s) => s.state);
   const saved = (st?.allowlist ?? []).join("\n");
   const [draft, setDraft] = useState<string | null>(null);
@@ -294,14 +298,10 @@ function Settings() {
   const dirty = draft !== null && draft !== saved;
   return (
     <details className="ab-settings">
-      <summary>Allowlist and idle timeout</summary>
+      <summary>{t("agentBrowser.settings.title")}</summary>
       <div className="ab-settings-body">
         <label className="ab-settings-field">
-          <span>
-            Hosts where agents may submit forms and run scripts without asking (one per line: <span className="mono">host</span>,{" "}
-            <span className="mono">host:port</span> or <span className="mono">*.domain</span>). Always allowed: localhost, 127.0.0.1, ::1, and this machine's
-            private addresses on a port a session's dev server listens on. Uploads and downloads always ask.
-          </span>
+          <span>{t.rich("agentBrowser.settings.allowlistHelp", { mono })}</span>
           <textarea className="input mono ab-allow" rows={4} value={value} onChange={(e) => setDraft(e.target.value)} placeholder="staging.example.com" spellCheck={false} />
         </label>
         <div className="ab-settings-row">
@@ -314,24 +314,26 @@ function Settings() {
               setDraft(null);
             }}
           >
-            Save allowlist
+            {t("agentBrowser.settings.save")}
           </Button>
           <label className="ab-idle">
-            Close the browser after
-            <input
-              className="input mono"
-              type="number"
-              min={1}
-              max={240}
-              value={idle ?? String(st?.idleMinutes ?? 10)}
-              onChange={(e) => setIdle(e.target.value)}
-              onBlur={() => {
-                const n = Math.round(Number(idle));
-                if (idle !== null && n >= 1 && n <= 240 && n !== st?.idleMinutes) void saveIdleMinutes(n);
-                setIdle(null);
-              }}
-            />
-            minutes without a tool call
+            {t.rich("agentBrowser.settings.idle", {
+              input: (
+                <input
+                  className="input mono"
+                  type="number"
+                  min={1}
+                  max={240}
+                  value={idle ?? String(st?.idleMinutes ?? 10)}
+                  onChange={(e) => setIdle(e.target.value)}
+                  onBlur={() => {
+                    const n = Math.round(Number(idle));
+                    if (idle !== null && n >= 1 && n <= 240 && n !== st?.idleMinutes) void saveIdleMinutes(n);
+                    setIdle(null);
+                  }}
+                />
+              ),
+            })}
           </label>
         </div>
       </div>
@@ -341,14 +343,8 @@ function Settings() {
 
 // ---- confirmations ---------------------------------------------------------------------------
 
-const KIND_TITLE: Record<AgentBrowserPrompt["kind"], string> = {
-  formSubmit: "submit a form",
-  script: "run a script",
-  upload: "upload files",
-  download: "keep a download",
-};
-
 function PromptStack() {
+  const t = useT();
   const prompts = useAgentBrowser((s) => s.state?.prompts);
   const names = useNames();
   const [now, setNow] = useState(() => Date.now());
@@ -360,34 +356,34 @@ function PromptStack() {
   }, [count]);
   if (!prompts || prompts.length === 0) return null;
   return (
-    <div className="ab-prompts" role="region" aria-label="Agent browser questions">
+    <div className="ab-prompts" role="region" aria-label={t("agentBrowser.prompt.region")}>
       {prompts.map((p) => {
-        const name = names[p.sessionId]?.name ?? "An agent";
+        const name = names[p.sessionId]?.name ?? t("agentBrowser.prompt.anAgent");
         const left = Math.max(0, Math.round((p.expiresMs - now) / 1000));
         return (
-          <div key={p.id} className="ab-prompt" role="alertdialog" aria-label={`${name} wants to ${KIND_TITLE[p.kind]}`}>
+          <div key={p.id} className="ab-prompt" role="alertdialog" aria-label={t("agentBrowser.prompt.aria", { name, kind: p.kind })}>
             <div className="ab-prompt-head">
               <IconWarn size={13} />
               <b>{name}</b>
-              <span>wants to {KIND_TITLE[p.kind]}</span>
+              <span>{t("agentBrowser.prompt.wantsTo", { kind: p.kind })}</span>
               {p.origin && <span className="mono ab-prompt-origin">{p.origin}</span>}
               <span className="ab-spacer" />
-              <span className="ab-prompt-left" title="Counts as No when it runs out">
-                {left}s
+              <span className="ab-prompt-left" title={t("agentBrowser.prompt.leftTitle")}>
+                {t("agentBrowser.prompt.secondsLeft", { seconds: left })}
               </span>
             </div>
             <pre className="ab-prompt-detail">{p.detail}</pre>
             <div className="ab-prompt-actions">
               <Button size="sm" variant="primary" onClick={() => void answerPrompt(p.id, true)}>
-                Allow once
+                {t("agentBrowser.prompt.allowOnce")}
               </Button>
               {p.rememberHost && (
-                <Button size="sm" onClick={() => void answerPrompt(p.id, true, true)} title={`Add ${p.rememberHost} to the allowlist`}>
-                  Always allow {p.rememberHost}
+                <Button size="sm" onClick={() => void answerPrompt(p.id, true, true)} title={t("agentBrowser.prompt.alwaysAllowTitle", { host: p.rememberHost })}>
+                  {t("agentBrowser.prompt.alwaysAllow", { host: p.rememberHost })}
                 </Button>
               )}
               <Button size="sm" variant="danger" onClick={() => void answerPrompt(p.id, false)}>
-                Deny
+                {t("agentBrowser.prompt.deny")}
               </Button>
             </div>
           </div>

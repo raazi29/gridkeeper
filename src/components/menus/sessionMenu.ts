@@ -143,16 +143,16 @@ export async function confirmStop(id: SessionId, name: string): Promise<void> {
 export function agentBrowserSubmenu(id: SessionId, ab: { enabled: boolean; launched: boolean }, live: boolean, ctx: SessionMenuCtx): MenuAction {
   const pending = live && ab.enabled !== ab.launched;
   return {
-    label: "Agent browser",
+    label: t("agentBrowser.title"),
     children: [
       {
-        label: "Give this agent a browser",
+        label: t("newSession.giveBrowser"),
         checked: ab.enabled,
-        hint: pending ? "restart to apply" : live ? "applies on restart" : undefined,
+        hint: pending ? t("agentBrowser.bit.restartToApply") : live ? t("menu.session.agentBrowser.appliesOnRestart") : undefined,
         onSelect: () => void setBrowserEnabled(id, !ab.enabled),
       },
       {
-        label: "Open agent browser view",
+        label: t("menu.session.agentBrowser.openView"),
         onSelect: () => {
           ctx.onNavigate?.();
           openAgentBrowser(id);

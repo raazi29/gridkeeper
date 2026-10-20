@@ -6,6 +6,7 @@
 import { create } from "zustand";
 import { notify } from "../../actions/notify";
 import { startSession } from "../../actions/sessions";
+import { t, type MessageKey } from "../../i18n";
 import { agentBrowserIpc, errorMessage, onAgentBrowserActivity, onAgentBrowserState } from "../../lib/ipc";
 import type { AgentBrowserActivity, AgentBrowserOutcome, AgentBrowserSession, AgentBrowserState, AgentKind, SessionId } from "../../lib/types";
 import { recordActivity, sessionLabelOf, type ActivityLevel } from "../../store/activity";
@@ -106,6 +107,7 @@ export function installAgentBrowserWatch(): () => void {
         kind: "browser",
         level: activityLevel(ev),
         message: `browser: ${ev.summary}`,
+        text: t("agentBrowser.activityText", { summary: ev.summary }),
         result: ev.outcome === "ok" ? ev.tool.replace(/^browser_/, "") : ev.outcome,
         at: ev.atMs,
       });
@@ -121,16 +123,17 @@ export function installAgentBrowserWatch(): () => void {
   };
 }
 
-async function run(what: string, p: Promise<unknown>) {
+/** `what`: an error toast key with an {error} placeholder. */
+async function run(what: MessageKey, p: Promise<unknown>) {
   try {
     await p;
   } catch (e) {
-    notify("error", `${what}: ${errorMessage(e)}`);
+    notify("error", t(what, { error: errorMessage(e) }));
   }
 }
 
 export function setBrowserEnabled(id: SessionId, enabled: boolean) {
-  return run("Agent browser", agentBrowserIpc.setSession(id, enabled));
+  return run("agentBrowser.toast.error", agentBrowserIpc.setSession(id, enabled));
 }
 
 /** New session with a browser: opt in first, then start (the launch reads the opt-in). */
@@ -138,15 +141,15 @@ export async function startWithBrowser(id: SessionId) {
   try {
     await agentBrowserIpc.setSession(id, true);
   } catch (e) {
-    notify("warn", `Agent browser: ${errorMessage(e)}. Starting without it.`);
+    notify("warn", t("agentBrowser.toast.startWithout", { error: errorMessage(e) }));
   }
   await startSession(id, { mode: "none" });
 }
 
-export const takeOver = (id: SessionId, on: boolean) => run("Take over", agentBrowserIpc.takeOver(id, on));
-export const setStopped = (id: SessionId, stopped: boolean) => run("Agent browser", agentBrowserIpc.setStopped(id, stopped));
-export const answerPrompt = (promptId: number, allow: boolean, remember = false) => run("Agent browser", agentBrowserIpc.answer(promptId, allow, remember));
-export const stopBrowser = () => run("Close browser", agentBrowserIpc.stopBrowser());
-export const saveAllowlist = (entries: string[]) => run("Allowlist", agentBrowserIpc.setAllowlist(entries));
-export const saveIdleMinutes = (m: number) => run("Idle timeout", agentBrowserIpc.setIdleMinutes(m));
+export const takeOver = (id: SessionId, on: boolean) => run("agentBrowser.toast.takeOverError", agentBrowserIpc.takeOver(id, on));
+export const setStopped = (id: SessionId, stopped: boolean) => run("agentBrowser.toast.error", agentBrowserIpc.setStopped(id, stopped));
+export const answerPrompt = (promptId: number, allow: boolean, remember = false) => run("agentBrowser.toast.error", agentBrowserIpc.answer(promptId, allow, remember));
+export const stopBrowser = () => run("agentBrowser.toast.closeBrowserError", agentBrowserIpc.stopBrowser());
+export const saveAllowlist = (entries: string[]) => run("agentBrowser.toast.allowlistError", agentBrowserIpc.setAllowlist(entries));
+export const saveIdleMinutes = (m: number) => run("agentBrowser.toast.idleTimeoutError", agentBrowserIpc.setIdleMinutes(m));
 export const sendInput = (id: SessionId, ev: Parameters<typeof agentBrowserIpc.input>[1]) => agentBrowserIpc.input(id, ev).catch(() => {});

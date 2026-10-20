@@ -4,6 +4,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { Channel } from "@tauri-apps/api/core";
+import { useT } from "../../i18n";
 import { agentBrowserIpc } from "../../lib/ipc";
 import type { SessionId } from "../../lib/types";
 import { type FrameHeader, keyInput, mapPoint, modifiersOf, mouseButton, parseFrame } from "./frames";
@@ -21,6 +22,7 @@ export interface ScreencastViewProps {
 }
 
 export function ScreencastView({ sessionId, maxWidth, maxHeight, interactive = false, className, label }: ScreencastViewProps) {
+  const t = useT();
   const canvas = useRef<HTMLCanvasElement>(null);
   const header = useRef<FrameHeader | null>(null);
   const [hasFrame, setHasFrame] = useState(false);
@@ -124,7 +126,7 @@ export function ScreencastView({ sessionId, maxWidth, maxHeight, interactive = f
         ref={canvas}
         className="ab-canvas"
         tabIndex={interactive ? 0 : -1}
-        aria-label={interactive ? `${label}: you control this tab (keyboard and mouse go to the page)` : `${label}: live view`}
+        aria-label={interactive ? t("agentBrowser.screen.controlLabel", { label }) : t("agentBrowser.screen.liveLabel", { label })}
         onPointerDown={(e) => mouse("down", e)}
         onPointerUp={(e) => mouse("up", e)}
         onPointerMove={(e) => mouse("move", e)}
@@ -152,7 +154,7 @@ export function ScreencastView({ sessionId, maxWidth, maxHeight, interactive = f
           void sendInput(sessionId, ev);
         }}
       />
-      {!hasFrame && <div className="ab-screen-empty">{visible ? "Waiting for the first frame…" : "Paused while the window is hidden"}</div>}
+      {!hasFrame && <div className="ab-screen-empty">{visible ? t("agentBrowser.screen.waiting") : t("agentBrowser.screen.paused")}</div>}
     </div>
   );
 }
