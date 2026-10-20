@@ -202,7 +202,7 @@ export function renderCask({ version, repo, sha }) {
     "",
   );
   if (layout === "arm") L.push("  depends_on arch: :arm64");
-  if (layout === "intel") L.push("  depends_on arch: :x86_64");
+  // An Intel-only dmg has no arch restriction: Apple Silicon Macs run it through Rosetta 2.
   L.push(
     "  depends_on macos: :big_sur",
     "",

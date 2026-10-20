@@ -334,9 +334,8 @@ dependency (WSL-only on Windows).
 ## Install
 
 > [!NOTE]
-> The v0.2.0 installers are on their way. Until the v0.2.0 release is published, the
-> [latest release](https://github.com/raazi29/gridkeeper/releases/latest) is v0.1.1 (Windows), and everything in this
-> README is available by building from source (see *Build from source* below).
+> The macOS `.dmg` (and with it the Homebrew cask) is being added to the v0.2.0 release. Until then, build from
+> source on macOS (see *Build from source* below). Windows and Linux installers are available now.
 
 | | One-liner |
 |---|---|
@@ -365,7 +364,7 @@ gridkeeper`, `winget upgrade raazi29.Gridkeeper`, or by installing the new relea
 | | Windows 10/11 | macOS 11+ | Linux (x86_64) |
 |---|---|---|---|
 | Status | reference platform | preview: CI builds it, runs the tests and starts the built app; not yet used by hand | preview: CI builds it, runs the tests and starts the built app with its window (Xvfb); not yet used by hand |
-| Download | `…_x64-setup.exe` (NSIS, per-user) | `…_universal.dmg` (Apple Silicon and Intel; ad-hoc signed, not notarized) | `.deb` (recommended) or `.AppImage` |
+| Download | `…_x64-setup.exe` (NSIS, per-user) | `…_x64.dmg` (Intel; Apple Silicon runs it through Rosetta 2; ad-hoc signed, not notarized) | `.deb` (recommended) or `.AppImage` |
 | Default terminal | PowerShell 7 (5.1 fallback) | your login shell (`$SHELL`, zsh by default) | your login shell (`$SHELL`, bash by default) |
 | Shortcuts | Ctrl+Shift+… | ⇧⌘… (⌃ keys always go to the terminal) | Ctrl+Shift+… |
 | Menu bar | none (command palette, context menus) | native menu (App, Edit, View, Window, Help); ⌘W hides the window, ⌘Q quits | none (command palette, context menus) |

@@ -141,10 +141,10 @@ describe("Homebrew cask", () => {
     expect(rb).toContain("_#{version}_#{arch}.dmg");
     expect(rb).not.toContain("depends_on arch");
   });
-  it("single arch: restricted to that arch", () => {
+  it("single arch: arm-only is restricted, Intel-only is not (Rosetta 2)", () => {
     expect(renderCask({ version: "0.3.0", repo: REPO, sha: { aarch64: A } })).toContain("depends_on arch: :arm64\n");
     const intel = renderCask({ version: "0.3.0", repo: REPO, sha: { x64: C } });
-    expect(intel).toContain("depends_on arch: :x86_64\n");
+    expect(intel).not.toContain("depends_on arch");
     expect(intel).toContain("_x64.dmg");
   });
   it("has the fixed stanzas", () => {

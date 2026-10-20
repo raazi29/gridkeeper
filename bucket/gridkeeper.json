@@ -15,7 +15,7 @@
     "architecture": {
         "64bit": {
             "url": "https://github.com/raazi29/gridkeeper/releases/download/v0.2.0/Gridkeeper_0.2.0_x64-setup.exe#/dl.7z",
-            "hash": "0000000000000000000000000000000000000000000000000000000000000000"
+            "hash": "8732fd13641f234c8ec78c5f400b5b8b1835530c079cc77b9ffa789a8fc72d54"
         }
     },
     "post_install": "Remove-Item \"$dir\\`$*\", \"$dir\\uninstall*\" -Force -Recurse -ErrorAction Ignore",

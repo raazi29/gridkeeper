@@ -24,6 +24,6 @@ AppsAndFeaturesEntries:
 Installers:
 - Architecture: x64
   InstallerUrl: https://github.com/raazi29/gridkeeper/releases/download/v0.2.0/Gridkeeper_0.2.0_x64-setup.exe
-  InstallerSha256: 0000000000000000000000000000000000000000000000000000000000000000
+  InstallerSha256: 8732FD13641F234C8EC78C5F400B5B8B1835530C079CC77B9FFA789A8FC72D54
 ManifestType: installer
 ManifestVersion: 1.28.0
