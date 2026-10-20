@@ -66,7 +66,7 @@ impl Response {
 }
 
 /// One line (without the newline), at most `cap` bytes. `Ok(None)` at EOF before any byte.
-pub fn read_line_capped(r: &mut impl BufRead, cap: usize) -> io::Result<Option<String>> {
+pub fn read_line_capped<R: BufRead + ?Sized>(r: &mut R, cap: usize) -> io::Result<Option<String>> {
     let mut buf = Vec::new();
     loop {
         let (done, used) = {
