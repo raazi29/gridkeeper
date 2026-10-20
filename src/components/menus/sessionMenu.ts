@@ -13,6 +13,7 @@ import { messageSessions } from "../../actions/groupActions";
 import { handoffSubmenu } from "../../actions/handoff";
 import { testRunMenuItems } from "../testrun/menus";
 import { isBrowserMeta } from "../../lib/browserPanes";
+import { isBrowserCapable, openAgentBrowser, sessionRow, setBrowserEnabled, useAgentBrowser } from "../agentBrowser/store";
 import { usePorts } from "../../store/ports";
 import { toggleSessionMute } from "../../actions/notifyPrefs";
 import { clearSession, copyOutput, hideView, restartSession, showView, startSession, stopSession } from "../../actions/sessions";
@@ -59,6 +60,8 @@ export interface SessionMenuState {
   count: number;
   maximized: boolean;
   resume: ResumeMode;
+  /** Claude Code / Codex: the agent browser opt-in (undefined for other agents). */
+  agentBrowser?: { enabled: boolean; launched: boolean };
 }
 
 export function sessionMenuState(id: SessionId): SessionMenuState {
@@ -82,7 +85,13 @@ export function sessionMenuState(id: SessionId): SessionMenuState {
     count: loc?.group.sessionIds.length ?? 0,
     maximized: !!loc && loc.group.layout.maximized === id,
     resume: meta?.resumeOnRestore ?? { mode: "none" },
+    agentBrowser: isBrowserCapable(meta?.agent) ? agentBrowserOf(id) : undefined,
   };
+}
+
+function agentBrowserOf(id: SessionId): { enabled: boolean; launched: boolean } {
+  const row = sessionRow(useAgentBrowser.getState().state, id);
+  return { enabled: !!row?.enabled, launched: !!row?.launched };
 }
 
 /** Agents that keep a conversation (resume vs fresh matters). */
@@ -128,6 +137,29 @@ export async function confirmStop(id: SessionId, name: string): Promise<void> {
     danger: true,
   });
   if (ok) await stopSession(id, false);
+}
+
+/** "Agent browser" submenu: the per-session opt-in (applied at the next launch) and the view. */
+export function agentBrowserSubmenu(id: SessionId, ab: { enabled: boolean; launched: boolean }, live: boolean, ctx: SessionMenuCtx): MenuAction {
+  const pending = live && ab.enabled !== ab.launched;
+  return {
+    label: "Agent browser",
+    children: [
+      {
+        label: "Give this agent a browser",
+        checked: ab.enabled,
+        hint: pending ? "restart to apply" : live ? "applies on restart" : undefined,
+        onSelect: () => void setBrowserEnabled(id, !ab.enabled),
+      },
+      {
+        label: "Open agent browser view",
+        onSelect: () => {
+          ctx.onNavigate?.();
+          openAgentBrowser(id);
+        },
+      },
+    ],
+  };
 }
 
 export function buildSessionMenu(id: SessionId, ctx: SessionMenuCtx, st: SessionMenuState = sessionMenuState(id)): MenuItem[] {
@@ -234,6 +266,7 @@ export function buildSessionMenu(id: SessionId, ctx: SessionMenuCtx, st: Session
     "separator",
     { label: st.muted ? t("menu.unmuteNotifications") : t("menu.muteNotifications"), checked: st.muted, onSelect: () => toggleSessionMute(id) },
     roleSubmenu(id, st.role, customRole),
+    ...(st.agentBrowser ? [agentBrowserSubmenu(id, st.agentBrowser, st.live, ctx)] : []),
     { label: t("menu.session.rename"), hint: surface === "mission" ? "F2" : undefined, onSelect: rename },
   );
   if (!inPane) items.push({ label: t("menu.session.copyOutput"), onSelect: () => void copyOutput(id) });

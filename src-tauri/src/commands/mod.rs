@@ -1,3 +1,4 @@
+pub mod agent_browser;
 pub mod app;
 pub mod brain;
 pub mod merge;

@@ -1204,3 +1204,75 @@ export interface WorktreeCleanupOutcome {
   error: string | null;
   steps: GitStepLog[];
 }
+
+// ---- Agent browser (shared browser, a tab per agent; src-tauri/src/agent_browser/model.rs) --------
+
+export const EVT_AGENT_BROWSER_STATE = "agent-browser-state";
+export const EVT_AGENT_BROWSER_ACTIVITY = "agent-browser-activity";
+
+export interface AgentBrowserSession {
+  sessionId: SessionId;
+  /** "Give this agent a browser" (applies at the next launch). */
+  enabled: boolean;
+  /** The running process was launched with the browser tools. */
+  launched: boolean;
+  /** Why the last launch got no browser tools. */
+  launchNote: string | null;
+  /** The agent's MCP helper is connected. */
+  connected: boolean;
+  hasTab: boolean;
+  url: string | null;
+  title: string | null;
+  /** The user controls the tab; agent tool calls wait. */
+  takenOver: boolean;
+  /** The user stopped browsing for this agent. */
+  stopped: boolean;
+  busy: boolean;
+  /** An open JavaScript confirm / prompt dialog. */
+  dialog: string | null;
+  lastAction: string | null;
+  lastActionMs: number | null;
+}
+
+export type AgentBrowserPromptKind = "formSubmit" | "script" | "upload" | "download";
+
+export interface AgentBrowserPrompt {
+  id: number;
+  sessionId: SessionId;
+  kind: AgentBrowserPromptKind;
+  origin: string | null;
+  detail: string;
+  createdMs: number;
+  expiresMs: number;
+  /** "Always allow <host>" is offered. */
+  rememberHost: string | null;
+}
+
+export interface AgentBrowserState {
+  running: boolean;
+  browser: string | null;
+  pid: number | null;
+  executable: string | null;
+  error: string | null;
+  idleMinutes: number;
+  allowlist: string[];
+  sessions: AgentBrowserSession[];
+  prompts: AgentBrowserPrompt[];
+}
+
+export type AgentBrowserOutcome = "ok" | "error" | "blocked" | "denied" | "info";
+
+export interface AgentBrowserActivity {
+  sessionId: SessionId;
+  atMs: number;
+  tool: string;
+  summary: string;
+  url: string | null;
+  outcome: AgentBrowserOutcome;
+}
+
+/** Input for a taken-over tab; coordinates in CSS pixels of the page viewport. */
+export type AgentBrowserInput =
+  | { type: "mouse"; action: "down" | "up" | "move" | "wheel"; x: number; y: number; button?: "left" | "middle" | "right" | "none"; clickCount?: number; deltaX?: number; deltaY?: number; modifiers: number }
+  | { type: "key"; action: "down" | "up"; key: string; code: string; keyCode: number; text?: string; modifiers: number }
+  | { type: "text"; text: string };

@@ -15,7 +15,7 @@ import { useAttention, type AttnState, type SessionAttn } from "./attention";
 
 export const ACTIVITY_LIMIT = 500;
 
-export type ActivityKind = "lifecycle" | "attention" | "broadcast" | "formation" | "worktree" | "mission" | "tests" | "merge";
+export type ActivityKind = "lifecycle" | "attention" | "broadcast" | "formation" | "worktree" | "mission" | "tests" | "merge" | "browser";
 export type ActivityLevel = "info" | "ok" | "needs" | "error";
 
 export interface ActivityEvent {

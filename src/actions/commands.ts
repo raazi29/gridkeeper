@@ -23,6 +23,7 @@ import { openTeamTemplates } from "../store/teamTemplates";
 import { toggleSkills } from "../store/skills";
 import { openBrain } from "../store/brain";
 import { rememberText } from "../components/brain/remember";
+import { toggleAgentBrowser } from "../components/agentBrowser/store";
 import { openReplay } from "../store/replay";
 import { confirmDialog, useUi } from "../store/uiStore";
 import { focusTerminal } from "../terminal/registry";
@@ -493,6 +494,7 @@ export const COMMANDS: Command[] = withTitles([
   { id: "mission.replay", category: "View", run: () => openReplay() },
   { id: "brain.open", category: "Workspace", run: () => openBrain() },
   { id: "brain.add", category: "Workspace", run: () => rememberText() },
+  { id: "view.agentBrowser", category: "View", run: toggleAgentBrowser },
   ...EXPERIENCE_COMMANDS,
 ]);
 

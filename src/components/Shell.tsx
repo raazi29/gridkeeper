@@ -37,6 +37,7 @@ import { installPortsWatch } from "../store/ports";
 import { installMeterWatch } from "../store/meter";
 import { useT } from "../i18n";
 import { SpendGuardLayer } from "./spend/SpendGuardLayer";
+import { AgentBrowserLayer } from "./agentBrowser/AgentBrowserLayer";
 import "../browser/browser.css";
 
 export function Shell() {
@@ -101,6 +102,7 @@ export function Shell() {
       <MissionLayer />
       <SkillsLayer />
       <BrainLayer />
+      <AgentBrowserLayer />
       <ExperienceLayer />
       <ContextMenuHost />
     </div>

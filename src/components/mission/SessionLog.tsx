@@ -27,6 +27,7 @@ const KIND_KEYS: Record<ActivityKind, MessageKey> = {
   mission: "activity.kind.mission",
   tests: "activity.kind.tests",
   merge: "activity.kind.merge",
+  browser: "activity.kind.browser",
 };
 
 export function formatClock(ms: number): string {

@@ -42,6 +42,8 @@ base64 = "0.22"
 # polling backend is used). `macos_fsevent` is required on macOS: without it notify's fsevent module
 # has no `fsevent-sys` and the crate does not compile there.
 notify = { version = "8", default-features = false, features = ["macos_fsevent"] }
+# Agent browser: allowlist host parsing (already in the tree through tauri).
+url = "2"
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.61", features = [
@@ -57,6 +59,11 @@ windows-sys = { version = "0.61", features = [
   "Win32_UI_WindowsAndMessaging",
   "Win32_NetworkManagement_IpHelper",
   "Win32_Networking_WinSock",
+  # Agent browser: DevTools pipes to the browser, the helper named pipe and its DACL.
+  "Win32_System_Pipes",
+  "Win32_System_IO",
+  "Win32_Storage_FileSystem",
+  "Win32_Security_Authorization",
 ] }
 # Same versions tauri-runtime-wry uses: WebView2 crash recovery (webview_guard), native browser
 # panes (browser_view).
