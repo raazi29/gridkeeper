@@ -3,6 +3,8 @@
 // first failure and never deletes anything), then groups, then sessions (with roles), then optional
 // starter prompts. Saved formations live in localStorage (best effort, try/catch).
 
+import { t } from "../i18n";
+import { isBrowserMeta } from "../lib/browserPanes";
 import { errorMessage, ipc } from "../lib/ipc";
 import type { WorktreeRef } from "../lib/types";
 import { uid, useApp } from "../store/appStore";
@@ -48,12 +50,16 @@ export async function launchFormation(plan: FormationPlan, workspaceId: string, 
       const info = await ipc.gitWorktreeAdd(plan.repoRoot, w.path, w.branch, true);
       wt.set(w.key, { path: info.path, branch: info.branch ?? w.branch });
       createdWorktrees.push(info.path);
-      logFormation("ok", `worktree created: ${info.branch ?? w.branch}`, "created", "worktree");
+      logFormation("ok", t("formations.log.worktreeCreated", { branch: info.branch ?? w.branch }), "created", "worktree");
     } catch (e) {
-      const msg = `git worktree add failed for ${w.branch}: ${errorMessage(e)}`;
+      const msg = t("formations.log.worktreeFailed", { branch: w.branch, error: errorMessage(e) });
       logFormation("error", msg, "failed", "worktree");
-      const kept = createdWorktrees.length ? ` Already created (kept, not deleted): ${createdWorktrees.join(", ")}.` : "";
-      notify("error", `Formation stopped. ${msg}.${kept} No groups or sessions were created.`);
+      notify(
+        "error",
+        createdWorktrees.length
+          ? t("formations.toast.stoppedKept", { error: msg, paths: createdWorktrees.join(", ") })
+          : t("formations.toast.stopped", { error: msg }),
+      );
       return { ok: false, createdWorktrees, sessionIds: [], error: msg };
     }
   }
@@ -95,8 +101,8 @@ export async function launchFormation(plan: FormationPlan, workspaceId: string, 
   }
   logFormation(
     "ok",
-    `formation “${plan.name}” launched: ${plan.groups.length} group${plan.groups.length === 1 ? "" : "s"}, ${sessionIds.length} sessions`,
-    `${sessionIds.length} sessions`,
+    t("formations.log.launched", { name: plan.name, groups: plan.groups.length, sessions: sessionIds.length }),
+    `${sessionIds.length} sessions`, // result code (English), shown via activityResultText
   );
   return { ok: true, createdWorktrees, sessionIds };
 }
@@ -128,6 +134,24 @@ function writeSaved(list: FormationTemplate[]): boolean {
 
 /** Snapshot the workspace's groups / roles / agents / accounts (no prompts, env or conversation ids). */
 export function saveWorkspaceAsFormation(workspaceId: string, name: string): FormationTemplate | null {
+  const ws = useApp.getState().persisted.workspaces.find((w) => w.id === workspaceId);
+  const tpl = workspaceFormation(workspaceId, name);
+  if (!ws || !tpl) return null;
+  if (!tpl.groups.length) {
+    notify("info", t("formations.toast.nothingToSave"));
+    return null;
+  }
+  const list = [...loadSavedFormations().filter((x) => x.name !== tpl.name), tpl];
+  if (!writeSaved(list)) {
+    notify("error", t("formations.toast.saveFailed"));
+    return null;
+  }
+  logFormation("info", t("formations.log.saved", { workspace: ws.name, name: tpl.name }), "saved");
+  return tpl;
+}
+
+/** The workspace's layout as a formation template (also used by team template export). */
+export function workspaceFormation(workspaceId: string, name: string): FormationTemplate | null {
   const s = useApp.getState();
   const ws = s.persisted.workspaces.find((w) => w.id === workspaceId);
   if (!ws) return null;
@@ -137,7 +161,7 @@ export function saveWorkspaceAsFormation(workspaceId: string, name: string): For
     layout: g.layout.preset,
     sessions: g.sessionIds
       .map((id) => metas.get(id))
-      .filter((m): m is NonNullable<typeof m> => !!m)
+      .filter((m): m is NonNullable<typeof m> => !!m && !isBrowserMeta(m))
       .map(
         (m): SnapshotSession => ({
           name: m.name,
@@ -151,18 +175,7 @@ export function saveWorkspaceAsFormation(workspaceId: string, name: string): For
         }),
       ),
   }));
-  const t = templateFromWorkspace(name, groups, uid());
-  if (!t.groups.length) {
-    notify("info", "This workspace has no sessions to save");
-    return null;
-  }
-  const list = [...loadSavedFormations().filter((x) => x.name !== t.name), t];
-  if (!writeSaved(list)) {
-    notify("error", "Could not save the formation (storage unavailable)");
-    return null;
-  }
-  logFormation("info", `saved workspace “${ws.name}” as formation “${t.name}”`, "saved");
-  return t;
+  return templateFromWorkspace(name, groups, uid());
 }
 
 export function deleteSavedFormation(id: string): FormationTemplate[] {

@@ -14,7 +14,11 @@ const PORT = process.env.CDP_PORT ?? "9222";
 
 export async function connect() {
   const targets = await (await fetch(`http://127.0.0.1:${PORT}/json`)).json();
-  const page = targets.find((t) => t.type === "page" && !t.url.startsWith("devtools"));
+  // Native browser panes are extra page targets in the same WebView2 browser: prefer the app's own page
+  // (dev server or the bundled tauri origin) over whatever site a pane shows.
+  const pages = targets.filter((t) => t.type === "page" && !t.url.startsWith("devtools"));
+  const isApp = (u) => /^https?:\/\/(localhost|127\.0\.0\.1):1420\//.test(u) || /^(tauri:|https?:\/\/tauri\.localhost)/.test(u);
+  const page = pages.find((t) => isApp(t.url)) ?? pages[0];
   if (!page) throw new Error("no page target");
   const ws = new WebSocket(page.webSocketDebuggerUrl);
   await new Promise((res, rej) => {

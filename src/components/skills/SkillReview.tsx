@@ -5,6 +5,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { openExternal } from "../../actions/browser";
+import { formatNumber, useT } from "../../i18n";
 import { featuredEntry } from "../../lib/featuredSkills";
 import {
   SKILL_TARGETS,
@@ -14,6 +15,7 @@ import {
   formatStars,
   githubUrl,
   installedCopies,
+  joinAnd,
   relativeTime,
   repoKey,
   riskyFiles,
@@ -39,14 +41,18 @@ import { IconChevronLeft, IconExternal, IconFolder, IconWarn } from "../icons";
 import { Button } from "../ui/Button";
 import { revealPath } from "../util/pick";
 
+const mono = (c: React.ReactNode) => <span className="mono">{c}</span>;
+
 export function RepoView({ selection, projectDir, agents }: { selection: RepoSelection; projectDir: string | null; agents: WorkspaceAgent[] }) {
+  const t = useT();
   const load = useSkills((s) => s.repos[repoKey(selection.repo, selection.ref)]);
   const skillPath = useSkills((s) => s.skillPath);
   if (!load || load.status === "loading")
     return (
       <div className="skills-detail-empty">
-        Reading <span className="mono">{selection.repo}</span>
-        {selection.ref ? <span className="mono">#{selection.ref}</span> : null} from api.github.com…
+        {selection.ref
+          ? t.rich("skills.review.readingRef", { repo: selection.repo, ref: selection.ref, mono })
+          : t.rich("skills.review.reading", { repo: selection.repo, mono })}
       </div>
     );
   if (load.status === "error")
@@ -58,10 +64,10 @@ export function RepoView({ selection, projectDir, agents }: { selection: RepoSel
         </div>
         <div className="skills-actions">
           <Button size="sm" onClick={() => void inspectRepo(selection.repo, selection.ref, true)}>
-            Retry
+            {t("common.retry")}
           </Button>
           <Button size="sm" variant="ghost" icon={<IconExternal size={13} />} onClick={() => openExternal(githubUrl(selection.repo))}>
-            Open on GitHub
+            {t("skills.review.openOnGithub")}
           </Button>
         </div>
       </div>
@@ -77,13 +83,14 @@ export function RepoView({ selection, projectDir, agents }: { selection: RepoSel
 }
 
 function RepoHeader({ data }: { data: RepoSkills }) {
+  const t = useT();
   const pushed = relativeTime(data.pushedAt, Date.now());
   return (
     <div className="skills-repo-head">
       <div className="skills-repo-title">
         <span className="skills-repo-name">{data.repo}</span>
-        {featuredEntry(data.repo) && <span className="chip chip-accent skills-chip">featured</span>}
-        {data.archived && <span className="chip tone-warn skills-chip">archived</span>}
+        {featuredEntry(data.repo) && <span className="chip chip-accent skills-chip">{t("skills.featuredChip")}</span>}
+        {data.archived && <span className="chip tone-warn skills-chip">{t("skills.archived")}</span>}
         <span className="skills-spacer" />
         <Button size="sm" variant="ghost" icon={<IconExternal size={13} />} onClick={() => openExternal(data.htmlUrl || githubUrl(data.repo))}>
           GitHub
@@ -91,18 +98,19 @@ function RepoHeader({ data }: { data: RepoSkills }) {
       </div>
       <div className="skills-row-meta">
         {data.stars !== null && <span>★ {formatStars(data.stars)}</span>}
-        <span>{data.license ?? "no license detected"}</span>
-        {pushed && <span>pushed {pushed}</span>}
+        <span>{data.license ?? t("skills.review.noLicense")}</span>
+        {pushed && <span>{t("skills.pushed", { when: pushed })}</span>}
         <span className="mono" title={data.commitSha}>
           {data.gitRef} @ {shortSha(data.commitSha)}
         </span>
-        <span className="skills-source">read from api.github.com</span>
+        <span className="skills-source">{t("skills.review.readFrom")}</span>
       </div>
     </div>
   );
 }
 
 function RepoOverview({ data }: { data: RepoSkills }) {
+  const t = useT();
   const installed = useSkills((s) => s.installed?.items);
   return (
     <>
@@ -114,9 +122,7 @@ function RepoOverview({ data }: { data: RepoSkills }) {
         </div>
       ))}
       {data.skills.length > 0 && (
-        <div className="skills-subhead">
-          {data.skills.length} skill{data.skills.length === 1 ? "" : "s"} at {shortSha(data.commitSha)}: pick one to review
-        </div>
+        <div className="skills-subhead">{t("skills.review.skillsAt", { count: data.skills.length, sha: shortSha(data.commitSha) })}</div>
       )}
       <div className="skills-cards" role="list">
         {data.skills.map((s) => {
@@ -125,16 +131,14 @@ function RepoOverview({ data }: { data: RepoSkills }) {
             <button key={s.path} type="button" role="listitem" className="skills-card" onClick={() => selectSkill(s.path)}>
               <span className="skills-row-head">
                 <span className="skills-row-name">{s.name}</span>
-                {copies.length > 0 && <span className="chip tone-ok skills-chip">installed</span>}
-                {s.hasScripts && <span className="chip tone-warn skills-chip">scripts</span>}
-                {s.blocked && <span className="chip tone-err skills-chip">can't install</span>}
+                {copies.length > 0 && <span className="chip tone-ok skills-chip">{t("skills.chipInstalled")}</span>}
+                {s.hasScripts && <span className="chip tone-warn skills-chip">{t("skills.chipScripts")}</span>}
+                {s.blocked && <span className="chip tone-err skills-chip">{t("skills.chipBlocked")}</span>}
               </span>
-              <span className="skills-row-desc">{s.description ?? "No description in the SKILL.md frontmatter."}</span>
+              <span className="skills-row-desc">{s.description ?? t("skills.review.noDescription")}</span>
               <span className="skills-row-meta">
                 <span className="mono">{skillPathLabel(s.path)}</span>
-                <span>
-                  {s.files.length} file{s.files.length === 1 ? "" : "s"} · {formatBytes(s.totalBytes)}
-                </span>
+                <span>{t("skills.review.files", { count: s.files.length, size: formatBytes(s.totalBytes) })}</span>
               </span>
             </button>
           );
@@ -145,6 +149,7 @@ function RepoOverview({ data }: { data: RepoSkills }) {
 }
 
 function SkillReviewBody({ data, skill, projectDir, agents }: { data: RepoSkills; skill: SkillInfo; projectDir: string | null; agents: WorkspaceAgent[] }) {
+  const t = useT();
   const updating = useSkills((s) => s.updating);
   const installed = useSkills((s) => s.installed?.items);
   const busy = useSkills((s) => s.busy);
@@ -174,30 +179,36 @@ function SkillReviewBody({ data, skill, projectDir, agents }: { data: RepoSkills
     <>
       {data.skills.length > 1 && (
         <button type="button" className="skills-back" onClick={() => selectSkill(null)}>
-          <IconChevronLeft size={12} /> All {data.skills.length} skills in {data.repo}
+          <IconChevronLeft size={12} /> {t("skills.review.allSkills", { count: data.skills.length, repo: data.repo })}
         </button>
       )}
       <div className="skills-review-title">
         <span className="skills-review-name">{skill.name}</span>
-        {copies.length > 0 && !isUpdate && <span className="chip tone-ok skills-chip">installed in {copies.map((c) => c.target).join(", ")}</span>}
+        {copies.length > 0 && !isUpdate && <span className="chip tone-ok skills-chip">{t("skills.review.installedIn", { targets: copies.map((c) => c.target).join(", ") })}</span>}
       </div>
       {skill.description && <p className="skills-desc">{skill.description}</p>}
 
       {isUpdate && updating && (
         <div className="skills-note is-info">
           <span>
-            Update <b>{updating.name}</b> in <span className="mono">{updating.dirRel}</span> from{" "}
-            <span className="mono">{shortSha(updating.provenance?.commitSha)}</span> to <span className="mono">{shortSha(data.commitSha)}</span> ({data.gitRef}).
-            Review what changed below; the folder is replaced as a whole.
+            {t.rich("skills.review.updateNote", {
+              name: updating.name,
+              dir: updating.dirRel,
+              from: shortSha(updating.provenance?.commitSha),
+              to: shortSha(data.commitSha),
+              ref: data.gitRef,
+              b: (c) => <b>{c}</b>,
+              mono,
+            })}
             {skill.installName !== updating.folder && (
               <>
                 {" "}
-                The skill is now named <span className="mono">{skill.installName}</span>, so it installs next to the old folder; remove the old one afterwards.
+                {t.rich("skills.review.updateRenamed", { name: skill.installName, mono })}
               </>
             )}
           </span>
           <button type="button" className="chip" onClick={() => selectInstalled(updating.dirRel)}>
-            Cancel
+            {t("common.cancel")}
           </button>
         </div>
       )}
@@ -205,19 +216,16 @@ function SkillReviewBody({ data, skill, projectDir, agents }: { data: RepoSkills
       {skill.blocked && (
         <div className="skills-note is-error" role="alert">
           <IconWarn size={13} />
-          <span>Can't install: {skill.blocked}</span>
+          <span>{t("skills.review.blocked", { reason: skill.blocked })}</span>
         </div>
       )}
 
       {skill.hasScripts && (
         <div className="skills-scripts-warn" role="alert">
           <div className="skills-scripts-head">
-            <IconWarn size={14} /> This skill contains scripts or executable files ({risky.length})
+            <IconWarn size={14} /> {t("skills.review.scriptsHead", { count: risky.length })}
           </div>
-          <p>
-            Gridkeeper never runs them. Your agents may, when the skill tells them to, with the permissions you give those agents. Read
-            them before installing:
-          </p>
+          <p>{t("skills.review.scriptsBody")}</p>
           <div className="skills-chips">
             {risky.map((f) => (
               <button key={f.path} type="button" className={`chip tone-warn mono${openFile === f.path ? " is-on" : ""}`} onClick={() => setOpenFile(openFile === f.path ? null : f.path)}>
@@ -229,33 +237,31 @@ function SkillReviewBody({ data, skill, projectDir, agents }: { data: RepoSkills
       )}
 
       <dl className="skills-meta">
-        <dt>Repository</dt>
+        <dt>{t("skills.review.dtRepository")}</dt>
         <dd>
           <button type="button" className="skills-link mono" onClick={() => openExternal(githubUrl(data.repo, data.commitSha, skill.path))}>
             {data.repo}/{skill.path}
           </button>
         </dd>
-        <dt>Pinned commit</dt>
+        <dt>{t("skills.review.dtPinned")}</dt>
         <dd className="mono" title={data.commitSha}>
           {data.commitSha} ({data.gitRef})
         </dd>
-        <dt>License</dt>
-        <dd>{data.license ?? "no license detected: check the repository before using it"}</dd>
-        <dt>Stars · last push</dt>
+        <dt>{t("skills.review.dtLicense")}</dt>
+        <dd>{data.license ?? t("skills.review.noLicenseCheck")}</dd>
+        <dt>{t("skills.review.dtStarsPush")}</dt>
         <dd>
-          {data.stars !== null ? `★ ${data.stars.toLocaleString()}` : "?"} · {relativeTime(data.pushedAt, Date.now()) || "unknown"}
+          {data.stars !== null ? `★ ${formatNumber(data.stars)}` : "?"} · {relativeTime(data.pushedAt, Date.now()) || t("skills.review.unknown")}
         </dd>
-        <dt>Installs as</dt>
+        <dt>{t("skills.review.dtInstallsAs")}</dt>
         <dd className="mono">{skill.installName}</dd>
-        <dt>Size</dt>
-        <dd>
-          {skill.files.length} file{skill.files.length === 1 ? "" : "s"} · {formatBytes(skill.totalBytes)}
-        </dd>
+        <dt>{t("skills.review.dtSize")}</dt>
+        <dd>{t("skills.review.files", { count: skill.files.length, size: formatBytes(skill.totalBytes) })}</dd>
       </dl>
 
       <div className="skills-subhead">SKILL.md</div>
       {md === null ? (
-        <div className="skills-empty">{mdEntry?.status === "error" ? `Could not read SKILL.md: ${mdEntry.error}` : "Reading SKILL.md…"}</div>
+        <div className="skills-empty">{mdEntry?.status === "error" ? t("skills.review.mdError", { error: mdEntry.error }) : t("skills.review.mdReading")}</div>
       ) : (
         <pre className="skills-pre" tabIndex={0}>
           {frontmatter !== null && <span className="skills-pre-front">{`---\n${frontmatter}\n---\n`}</span>}
@@ -263,7 +269,7 @@ function SkillReviewBody({ data, skill, projectDir, agents }: { data: RepoSkills
         </pre>
       )}
 
-      <div className="skills-subhead">Files</div>
+      <div className="skills-subhead">{t("skills.review.filesHead")}</div>
       <div className="skills-files" role="list">
         {skill.files.map((f) => (
           <button
@@ -272,10 +278,10 @@ function SkillReviewBody({ data, skill, projectDir, agents }: { data: RepoSkills
             role="listitem"
             className={`skills-file${f.executable || f.path.startsWith("scripts/") ? " is-exec" : ""}${openFile === f.path ? " is-open" : ""}`}
             onClick={() => setOpenFile(openFile === f.path ? null : f.path)}
-            title="Read this file"
+            title={t("skills.review.readFile")}
           >
             <span className="mono skills-file-path">{f.path}</span>
-            {(f.executable || f.path.startsWith("scripts/")) && <span className="skills-warn-text">script</span>}
+            {(f.executable || f.path.startsWith("scripts/")) && <span className="skills-warn-text">{t("skills.review.scriptChip")}</span>}
             <span className="skills-file-size">{formatBytes(f.size)}</span>
           </button>
         ))}
@@ -283,11 +289,11 @@ function SkillReviewBody({ data, skill, projectDir, agents }: { data: RepoSkills
       {openFile && <FileViewer repo={data.repo} sha={data.commitSha} path={joinPath(skill.path, openFile)} label={openFile} onClose={() => setOpenFile(null)} />}
 
       <div className="skills-install">
-        <div className="skills-subhead">{isUpdate ? "Update in this project" : "Install into this project"}</div>
+        <div className="skills-subhead">{isUpdate ? t("skills.review.updateHead") : t("skills.review.installHead")}</div>
         {!projectDir ? (
           <div className="skills-note is-warn">
             <IconWarn size={13} />
-            <span>This workspace has no project folder. Skills install into a project folder; open or create a workspace with one.</span>
+            <span>{t("skills.review.noProject")}</span>
           </div>
         ) : (
           <>
@@ -314,13 +320,13 @@ function SkillReviewBody({ data, skill, projectDir, agents }: { data: RepoSkills
                   void installSkill({ projectDir, repo: data.repo, commitSha: data.commitSha, skill, targets, isUpdate, agents });
                 }}
               >
-                {busy ? "Installing…" : isUpdate ? `Update to ${shortSha(data.commitSha)}` : "Install"}
+                {busy ? t("skills.review.installing") : isUpdate ? t("skills.review.updateTo", { sha: shortSha(data.commitSha) }) : t("skills.review.install")}
               </Button>
               <span className="skills-hint">
                 {readers.length > 0
-                  ? `${readers.length} agent${readers.length === 1 ? "" : "s"} in this workspace read${readers.length === 1 ? "s" : ""} ${targets.length === 1 ? "this folder" : "these folders"}.`
-                  : "Agents started in this project read these folders."}{" "}
-                The files are written to the project (visible to git); nothing is executed.
+                  ? t("skills.review.hintAgents", { count: readers.length, folders: targets.length === 1 ? "one" : "other" })
+                  : t("skills.review.hintNoAgents")}{" "}
+                {t("skills.review.hintFiles")}
               </span>
             </div>
           </>
@@ -328,19 +334,19 @@ function SkillReviewBody({ data, skill, projectDir, agents }: { data: RepoSkills
         {lastInstall && projectDir && (
           <div className="skills-note is-ok">
             <span>
-              Installed {lastInstall.name} to {lastInstall.installed.join(" and ")}
-              {lastInstall.replaced.length ? ` (replaced ${lastInstall.replaced.join(", ")})` : ""}. Running agents pick up project skills on their next
-              session/reload.
+              {lastInstall.replaced.length
+                ? t("skills.review.installedNoteReplaced", { name: lastInstall.name, targets: joinAnd(lastInstall.installed), replaced: lastInstall.replaced.join(", ") })
+                : t("skills.review.installedNote", { name: lastInstall.name, targets: joinAnd(lastInstall.installed) })}
             </span>
             <span className="skills-spacer" />
             {lastInstall.installed[0] && (
               <Button size="sm" variant="ghost" icon={<IconFolder size={13} />} onClick={() => void revealPath(`${projectDir.replace(/[\\/]+$/, "")}\\${lastInstall.installed[0].replace(/\//g, "\\")}`)}>
-                Open folder
+                {t("skills.openFolder")}
               </Button>
             )}
             {liveReaders.length > 0 && (
               <Button size="sm" onClick={() => messageAgents(liveReaders.map((a) => a.id))}>
-                Message running agents…
+                {t("skills.review.messageRunning")}
               </Button>
             )}
           </div>
@@ -351,6 +357,7 @@ function SkillReviewBody({ data, skill, projectDir, agents }: { data: RepoSkills
 }
 
 function FileViewer({ repo, sha, path, label, onClose }: { repo: string; sha: string; path: string; label: string; onClose: () => void }) {
+  const t = useT();
   const entry = useSkills((s) => s.files[fileKey(repo, sha, path)]);
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -364,18 +371,18 @@ function FileViewer({ repo, sha, path, label, onClose }: { repo: string; sha: st
         {entry?.status === "ok" && <span className="muted">{formatBytes(entry.data.size)}</span>}
         <span className="skills-spacer" />
         <button type="button" className="chip" onClick={onClose}>
-          Close
+          {t("common.close")}
         </button>
       </div>
-      {(!entry || entry.status === "loading") && <div className="skills-empty">Reading from raw.githubusercontent.com…</div>}
+      {(!entry || entry.status === "loading") && <div className="skills-empty">{t("skills.review.readingRaw")}</div>}
       {entry?.status === "error" && <div className="skills-empty">{entry.error}</div>}
       {entry?.status === "ok" &&
         (entry.data.binary ? (
-          <div className="skills-empty">Binary file ({formatBytes(entry.data.size)}): not shown.</div>
+          <div className="skills-empty">{t("skills.review.binary", { size: formatBytes(entry.data.size) })}</div>
         ) : (
           <pre className="skills-pre" tabIndex={0}>
             {entry.data.text}
-            {entry.data.truncated ? "\n… (cut at 256 KB)" : ""}
+            {entry.data.truncated ? `\n${t("skills.review.truncated")}` : ""}
           </pre>
         ))}
     </div>

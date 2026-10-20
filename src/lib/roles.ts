@@ -1,5 +1,9 @@
 // Team roles for sessions (Mission Control, formations, pane header tag). Pure, node-safe.
 // Colours are CSS variables defined in src/styles/mission.css (--role-lead, …, --role-custom).
+// Role ids (lead, builder, …) are never translated: they go into briefs, team.md and the outbox protocol. Only the
+// display label and hint are (getters over the message catalog, so they follow the UI language).
+
+import { t, type MessageKey } from "../i18n";
 
 export const BUILTIN_ROLES = ["lead", "scout", "builder", "reviewer", "verifier"] as const;
 export type BuiltinRole = (typeof BUILTIN_ROLES)[number];
@@ -8,20 +12,22 @@ export const ROLE_MAX_LEN = 24;
 
 export interface RoleInfo {
   id: string;
-  label: string;
+  /** Display name in the current UI language (custom roles: the id). */
+  readonly label: string;
   glyph: string;
   /** CSS colour expression, e.g. "var(--role-lead)". */
   color: string;
   builtin: boolean;
-  hint: string;
+  /** One-line description in the current UI language. */
+  readonly hint: string;
 }
 
-const INFO: Record<BuiltinRole, Omit<RoleInfo, "id" | "color" | "builtin">> = {
-  lead: { label: "Lead", glyph: "◆", hint: "Plans, splits work, signs off" },
-  scout: { label: "Scout", glyph: "◎", hint: "Explores and reports, changes nothing" },
-  builder: { label: "Builder", glyph: "▲", hint: "Implements changes" },
-  reviewer: { label: "Reviewer", glyph: "◉", hint: "Reviews diffs and PRs" },
-  verifier: { label: "Verifier", glyph: "✓", hint: "Runs tests, lint and checks" },
+const INFO: Record<BuiltinRole, { glyph: string; label: MessageKey; hint: MessageKey }> = {
+  lead: { glyph: "◆", label: "roles.label.lead", hint: "roles.hint.lead" },
+  scout: { glyph: "◎", label: "roles.label.scout", hint: "roles.hint.scout" },
+  builder: { glyph: "▲", label: "roles.label.builder", hint: "roles.hint.builder" },
+  reviewer: { glyph: "◉", label: "roles.label.reviewer", hint: "roles.hint.reviewer" },
+  verifier: { glyph: "✓", label: "roles.label.verifier", hint: "roles.hint.verifier" },
 };
 
 export function isBuiltinRole(r: string | null | undefined): r is BuiltinRole {
@@ -48,8 +54,31 @@ export function normalizeRole(raw: string | null | undefined): string | null {
 export function roleInfo(role: string | null | undefined): RoleInfo | null {
   const id = normalizeRole(role);
   if (!id) return null;
-  if (isBuiltinRole(id)) return { id, ...INFO[id], color: `var(--role-${id})`, builtin: true };
-  return { id, label: id, glyph: "●", hint: "Custom role", color: "var(--role-custom)", builtin: false };
+  if (isBuiltinRole(id)) {
+    const info = INFO[id];
+    return {
+      id,
+      glyph: info.glyph,
+      get label() {
+        return t(info.label);
+      },
+      get hint() {
+        return t(info.hint);
+      },
+      color: `var(--role-${id})`,
+      builtin: true,
+    };
+  }
+  return {
+    id,
+    label: id,
+    glyph: "●",
+    get hint() {
+      return t("roles.hint.custom");
+    },
+    color: "var(--role-custom)",
+    builtin: false,
+  };
 }
 
 /** Short uppercase tag, e.g. "LEAD", "BUILDER", custom ids truncated to 10 chars. */

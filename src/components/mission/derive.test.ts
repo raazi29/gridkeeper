@@ -4,7 +4,7 @@ import type { SessionAttn } from "../../store/attention";
 import { normalizeRole, roleInfo, roleTag } from "../../lib/roles";
 import { looksLikeQuestion } from "../../actions/starterPrompt";
 import { trailWidth } from "./ActivityRiver";
-import { deriveMission, insertIndex, laneOf, laneProgress, nextLaneName, phaseMark, reorderTarget, sessionStatus, sideOf, type SessionStatus } from "./derive";
+import { deriveMission, insertIndex, laneOf, laneProgress, nextLaneName, phaseMark, pulseFor, reorderTarget, sessionStatus, sideOf, type SessionStatus } from "./derive";
 import { linkPath } from "./Links";
 import { sparkPath } from "./Sparkline";
 
@@ -155,5 +155,15 @@ describe("mission drag & drop helpers", () => {
   it("sideOf splits a box into halves", () => {
     expect(sideOf(10, { left: 0, width: 100 })).toBe("before");
     expect(sideOf(60, { left: 0, width: 100 })).toBe("after");
+  });
+  it("pulseFor routes real events along the right connector", () => {
+    const home = (id: string) => (id === "L" ? "lead" : id === "b" ? "g1" : null);
+    expect(pulseFor({ sessionId: "b", kind: "lifecycle", level: "info" }, home)).toEqual({ key: "in:g1", tone: "gold" });
+    expect(pulseFor({ sessionId: "b", kind: "attention", level: "ok" }, home)).toEqual({ key: "out:g1", tone: "gold" });
+    expect(pulseFor({ sessionId: "b", kind: "attention", level: "needs" }, home)).toEqual({ key: "out:g1", tone: "amber" });
+    expect(pulseFor({ sessionId: "L", kind: "lifecycle", level: "ok" }, home)).toEqual({ key: "mission", tone: "gold" });
+    expect(pulseFor({ sessionId: "b", kind: "attention", level: "info" }, home)).toBeNull(); // "working" is too chatty
+    expect(pulseFor({ sessionId: "x", kind: "lifecycle", level: "info" }, home)).toBeNull();
+    expect(pulseFor({ sessionId: null, kind: "formation", level: "info" }, home)).toBeNull();
   });
 });

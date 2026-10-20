@@ -11,7 +11,9 @@ import { confirmCloseSession, confirmForceStop, focusSession, jumpToSession } fr
 import { openPort } from "../../actions/browser";
 import { messageSessions } from "../../actions/groupActions";
 import { handoffSubmenu } from "../../actions/handoff";
+import { testRunMenuItems } from "../testrun/menus";
 import { isBrowserMeta } from "../../lib/browserPanes";
+import { isBrowserCapable, openAgentBrowser, sessionRow, setBrowserEnabled, useAgentBrowser } from "../agentBrowser/store";
 import { usePorts } from "../../store/ports";
 import { toggleSessionMute } from "../../actions/notifyPrefs";
 import { clearSession, copyOutput, hideView, restartSession, showView, startSession, stopSession } from "../../actions/sessions";
@@ -25,6 +27,7 @@ import { copyTerminalSelection, pasteIntoTerminal, selectAllInTerminal, zoomTerm
 import { copyHint, pasteHint } from "../../terminal/terminalKeys";
 import type { MenuAction, MenuItem } from "../ui/Menu";
 import { newSessionSubmenu, shortcutHint, splitSubmenu } from "./common";
+import { t } from "../../i18n";
 
 export type MenuSurface = "terminal" | "header" | "mission" | "fleet" | "comms";
 
@@ -57,6 +60,8 @@ export interface SessionMenuState {
   count: number;
   maximized: boolean;
   resume: ResumeMode;
+  /** Claude Code / Codex: the agent browser opt-in (undefined for other agents). */
+  agentBrowser?: { enabled: boolean; launched: boolean };
 }
 
 export function sessionMenuState(id: SessionId): SessionMenuState {
@@ -68,7 +73,7 @@ export function sessionMenuState(id: SessionId): SessionMenuState {
     exists: !!meta,
     isBrowser: isBrowserMeta(meta),
     ports: (usePorts.getState().bySession[id] ?? []).map((p) => p.port),
-    name: meta?.name ?? "session",
+    name: meta?.name ?? t("command.sessionFallbackName"),
     agent: meta?.agent ?? null,
     live: isLive(rt),
     hasRun: !!rt,
@@ -80,7 +85,13 @@ export function sessionMenuState(id: SessionId): SessionMenuState {
     count: loc?.group.sessionIds.length ?? 0,
     maximized: !!loc && loc.group.layout.maximized === id,
     resume: meta?.resumeOnRestore ?? { mode: "none" },
+    agentBrowser: isBrowserCapable(meta?.agent) ? agentBrowserOf(id) : undefined,
   };
+}
+
+function agentBrowserOf(id: SessionId): { enabled: boolean; launched: boolean } {
+  const row = sessionRow(useAgentBrowser.getState().state, id);
+  return { enabled: !!row?.enabled, launched: !!row?.launched };
 }
 
 /** Agents that keep a conversation (resume vs fresh matters). */
@@ -91,28 +102,26 @@ const offscreen = (s: MenuSurface) => s === "mission" || s === "fleet" || s === 
 
 export function roleSubmenu(id: SessionId, current: string | null, onCustom: () => void): MenuAction {
   const set = (role: string | null) => useApp.getState().updateSessionMeta(id, { role });
-  const children: MenuItem[] = [{ label: "No role", checked: !current, onSelect: () => set(null) }];
+  const children: MenuItem[] = [{ label: t("menu.role.none"), checked: !current, onSelect: () => set(null) }];
   for (const r of BUILTIN_ROLES) {
     const info = roleInfo(r)!;
     children.push({ label: `${info.glyph}  ${info.label}`, checked: current === r, onSelect: () => set(r) });
   }
   children.push("separator", {
-    label: current && !isBuiltinRole(current) ? `Custom: ${current}…` : "Custom role…",
+    label: current && !isBuiltinRole(current) ? t("menu.role.customCurrent", { role: current }) : t("menu.role.custom"),
     checked: current ? !isBuiltinRole(current) : undefined,
     onSelect: onCustom,
   });
-  return { label: "Role", children };
+  return { label: t("menu.role.label"), children };
 }
 
 export async function confirmRestart(id: SessionId, name: string, resume: ResumeMode, live: boolean): Promise<void> {
   if (live) {
     const fresh = resume.mode === "none";
     const ok = await confirmDialog({
-      title: `Restart “${name}”${fresh ? " fresh" : ""}?`,
-      message: fresh
-        ? "The running process is stopped and started again with a fresh conversation."
-        : "The running process is stopped and started again; agents resume their conversation.",
-      confirmLabel: "Restart",
+      title: fresh ? t("menu.restart.titleFresh", { name }) : t("menu.restart.title", { name }),
+      message: fresh ? t("menu.restart.messageFresh") : t("menu.restart.message"),
+      confirmLabel: t("common.restart"),
       danger: true,
     });
     if (!ok) return;
@@ -122,16 +131,39 @@ export async function confirmRestart(id: SessionId, name: string, resume: Resume
 
 export async function confirmStop(id: SessionId, name: string): Promise<void> {
   const ok = await confirmDialog({
-    title: `Stop “${name}”?`,
-    message: "The process is asked to exit. The pane stays; start it again any time.",
-    confirmLabel: "Stop",
+    title: t("menu.stop.title", { name }),
+    message: t("menu.stop.message"),
+    confirmLabel: t("common.stop"),
     danger: true,
   });
   if (ok) await stopSession(id, false);
 }
 
+/** "Agent browser" submenu: the per-session opt-in (applied at the next launch) and the view. */
+export function agentBrowserSubmenu(id: SessionId, ab: { enabled: boolean; launched: boolean }, live: boolean, ctx: SessionMenuCtx): MenuAction {
+  const pending = live && ab.enabled !== ab.launched;
+  return {
+    label: t("agentBrowser.title"),
+    children: [
+      {
+        label: t("newSession.giveBrowser"),
+        checked: ab.enabled,
+        hint: pending ? t("agentBrowser.bit.restartToApply") : live ? t("menu.session.agentBrowser.appliesOnRestart") : undefined,
+        onSelect: () => void setBrowserEnabled(id, !ab.enabled),
+      },
+      {
+        label: t("menu.session.agentBrowser.openView"),
+        onSelect: () => {
+          ctx.onNavigate?.();
+          openAgentBrowser(id);
+        },
+      },
+    ],
+  };
+}
+
 export function buildSessionMenu(id: SessionId, ctx: SessionMenuCtx, st: SessionMenuState = sessionMenuState(id)): MenuItem[] {
-  if (!st.exists) return [{ label: "Session not found", disabled: true }];
+  if (!st.exists) return [{ label: t("menu.session.notFound"), disabled: true }];
   const { surface } = ctx;
   const inPane = surface === "terminal" || surface === "header";
   const keyHint = (k: string) => (surface === "mission" ? k : undefined);
@@ -159,39 +191,40 @@ export function buildSessionMenu(id: SessionId, ctx: SessionMenuCtx, st: Session
 
   if (st.isBrowser) {
     // Browser panes (their own header menu has the navigation items): no process actions, no input.
-    if (!inPane) items.push({ label: "Jump to pane", hint: keyHint("Enter"), onSelect: goto });
-    items.push({ label: "Rename…", onSelect: rename }, "separator", { label: "Close", danger: true, onSelect: () => void confirmCloseSession(id) });
+    if (!inPane) items.push({ label: t("menu.session.jump"), hint: keyHint(t("keys.enter")), onSelect: goto });
+    items.push({ label: t("menu.session.rename"), onSelect: rename }, "separator", { label: t("common.close"), danger: true, onSelect: () => void confirmCloseSession(id) });
     return items;
   }
 
   // ---- terminal clipboard / view tools
   if (surface === "terminal") {
     items.push(
-      { label: "Copy", hint: copyHint(), disabled: !ctx.hasSelection, onSelect: () => copyTerminalSelection(id) },
-      { label: "Paste", hint: pasteHint(), onSelect: () => pasteIntoTerminal(id) },
-      { label: "Select all", onSelect: () => selectAllInTerminal(id) },
-      { label: "Find…", hint: shortcutHint("terminal.find"), onSelect: () => useFind.getState().open(id) },
-      { label: "Clear", onSelect: () => void clearSession(id) },
-      { label: "Copy all output", onSelect: () => void copyOutput(id) },
+      { label: t("common.copy"), hint: copyHint(), disabled: !ctx.hasSelection, onSelect: () => copyTerminalSelection(id) },
+      { label: t("common.paste"), hint: pasteHint(), onSelect: () => pasteIntoTerminal(id) },
+      { label: t("menu.session.selectAll"), onSelect: () => selectAllInTerminal(id) },
+      { label: t("menu.session.find"), hint: shortcutHint("terminal.find"), onSelect: () => useFind.getState().open(id) },
+      { label: t("menu.session.clear"), onSelect: () => void clearSession(id) },
+      { label: t("menu.session.copyAllOutput"), onSelect: () => void copyOutput(id) },
       {
-        label: "Zoom",
+        label: t("menu.session.zoom"),
         children: [
-          { label: "Zoom in", hint: shortcutHint("terminal.zoomIn"), onSelect: () => void zoomTerminal(id, 1) },
-          { label: "Zoom out", hint: shortcutHint("terminal.zoomOut"), onSelect: () => void zoomTerminal(id, -1) },
-          { label: "Reset zoom", hint: shortcutHint("terminal.zoomReset"), onSelect: () => void zoomTerminal(id, 0) },
+          { label: t("menu.session.zoomIn"), hint: shortcutHint("terminal.zoomIn"), onSelect: () => void zoomTerminal(id, 1) },
+          { label: t("menu.session.zoomOut"), hint: shortcutHint("terminal.zoomOut"), onSelect: () => void zoomTerminal(id, -1) },
+          { label: t("menu.session.zoomReset"), hint: shortcutHint("terminal.zoomReset"), onSelect: () => void zoomTerminal(id, 0) },
         ],
       },
       "separator",
     );
   } else if (!inPane) {
-    items.push({ label: "Jump to pane", hint: keyHint("Enter"), onSelect: goto });
+    items.push({ label: t("menu.session.jump"), hint: keyHint(t("keys.enter")), onSelect: goto });
   }
 
-  items.push({ label: "Message…", hint: keyHint("M"), disabled: !st.live, onSelect: () => messageSessions([id], `“${st.name}”`) });
+  items.push({ label: t("menu.session.message"), hint: keyHint("M"), disabled: !st.live, onSelect: () => messageSessions([id], t("menu.quoted", { name: st.name })) });
   if (surface === "mission") items.push(handoffSubmenu(id));
+  items.push(...testRunMenuItems(id));
   if (st.ports?.length) {
     items.push({
-      label: "Open in browser pane",
+      label: t("menu.session.openInBrowser"),
       children: st.ports.map((port) => ({
         label: `localhost:${port}`,
         onSelect: () => {
@@ -205,7 +238,7 @@ export function buildSessionMenu(id: SessionId, ctx: SessionMenuCtx, st: Session
   // ---- layout (only where the pane is on screen)
   if (inPane && st.groupId) {
     items.push(newSessionSubmenu(st.groupId), splitSubmenu(st.groupId), {
-      label: st.maximized ? "Restore" : "Maximize",
+      label: st.maximized ? t("menu.session.restore") : t("menu.session.maximize"),
       hint: shortcutHint("session.maximize"),
       onSelect: () => st.groupId && useApp.getState().updateLayout(st.groupId, { maximized: st.maximized ? null : id }),
     });
@@ -216,38 +249,39 @@ export function buildSessionMenu(id: SessionId, ctx: SessionMenuCtx, st: Session
   const conv = isConversational(st.agent);
   if (st.live) {
     items.push(
-      { label: conv ? "Restart (resume)" : "Restart", hint: keyHint("R"), onSelect: () => void confirmRestart(id, st.name, { mode: "continue" }, true) },
-      ...(conv ? [{ label: "Restart fresh", onSelect: () => void confirmRestart(id, st.name, { mode: "none" }, true) } as MenuAction] : []),
-      { label: "Stop", hint: keyHint("S"), onSelect: () => void (offscreen(surface) ? confirmStop(id, st.name) : stopSession(id, false)) },
-      { label: "Force stop…", danger: true, onSelect: () => void confirmForceStop(id) },
+      { label: conv ? t("menu.session.restartResume") : t("common.restart"), hint: keyHint("R"), onSelect: () => void confirmRestart(id, st.name, { mode: "continue" }, true) },
+      ...(conv ? [{ label: t("menu.session.restartFresh"), onSelect: () => void confirmRestart(id, st.name, { mode: "none" }, true) } as MenuAction] : []),
+      { label: t("common.stop"), hint: keyHint("S"), onSelect: () => void (offscreen(surface) ? confirmStop(id, st.name) : stopSession(id, false)) },
+      { label: t("menu.session.forceStop"), danger: true, onSelect: () => void confirmForceStop(id) },
     );
   } else {
     items.push(
-      { label: conv ? "Start (resume)" : "Start", hint: keyHint("S"), onSelect: () => void startSession(id, conv ? st.resume : { mode: "none" }) },
-      ...(conv ? [{ label: "Start fresh", onSelect: () => void restartSession(id, { mode: "none" }) } as MenuAction] : []),
+      { label: conv ? t("menu.session.startResume") : t("common.start"), hint: keyHint("S"), onSelect: () => void startSession(id, conv ? st.resume : { mode: "none" }) },
+      ...(conv ? [{ label: t("menu.session.startFresh"), onSelect: () => void restartSession(id, { mode: "none" }) } as MenuAction] : []),
     );
   }
 
   // ---- session settings
   items.push(
     "separator",
-    { label: st.muted ? "Unmute notifications" : "Mute notifications", checked: st.muted, onSelect: () => toggleSessionMute(id) },
+    { label: st.muted ? t("menu.unmuteNotifications") : t("menu.muteNotifications"), checked: st.muted, onSelect: () => toggleSessionMute(id) },
     roleSubmenu(id, st.role, customRole),
-    { label: "Rename…", hint: surface === "mission" ? "F2" : undefined, onSelect: rename },
+    ...(st.agentBrowser ? [agentBrowserSubmenu(id, st.agentBrowser, st.live, ctx)] : []),
+    { label: t("menu.session.rename"), hint: surface === "mission" ? "F2" : undefined, onSelect: rename },
   );
-  if (!inPane) items.push({ label: "Copy output", onSelect: () => void copyOutput(id) });
-  if (inPane) items.push(st.hidden ? { label: "Show view", onSelect: () => showView(id) } : { label: "Hide view", onSelect: () => hideView(id) });
+  if (!inPane) items.push({ label: t("menu.session.copyOutput"), onSelect: () => void copyOutput(id) });
+  if (inPane) items.push(st.hidden ? { label: t("menu.session.showView"), onSelect: () => showView(id) } : { label: t("menu.session.hideView"), onSelect: () => hideView(id) });
   if (surface === "header" && st.groupId) {
     const gid = st.groupId;
     items.push(
-      { label: "Move left", disabled: st.index <= 0, onSelect: () => useApp.getState().moveSession(gid, st.index, st.index - 1) },
-      { label: "Move right", disabled: st.index < 0 || st.index >= st.count - 1, onSelect: () => useApp.getState().moveSession(gid, st.index, st.index + 1) },
+      { label: t("menu.session.moveLeft"), disabled: st.index <= 0, onSelect: () => useApp.getState().moveSession(gid, st.index, st.index - 1) },
+      { label: t("menu.session.moveRight"), disabled: st.index < 0 || st.index >= st.count - 1, onSelect: () => useApp.getState().moveSession(gid, st.index, st.index + 1) },
     );
   }
 
   items.push("separator", {
-    label: st.live ? "Close…" : "Close",
-    hint: surface === "mission" ? "Del" : inPane ? shortcutHint("session.close") : undefined,
+    label: st.live ? t("menu.session.closeConfirm") : t("common.close"),
+    hint: surface === "mission" ? t("keys.delete") : inPane ? shortcutHint("session.close") : undefined,
     danger: true,
     onSelect: () => void confirmCloseSession(id),
   });

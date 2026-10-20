@@ -1,11 +1,17 @@
 // Pure helpers for the Skills panel (Agent Skills from GitHub, installed into a project). No store, no IPC.
 
+import { t } from "../i18n";
 import type { AgentKind, InstalledSkill, SkillFile, SkillTarget } from "./types";
 
-/** Install targets with the agents that read them. */
-export const SKILL_TARGETS: readonly { id: SkillTarget; hosts: string }[] = [
+/** Install targets with the agents that read them (`hosts` follows the UI language: a getter). */
+export const SKILL_TARGETS: readonly { id: SkillTarget; readonly hosts: string }[] = [
   { id: ".claude/skills", hosts: "Claude Code" },
-  { id: ".agents/skills", hosts: "Codex and other Agent Skills hosts" },
+  {
+    id: ".agents/skills",
+    get hosts() {
+      return t("skills.targetHostsAgents");
+    },
+  },
 ];
 
 /** Same rule as the Rust side (`skills::validate_repo`). */
@@ -100,18 +106,14 @@ export function formatStars(n: number): string {
 /** "today", "yesterday", "5 days ago", "3 months ago", "2 years ago"; "" for missing / bad input. */
 export function relativeTime(iso: string | null | undefined, nowMs: number): string {
   if (!iso) return "";
-  const t = Date.parse(iso);
-  if (Number.isNaN(t)) return "";
-  const days = Math.floor(Math.max(0, nowMs - t) / 86_400_000);
-  if (days < 1) return "today";
-  if (days === 1) return "yesterday";
-  if (days < 30) return `${days} days ago`;
-  if (days < 365) {
-    const m = Math.floor(days / 30);
-    return `${m} month${m === 1 ? "" : "s"} ago`;
-  }
-  const y = Math.floor(days / 365);
-  return `${y} year${y === 1 ? "" : "s"} ago`;
+  const at = Date.parse(iso);
+  if (Number.isNaN(at)) return "";
+  const days = Math.floor(Math.max(0, nowMs - at) / 86_400_000);
+  if (days < 1) return t("skills.time.today");
+  if (days === 1) return t("skills.time.yesterday");
+  if (days < 30) return t("skills.time.daysAgo", { count: days });
+  if (days < 365) return t("skills.time.monthsAgo", { count: Math.floor(days / 30) });
+  return t("skills.time.yearsAgo", { count: Math.floor(days / 365) });
 }
 
 /** Whole minutes until `resetAtSec` (epoch seconds), at least 1; null when unknown or past. */
@@ -154,11 +156,15 @@ export function agentsReading<T extends { agent: AgentKind }>(targets: readonly 
   return agents.filter((a) => targets.some((t) => readsTarget(a.agent, t)));
 }
 
+/** "a and b" (and "a and b and c") in the UI language. */
+export function joinAnd(items: readonly string[]): string {
+  return items.reduce((acc, item, i) => (i === 0 ? item : t("skills.listAnd", { first: acc, second: item })), "");
+}
+
 /** Toast after an install. Never claims live reload: agents load project skills when (re)started. */
 export function installToast(name: string, installed: readonly string[], agentCount: number): string {
-  if (agentCount > 0)
-    return `Added ${name} for ${agentCount} agent${agentCount === 1 ? "" : "s"} — running agents pick up project skills on their next session/reload`;
-  return `Added ${name} to ${installed.join(" and ")} — agents started in this project pick it up`;
+  if (agentCount > 0) return t("skills.installedToastAgents", { name, count: agentCount });
+  return t("skills.installedToastFolders", { name, folders: joinAnd(installed) });
 }
 
 /** Installed copies of one repository skill (by provenance). */
@@ -184,5 +190,5 @@ export function githubUrl(repo: string, sha?: string | null, path?: string | nul
 }
 
 export function skillPathLabel(path: string): string {
-  return path || "(repository root)";
+  return path || t("skills.repoRoot");
 }

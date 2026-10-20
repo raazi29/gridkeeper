@@ -249,8 +249,10 @@ guess. `agents_detect` probes it on PATH and the New Session dialog lists it aut
 
 ### Add a command and a keybinding
 
-1. Add a `Command` (`id`, `title`, `category`, `run`) to `COMMANDS` in `src/actions/commands.ts` (or the themed
-   lists in `experienceCommands.ts` / `terminalCommands.ts`). It shows up in the palette.
+1. Add a command (`id`, `category`, `run`) to `COMMANDS` in `src/actions/commands.ts` (or the themed
+   lists in `experienceCommands.ts` / `terminalCommands.ts`) and its title as `"command.<id>"` in
+   `src/i18n/locales/en.json` (and the other catalogs, see [docs/translating.md](docs/translating.md)). It shows up
+   in the palette.
 2. Optionally give it a default in `DEFAULT_BINDINGS` in `src/keybindings/combo.ts`. Defaults must pass
    `forbiddenReason()`: Gridkeeper never takes keys that shells, readline, TUIs and agents need. That rules out
    function keys, combos without Ctrl or Alt, Ctrl+Alt (AltGr), Win-key combos, Alt+letter, Ctrl+letter,

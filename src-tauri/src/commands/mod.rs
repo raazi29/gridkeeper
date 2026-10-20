@@ -1,8 +1,12 @@
+pub mod agent_browser;
 pub mod app;
+pub mod brain;
+pub mod merge;
 pub mod meter;
 pub mod mission;
 pub mod replay;
 pub mod services;
 pub mod session;
 pub mod skills;
+pub mod testrun;
 pub mod tools;

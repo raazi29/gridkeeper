@@ -12,6 +12,7 @@ import { ErrorBoundary } from "../components/ErrorBoundary";
 import { QuickLaunchPanel } from "../components/QuickLaunch";
 import { openAppMenu } from "../components/ContextMenuHost";
 import { buildBackgroundMenu } from "../components/menus/containerMenus";
+import { useT } from "../i18n";
 import "./layout.css";
 
 export interface GroupGridProps {
@@ -85,6 +86,7 @@ interface RowProps {
 }
 
 const PaneRow = memo(function PaneRow({ groupId, sig, row, ids, offset, count, visible, savedSizes }: RowProps) {
+  const t = useT();
   const key = rowKey(sig, row);
   const panelIds = useMemo(() => ids.map((_, j) => `p${j}`), [ids.length]); // eslint-disable-line react-hooks/exhaustive-deps
   const onLayoutChanged = useSizePersistence(groupId, key, panelIds);
@@ -105,7 +107,7 @@ const PaneRow = memo(function PaneRow({ groupId, sig, row, ids, offset, count, v
     >
       {ids.map((id, j) => (
         <PaneSlot key={`p${j}`} panelId={`p${j}`} first={j === 0} minSize={140}>
-          <ErrorBoundary scope="This pane" compact>
+          <ErrorBoundary scope={t("errors.scopePane")} compact>
             <Pane key={id} sessionId={id} groupId={groupId} index={offset + j} count={count} visible={visible} maximized={false} />
           </ErrorBoundary>
         </PaneSlot>
@@ -194,10 +196,11 @@ function Grid({
 }
 
 function EmptyState() {
+  const t = useT();
   return (
     <div className="grid-empty">
-      <div className="grid-empty-title">No sessions in this group</div>
-      <div className="grid-empty-hint">Start one — it opens in this workspace's project folder</div>
+      <div className="grid-empty-title">{t("pane.gridEmptyTitle")}</div>
+      <div className="grid-empty-hint">{t("pane.gridEmptyHint")}</div>
       <QuickLaunchPanel />
     </div>
   );

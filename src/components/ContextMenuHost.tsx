@@ -39,7 +39,9 @@ export function ContextMenuHost() {
       useMission.subscribe((s, p) => s.open !== p.open && closeAppMenu()),
       useUi.subscribe((s, p) => (s.palette.open !== p.palette.open || s.dialog !== p.dialog) && closeAppMenu()),
     ];
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && useAppMenu.getState().menu && closeAppMenu();
+    // Escape inside the menu is Menu's own (it restores focus); this one covers focus elsewhere.
+    const onKey = (e: KeyboardEvent) =>
+      e.key === "Escape" && useAppMenu.getState().menu && !(e.target as Element | null)?.closest?.(".menu-root") && closeAppMenu();
     const onBlur = () => closeAppMenu();
     window.addEventListener("keydown", onKey, true);
     window.addEventListener("blur", onBlur);

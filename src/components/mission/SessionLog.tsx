@@ -6,16 +6,29 @@
 import { memo, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type PointerEvent } from "react";
 import type { SessionId } from "../../lib/types";
 import { roleTag } from "../../lib/roles";
-import { matchesActivityFilter, useActivity, type ActivityEvent, type ActivityFilter } from "../../store/activity";
+import { useT, type MessageKey, type Translator } from "../../i18n";
+import { ACTIVITY_LIMIT, activityResultText, activityText, matchesActivityFilter, useActivity, type ActivityEvent, type ActivityFilter, type ActivityKind } from "../../store/activity";
 import { clampLogHeight, usePref } from "./mcPrefs";
 import { roleStyle } from "./RoleTag";
 
-const FILTERS: { id: ActivityFilter; label: string }[] = [
-  { id: "all", label: "all" },
-  { id: "needs", label: "needs-you" },
-  { id: "errors", label: "errors" },
-  { id: "lifecycle", label: "lifecycle" },
+const FILTERS: { id: ActivityFilter; label: MessageKey }[] = [
+  { id: "all", label: "activity.filter.all" },
+  { id: "needs", label: "activity.filter.needs" },
+  { id: "errors", label: "activity.filter.errors" },
+  { id: "lifecycle", label: "activity.filter.lifecycle" },
 ];
+
+const KIND_KEYS: Record<ActivityKind, MessageKey> = {
+  lifecycle: "activity.kind.lifecycle",
+  attention: "activity.kind.attention",
+  broadcast: "activity.kind.broadcast",
+  formation: "activity.kind.formation",
+  worktree: "activity.kind.worktree",
+  mission: "activity.kind.mission",
+  tests: "activity.kind.tests",
+  merge: "activity.kind.merge",
+  browser: "activity.kind.browser",
+};
 
 export function formatClock(ms: number): string {
   const d = new Date(ms);
@@ -23,12 +36,14 @@ export function formatClock(ms: number): string {
   return `${two(d.getHours())}:${two(d.getMinutes())}:${two(d.getSeconds())}`;
 }
 
-function who(e: ActivityEvent): string {
-  const tag = e.role ? roleTag(e.role).toLowerCase() : (e.agent ?? e.kind);
-  return e.sessionId ? `${tag} · ${e.sessionName}` : e.kind;
+function who(e: ActivityEvent, t: Translator): string {
+  const kind = KIND_KEYS[e.kind] ? t(KIND_KEYS[e.kind]) : e.kind;
+  const tag = e.role ? roleTag(e.role).toLowerCase() : (e.agent ?? kind);
+  return e.sessionId ? `${tag} · ${e.sessionName}` : kind;
 }
 
 export const SessionLog = memo(function SessionLog({ workspaceIds }: { workspaceIds: Set<SessionId> }) {
+  const t = useT();
   const events = useActivity((s) => s.events);
   const [filter, setFilter] = useState<ActivityFilter>("all");
   const [scope, setScope] = useState<"workspace" | "all">("workspace");
@@ -102,38 +117,38 @@ export const SessionLog = memo(function SessionLog({ workspaceIds }: { workspace
 
   if (!open)
     return (
-      <section className="mc-log is-folded" aria-label="Session log">
+      <section className="mc-log is-folded" aria-label={t("activity.log.label")}>
         <div className="mc-log-head">
-          <button type="button" className="mc-fold" aria-expanded={false} aria-label="Show the session log" title="Show the session log" onClick={() => setOpen(true)}>
+          <button type="button" className="mc-fold" aria-expanded={false} aria-label={t("activity.log.show")} title={t("activity.log.show")} onClick={() => setOpen(true)}>
             ▸
           </button>
-          <span className="mc-micro">session log</span>
+          <span className="mc-micro">{t("activity.log.title")}</span>
           {newest ? (
-            <button type="button" className={`mc-log-latest is-${newest.level}`} title={`${newest.message} — show the session log`} onClick={() => setOpen(true)}>
+            <button type="button" className={`mc-log-latest is-${newest.level}`} title={t("activity.log.latestTitle", { message: activityText(newest) })} onClick={() => setOpen(true)}>
               <span className="mc-log-time">{formatClock(newest.at)}</span>
               <span className="mc-log-who" style={newest.role ? roleStyle(newest.role) : undefined}>
-                {who(newest)}
+                {who(newest, t)}
               </span>
-              <span className="mc-log-msg">{newest.message}</span>
+              <span className="mc-log-msg">{activityText(newest)}</span>
             </button>
           ) : (
-            <span className="mc-log-latest mc-log-empty-inline">no events yet</span>
+            <span className="mc-log-latest mc-log-empty-inline">{t("activity.log.noEventsInline")}</span>
           )}
-          <span className="mc-micro mc-log-count">{rows.length} events</span>
+          <span className="mc-micro mc-log-count">{t("activity.log.count", { count: rows.length })}</span>
         </div>
       </section>
     );
 
   return (
-    <section className="mc-log" aria-label="Session log" style={{ height }}>
+    <section className="mc-log" aria-label={t("activity.log.label")} style={{ height }}>
       <div
         className={`mc-log-resize${dragHeight !== null ? " is-dragging" : ""}`}
         role="separator"
         aria-orientation="horizontal"
-        aria-label="Resize the session log"
+        aria-label={t("activity.log.resize")}
         aria-valuenow={height}
         tabIndex={0}
-        title="Drag to resize (or focus and press ↑ / ↓)"
+        title={t("activity.log.resizeHint")}
         onPointerDown={onHandleDown}
         onPointerMove={onHandleMove}
         onPointerUp={onHandleUp}
@@ -141,53 +156,53 @@ export const SessionLog = memo(function SessionLog({ workspaceIds }: { workspace
         onKeyDown={onHandleKey}
       />
       <div className="mc-log-head">
-        <button type="button" className="mc-fold" aria-expanded aria-label="Fold the session log" title="Fold to one line (remembered on this device)" onClick={() => setOpen(false)}>
+        <button type="button" className="mc-fold" aria-expanded aria-label={t("activity.log.fold")} title={t("activity.foldHint")} onClick={() => setOpen(false)}>
           ▾
         </button>
-        <span className="mc-micro">session log</span>
-        <div className="mc-seg" role="radiogroup" aria-label="Log filter">
+        <span className="mc-micro">{t("activity.log.title")}</span>
+        <div className="mc-seg" role="radiogroup" aria-label={t("activity.log.filterAria")}>
           {FILTERS.map((f) => (
             <button key={f.id} type="button" role="radio" aria-checked={filter === f.id} onClick={() => {
                 stick.current = true;
                 setFilter(f.id);
               }}>
-              {f.label}
+              {t(f.label)}
             </button>
           ))}
         </div>
-        <div className="mc-seg" role="radiogroup" aria-label="Log scope">
+        <div className="mc-seg" role="radiogroup" aria-label={t("activity.log.scopeAria")}>
           <button type="button" role="radio" aria-checked={scope === "workspace"} onClick={() => {
               stick.current = true;
               setScope("workspace");
             }}>
-            this workspace
+            {t("activity.log.scopeWorkspace")}
           </button>
           <button type="button" role="radio" aria-checked={scope === "all"} onClick={() => {
               stick.current = true;
               setScope("all");
             }}>
-            everything
+            {t("activity.log.scopeAll")}
           </button>
         </div>
-        <span className="mc-micro mc-log-count">{rows.length} events · in-memory, last 500</span>
+        <span className="mc-micro mc-log-count">{t("activity.log.countMemory", { count: rows.length, limit: ACTIVITY_LIMIT })}</span>
         {unseen && (
           <button type="button" className="mc-btn mc-log-jump" onClick={jumpEnd}>
-            ↓ new events
+            {t("activity.log.newEvents")}
           </button>
         )}
       </div>
       <div ref={body} className="mc-log-body" onScroll={onScroll} role="log" aria-live="off">
-        {rows.length === 0 && <div className="mc-log-empty">No events yet. Starts, exits, attention changes, broadcasts and formations appear here.</div>}
+        {rows.length === 0 && <div className="mc-log-empty">{t("activity.log.empty")}</div>}
         {rows.map((e) => (
           <div key={e.seq} className={`mc-log-row is-${e.level}`}>
             <span className="mc-log-time">{formatClock(e.at)}</span>
             <span className="mc-log-who" style={e.role ? roleStyle(e.role) : undefined} title={e.sessionName}>
-              {who(e)}
+              {who(e, t)}
             </span>
-            <span className="mc-log-msg" title={e.message}>
-              {e.message}
+            <span className="mc-log-msg" title={activityText(e)}>
+              {activityText(e)}
             </span>
-            <span className="mc-log-res">{e.result ?? ""}</span>
+            <span className="mc-log-res">{activityResultText(e.result)}</span>
           </div>
         ))}
       </div>

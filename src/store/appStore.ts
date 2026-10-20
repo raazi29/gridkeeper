@@ -376,17 +376,27 @@ export function findGroupOf(id: SessionId): { workspace: Workspace; group: Group
 
 let saveTimer: number | undefined;
 let lastSaved: PersistedState | null = null;
+let saving: PersistedState | null = null;
+
+/** A snapshot counts as saved only once the host has stored it: a failed save is retried on the next change or flush. */
+async function save(snapshot: PersistedState) {
+  saving = snapshot;
+  try {
+    await ipc.stateSave(snapshot);
+    lastSaved = snapshot;
+  } catch (e) {
+    void ipc.log("error", `state_save failed: ${String((e as Error)?.message ?? e)}`);
+  } finally {
+    if (saving === snapshot) saving = null;
+  }
+}
 
 export function startPersistence() {
   useApp.subscribe((s) => {
     // After a failed load `persisted` holds defaults: saving them would overwrite the real file.
-    if (!s.loaded || s.loadError || s.persisted === lastSaved) return;
+    if (!s.loaded || s.loadError || s.persisted === lastSaved || s.persisted === saving) return;
     window.clearTimeout(saveTimer);
-    saveTimer = window.setTimeout(() => {
-      const snapshot = useApp.getState().persisted;
-      lastSaved = snapshot;
-      ipc.stateSave(snapshot).catch((e) => ipc.log("error", `state_save failed: ${String(e?.message ?? e)}`));
-    }, 400);
+    saveTimer = window.setTimeout(() => void save(useApp.getState().persisted), 400);
   });
 }
 
@@ -394,8 +404,5 @@ export function startPersistence() {
 export async function flushPersistence() {
   window.clearTimeout(saveTimer);
   const { persisted: snapshot, loaded, loadError } = useApp.getState();
-  if (loaded && !loadError && snapshot !== lastSaved) {
-    lastSaved = snapshot;
-    await ipc.stateSave(snapshot).catch(() => {});
-  }
+  if (loaded && !loadError && snapshot !== lastSaved) await save(snapshot);
 }

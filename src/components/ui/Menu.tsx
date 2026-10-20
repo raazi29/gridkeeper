@@ -27,6 +27,9 @@ export interface MenuAction {
 
 export type MenuItem = MenuAction | "separator";
 
+/** Right-to-left document (Arabic UI): submenus open to the left and the arrow keys swap. */
+const isRtl = () => typeof document !== "undefined" && document.documentElement.dir === "rtl";
+
 const toNav = (items: MenuItem[]): NavItem[] =>
   items.map((it) => (it === "separator" ? it : { label: it.label, disabled: it.disabled || (it.children !== undefined && it.children.length === 0), hasChildren: !!it.children }));
 
@@ -110,7 +113,7 @@ export function Menu({ x, y, items, onClose, anchorRect }: { x: number; y: numbe
     const level = levelEl ? Number(levelEl.dataset.level) : levels.length - 1;
     const index = active?.dataset.index !== undefined ? Number(active.dataset.index) : -1;
     const list = levels[level]?.items ?? [];
-    const r = menuKey(e.key, toNav(list), index, level);
+    const r = menuKey(e.key, toNav(list), index, level, isRtl());
     if (r.type === "none") {
       if (e.key !== "Shift" && e.key !== "Control" && e.key !== "Alt") e.stopPropagation();
       return;
@@ -200,13 +203,21 @@ function MenuPanel({
     const r = el.getBoundingClientRect();
     const vw = window.innerWidth;
     const vh = window.innerHeight;
+    const rtl = isRtl();
     if (typeof anchor !== "function") {
-      setPos(placeMenu(anchor, { width: r.width, height: r.height }, { width: vw, height: vh }));
+      setPos(placeMenu(anchor, { width: r.width, height: r.height }, { width: vw, height: vh }, rtl));
     } else {
       const a = anchor()?.getBoundingClientRect();
       if (!a) return;
-      let left = a.right + 2;
-      if (left + r.width > vw - 4) left = Math.max(4, a.left - r.width - 2);
+      let left: number;
+      if (rtl) {
+        // Submenu to the left of its parent item; to the right when there is no room on the left.
+        left = a.left - r.width - 2;
+        if (left < 4) left = Math.max(4, Math.min(a.right + 2, vw - r.width - 4));
+      } else {
+        left = a.right + 2;
+        if (left + r.width > vw - 4) left = Math.max(4, a.left - r.width - 2);
+      }
       const top = Math.max(4, Math.min(a.top - 5, vh - r.height - 4));
       setPos({ left, top });
     }

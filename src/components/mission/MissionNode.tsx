@@ -19,6 +19,7 @@ import { fileManagerName } from "../../lib/platform";
 import { useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState, type CSSProperties, type DragEvent, type KeyboardEvent, type ReactNode, type RefObject } from "react";
 import { gatherBrief, sendBrief, type BriefRecipient, type BriefSkip } from "../../actions/missionBrief";
 import { notify } from "../../actions/notify";
+import { useT, type MessageKey } from "../../i18n";
 import {
   addTask,
   addTaskOwner,
@@ -61,7 +62,8 @@ import "../../styles/missionBoard.css";
 type MenuEvent = MenuOpenEvent;
 
 export const BOX_TEXT: Record<TaskState, string> = { todo: "[ ]", doing: "[~]", done: "[x]", blocked: "[!]" };
-const STATE_TEXT: Record<TaskState, string> = { todo: "todo", doing: "doing", done: "done", blocked: "blocked" };
+// Translated at render (`tr(STATE_KEY[s])`). Components in this file name the translator `tr`: `t` is a task.
+const STATE_KEY: Record<TaskState, MessageKey> = { todo: "mcNode.state.todo", doing: "mcNode.state.doing", done: "mcNode.state.done", blocked: "mcNode.state.blocked" };
 /** Drag payload type of a board task (JSON { line, text }); session cards accept it too. */
 export const TASK_MIME = "application/x-gridkeeper-task";
 
@@ -75,9 +77,12 @@ export interface MissionNodeProps {
   openMenu: (e: MenuEvent, items: MenuItem[]) => void;
   /** The card selected in Mission Control: the board's "mine" filter shows the tasks it owns. */
   selectedSessionId?: SessionId | null;
+  /** Plays the briefing crawl (effects on only; no button without it). */
+  onBriefing?: () => void;
 }
 
-export function MissionNode({ workspaceId, projectDir, mission, team, onSelectSession, openMenu, selectedSessionId = null }: MissionNodeProps) {
+export function MissionNode({ workspaceId, projectDir, mission, team, onSelectSession, openMenu, selectedSessionId = null, onBriefing }: MissionNodeProps) {
+  const tr = useT();
   const [dialog, setDialog] = useState<"edit" | "brief" | null>(null);
   const root = useRef<HTMLDivElement>(null);
   // A closed dialog would hand focus back to the terminal under the overlay: keep it in Mission Control.
@@ -93,22 +98,19 @@ export function MissionNode({ workspaceId, projectDir, mission, team, onSelectSe
   if (!projectDir)
     return (
       <div data-node="mission" className="mc-node mb-node is-placeholder" ref={root} tabIndex={-1}>
-        <span className="mc-node-label">mission</span>
-        <div>
-          A mission needs a project folder: the shared task board lives in <span className="mc-strong">&lt;folder&gt;\.gridkeeper\mission.md</span>, where every
-          agent can read and edit it.
-        </div>
+        <span className="mc-node-label">{tr("mcNode.label.mission")}</span>
+        <div>{tr.rich("mcNode.needsFolder", { path: "<folder>\\.gridkeeper\\mission.md", b: (c) => <span className="mc-strong">{c}</span> })}</div>
         {workspaceId && (
           <div className="mc-empty-actions">
             <button
               type="button"
               className="mc-btn is-primary"
               onClick={async () => {
-                const dir = await pickFolder("Choose project folder", null);
+                const dir = await pickFolder(tr("shell.chooseProjectFolder"), null);
                 if (dir) useApp.getState().updateWorkspace(workspaceId, { projectDir: dir });
               }}
             >
-              choose project folder…
+              {tr("mcNode.chooseFolder")}
             </button>
           </div>
         )}
@@ -116,7 +118,7 @@ export function MissionNode({ workspaceId, projectDir, mission, team, onSelectSe
     );
 
   const { file, doc } = mission;
-  const label = <span className="mc-node-label">mission · shared task board</span>;
+  const label = <span className="mc-node-label">{tr("mcNode.label.board")}</span>;
 
   if (!file)
     return (
@@ -124,15 +126,15 @@ export function MissionNode({ workspaceId, projectDir, mission, team, onSelectSe
         {label}
         {mission.error ? (
           <>
-            <div className="mb-error">could not read the mission file: {mission.error}</div>
+            <div className="mb-error">{tr("mcNode.readError", { error: mission.error })}</div>
             <div className="mc-empty-actions">
               <button type="button" className="mc-btn" onClick={() => void reloadMission(projectDir)}>
-                retry
+                {tr("mcNode.retry")}
               </button>
             </div>
           </>
         ) : (
-          <div className="mc-empty">reading mission file…</div>
+          <div className="mc-empty">{tr("mcNode.reading")}</div>
         )}
       </div>
     );
@@ -160,6 +162,7 @@ export function MissionNode({ workspaceId, projectDir, mission, team, onSelectSe
         openMenu={openMenu}
         onEdit={() => setDialog("edit")}
         onBrief={() => setDialog("brief")}
+        onBriefing={onBriefing}
       />
       {dialog === "edit" && <EditMissionDialog projectDir={projectDir} file={file} onClose={() => setDialog(null)} />}
       {dialog === "brief" && <BriefDialog missionPath={file.path} team={team} onClose={() => setDialog(null)} />}
@@ -184,6 +187,8 @@ interface BlockAsk {
 }
 
 const FILTERS: readonly TaskFilter[] = ["all", "mine", "unassigned", "blocked"];
+/** Filter button labels ("mine" shows the selected agent instead). */
+const FILTER_KEY: Record<Exclude<TaskFilter, "mine">, MessageKey> = { all: "mcNode.filter.all", unassigned: "mcNode.filter.unassigned", blocked: "mcNode.filter.blocked" };
 
 const collapseKey = (dir: string) => `gridkeeper.missionBoard.collapsed:${dirKey(dir)}`;
 function readCollapsed(dir: string): boolean {
@@ -221,6 +226,7 @@ function Board({
   openMenu,
   onEdit,
   onBrief,
+  onBriefing,
 }: {
   projectDir: string;
   file: MissionFile;
@@ -232,7 +238,9 @@ function Board({
   openMenu: (e: MenuEvent, items: MenuItem[]) => void;
   onEdit: () => void;
   onBrief: () => void;
+  onBriefing?: () => void;
 }) {
+  const tr = useT();
   const [showDone, setShowDone] = useState(false);
   const [writing, setWriting] = useState(false);
   const [collapsed, setCollapsed] = useState(() => readCollapsed(projectDir));
@@ -251,6 +259,7 @@ function Board({
   const [, bumpFocus] = useReducer((n: number) => n + 1, 0);
 
   const p = progress(doc.tasks);
+  const justDone = useJustDone(doc.tasks);
   const unassigned = doc.tasks.filter((t) => t.state !== "done" && ownersFor(t, team).length === 0).length;
   const slugs = useMemo(() => teamSlugs(team), [team]);
   const member = (selectedSessionId && team.find((m) => m.id === selectedSessionId)) || null;
@@ -334,7 +343,7 @@ function Board({
     const i = order.findIndex((x) => x.line === t.line);
     const next = order[i + 1] ?? order[i - 1] ?? null;
     const size = (taskBlockEnd(file.text, t.line) ?? t.line + 1) - t.line;
-    const ok = await run((text) => deleteTask(text, t.line), { expect: expect(t), undo: `Deleted “${short(t.text)}”` });
+    const ok = await run((text) => deleteTask(text, t.line), { expect: expect(t), undo: tr("mcNode.toast.deleted", { task: short(t.text) }) });
     if (ok && refocus && next) focusRow(next.line > t.line ? next.line - size : next.line);
   };
 
@@ -352,7 +361,7 @@ function Board({
 
   const reassign = (t: Task, owner: string) => {
     if (t.owners.length === 1 && t.owners[0] === owner) return;
-    void run((text) => setTaskOwners(text, t.line, [owner]), { expect: expect(t), undo: `Reassigned “${short(t.text)}” to @${owner}` });
+    void run((text) => setTaskOwners(text, t.line, [owner]), { expect: expect(t), undo: tr("mcNode.toast.reassigned", { task: short(t.text), who: `@${owner}` }) });
   };
 
   const startEdit = (t: Task) => {
@@ -381,7 +390,7 @@ function Board({
       const isName = who.some((m) => slugify(m.name) === s);
       return {
         label: `@${s}`,
-        hint: isName ? who.find((m) => slugify(m.name) === s)!.name : `every ${s} (${who.length})`,
+        hint: isName ? who.find((m) => slugify(m.name) === s)!.name : tr("mcNode.menu.every", { role: s, count: who.length }),
         checked: t.owners.includes(s),
         disabled: writing,
         onSelect: () => toggleOwner(t, s),
@@ -389,21 +398,21 @@ function Board({
     });
     return [
       ...(["todo", "doing", "done", "blocked"] as const).map((s) => ({
-        label: `${BOX_TEXT[s]} ${STATE_TEXT[s]}${s === "blocked" && t.state !== "blocked" ? "…" : ""}`,
+        label: `${BOX_TEXT[s]} ${s === "blocked" && t.state !== "blocked" ? tr("mcNode.state.blockedAsk") : tr(STATE_KEY[s])}`,
         checked: t.state === s,
         disabled: writing,
         onSelect: () => void setState(t, s),
       })),
       "separator",
-      { label: "assign to", children: owners.length ? owners : [{ label: "no teammates in this workspace", disabled: true }] },
-      { label: "unassign", disabled: writing || t.owners.length === 0, onSelect: () => void run((text) => setTaskOwners(text, t.line, []), { expect: expect(t) }) },
+      { label: tr("mcNode.menu.assignTo"), children: owners.length ? owners : [{ label: tr("mcNode.menu.noTeammates"), disabled: true }] },
+      { label: tr("mcNode.menu.unassign"), disabled: writing || t.owners.length === 0, onSelect: () => void run((text) => setTaskOwners(text, t.line, []), { expect: expect(t) }) },
       "separator",
-      { label: "edit text", hint: "F2", disabled: writing, onSelect: () => startEdit(t) },
-      { label: "move up", hint: "Alt+↑", disabled: writing || i <= 0, onSelect: () => reorder(t, true) },
-      { label: "move down", hint: "Alt+↓", disabled: writing || i < 0 || i >= sib.length - 1, onSelect: () => reorder(t, false) },
-      { label: "copy line", onSelect: () => void copyText(taskSource(file.text, t.line) ?? t.text, "Task line copied") },
+      { label: tr("mcNode.menu.editText"), hint: "F2", disabled: writing, onSelect: () => startEdit(t) },
+      { label: tr("mcNode.menu.moveUp"), hint: "Alt+↑", disabled: writing || i <= 0, onSelect: () => reorder(t, true) },
+      { label: tr("mcNode.menu.moveDown"), hint: "Alt+↓", disabled: writing || i < 0 || i >= sib.length - 1, onSelect: () => reorder(t, false) },
+      { label: tr("mcNode.menu.copyLine"), onSelect: () => void copyText(taskSource(file.text, t.line) ?? t.text, tr("mcNode.toast.lineCopied")) },
       "separator",
-      { label: "delete", hint: "Del", danger: true, disabled: writing, onSelect: () => void remove(t) },
+      { label: tr("mcNode.menu.delete"), hint: "Del", danger: true, disabled: writing, onSelect: () => void remove(t) },
     ];
   };
 
@@ -452,6 +461,7 @@ function Board({
   });
 
   const rowCtx: RowCtx = {
+    justDone,
     team,
     slugs,
     writing,
@@ -563,20 +573,21 @@ function Board({
   };
 
   const progressBar = (
-    <span className="mc-progress" role="progressbar" aria-valuemin={0} aria-valuemax={p.total} aria-valuenow={p.done} aria-label={`${p.done} of ${p.total} tasks done`}>
-      <span style={{ width: `${Math.round(p.fraction * 100)}%` } as CSSProperties} />
+    <span className="mc-progress" role="progressbar" aria-valuemin={0} aria-valuemax={p.total} aria-valuenow={p.done} aria-label={tr("mcNode.progressAria", { done: p.done, total: p.total })}>
+      <span style={{ transform: `scaleX(${p.fraction.toFixed(3)})` } as CSSProperties} />
+      {p.done > 0 && <i key={p.done} className="mc-progress-sweep" aria-hidden="true" />}
     </span>
   );
   const stats = (
     <span className="mc-lane-stats">
-      {p.doing > 0 && <span className="is-working">{p.doing} doing</span>}
-      {p.blocked > 0 && <span className="is-err">{p.blocked} blocked</span>}
-      {unassigned > 0 && <span className="is-needs">{unassigned} unassigned</span>}
+      {p.doing > 0 && <span className="is-working">{tr("mcNode.stats.doing", { count: p.doing })}</span>}
+      {p.blocked > 0 && <span className="is-err">{tr("mcNode.stats.blocked", { count: p.blocked })}</span>}
+      {unassigned > 0 && <span className="is-needs">{tr("mcNode.stats.unassigned", { count: unassigned })}</span>}
     </span>
   );
   const goal = (
     <span className="mc-strong mb-goal-text" title={doc.goal ?? undefined}>
-      {doc.goal ?? <span className="mb-muted">no goal — add a “# Mission: …” heading</span>}
+      {doc.goal ?? <span className="mb-muted">{tr("mcNode.noGoal")}</span>}
     </span>
   );
   const collapseBtn = (
@@ -584,7 +595,7 @@ function Board({
       type="button"
       className="mb-collapse"
       aria-expanded={!collapsed}
-      title={collapsed ? "Show the task board" : "Collapse the board to one line (remembered for this project)"}
+      title={collapsed ? tr("mcNode.collapse.show") : tr("mcNode.collapse.hide")}
       onClick={toggleCollapsed}
     >
       {collapsed ? "▸" : "▾"}
@@ -594,7 +605,7 @@ function Board({
   if (collapsed)
     return (
       <div className="mb-board is-collapsed" ref={wrap}>
-        <span className="mc-node-label mc-node-label-right">{p.total ? `${p.done}/${p.total} done` : "no tasks yet"}</span>
+        <span className="mc-node-label mc-node-label-right">{p.total ? tr("mcNode.doneCount", { done: p.done, total: p.total }) : tr("mcNode.noTasks")}</span>
         <div className="mb-summary mc-micro">
           {collapseBtn}
           {goal}
@@ -613,7 +624,7 @@ function Board({
     unassigned: unassigned,
     blocked: p.blocked,
   };
-  const filterLabel = (f: TaskFilter) => (f === "mine" ? (member ? `@${slugify(member.name) || member.name}` : "selected agent") : f);
+  const filterLabel = (f: TaskFilter) => (f === "mine" ? (member ? `@${slugify(member.name) || member.name}` : tr("mcNode.filter.selectedAgent")) : tr(FILTER_KEY[f]));
   const shown = STATE_ORDER.reduce((n, s) => n + byState[s].length, 0);
 
   return (
@@ -625,10 +636,10 @@ function Board({
         if (dragging && !wrap.current?.contains(e.relatedTarget as Node | null)) setDropState(null);
       }}
     >
-      <span className="mc-node-label mc-node-label-right">{p.total ? `${p.done}/${p.total} done` : "no tasks yet"}</span>
+      <span className="mc-node-label mc-node-label-right">{p.total ? tr("mcNode.doneCount", { done: p.done, total: p.total }) : tr("mcNode.noTasks")}</span>
       <div className="mb-goal">
         {collapseBtn}
-        <span className="mb-goal-label mc-micro">goal</span>
+        <span className="mb-goal-label mc-micro">{tr("mcNode.goal")}</span>
         {goal}
       </div>
       {doc.context && (
@@ -638,14 +649,12 @@ function Board({
       )}
       <div className="mc-lane-head mc-micro mb-progress">
         {progressBar}
-        <span>
-          {p.done}/{p.total} done
-        </span>
+        <span>{tr("mcNode.doneCount", { done: p.done, total: p.total })}</span>
         {stats}
       </div>
 
       {p.total > 0 && (
-        <div className="mb-filters mc-micro" role="group" aria-label="Filter tasks">
+        <div className="mb-filters mc-micro" role="group" aria-label={tr("mcNode.filter.aria")}>
           {FILTERS.map((f) => (
             <button
               key={f}
@@ -656,13 +665,13 @@ function Board({
               title={
                 f === "mine"
                   ? member
-                    ? `Tasks owned by ${member.name} (the card selected in Mission Control)`
-                    : "Select an agent's card to see its tasks"
+                    ? tr("mcNode.filter.mineTitle", { name: member.name })
+                    : tr("mcNode.filter.mineNone")
                   : f === "unassigned"
-                    ? "Open tasks no teammate owns"
+                    ? tr("mcNode.filter.unassignedTitle")
                     : f === "blocked"
-                      ? "Blocked tasks"
-                      : "Every task"
+                      ? tr("mcNode.filter.blockedTitle")
+                      : tr("mcNode.filter.allTitle")
               }
               onClick={() => setFilter(f)}
             >
@@ -681,15 +690,15 @@ function Board({
                 setQuery("");
               }
             }}
-            placeholder="filter…"
+            placeholder={tr("mcNode.filter.placeholder")}
             spellCheck={false}
-            aria-label="Filter tasks by text or @owner"
+            aria-label={tr("mcNode.filter.searchAria")}
           />
         </div>
       )}
 
       {p.total === 0 ? (
-        <div className="mc-empty">no tasks yet — add one below, brief the team so the lead splits the mission into “- [ ] task @owner” lines, or edit the file</div>
+        <div className="mc-empty">{tr("mcNode.emptyTasks")}</div>
       ) : (
         <div className="mb-groups">
           {ask && !order.some((t) => t.line === ask.line) && (
@@ -697,7 +706,7 @@ function Board({
               <AskReason ask={ask} onConfirm={(r) => void confirmBlock(r)} onCancel={cancelBlock} />
             </ul>
           )}
-          {filtering && shown === 0 && !dragging && <div className="mc-empty">no tasks match</div>}
+          {filtering && shown === 0 && !dragging && <div className="mc-empty">{tr("mcNode.noMatch")}</div>}
           {STATE_ORDER.map((s) => {
             const list = byState[s];
             const dropHere = drop?.state === s && drop.line === null;
@@ -707,24 +716,22 @@ function Board({
                 <button
                   key={s}
                   type="button"
-                  className={`mb-done-toggle mc-micro${dropHere ? " is-drop" : ""}`}
+                  className={`mb-done-toggle mc-micro${dropHere ? " is-drop" : ""}${justDone.size ? " is-just-done" : ""}`}
                   aria-expanded={false}
                   onClick={() => setShowDone(true)}
                   {...sectionDrag(s)}
                 >
-                  ▸ {list.length} done{dragging ? " — drop to mark done" : ""}
+                  {dragging ? tr("mcNode.doneCollapsedDrop", { count: list.length }) : tr("mcNode.doneCollapsed", { count: list.length })}
                 </button>
               );
             return (
               <div key={s} className={`mb-group is-${s}${dropHere ? " is-drop" : ""}`} {...sectionDrag(s)}>
                 {s === "done" && !filtering ? (
                   <button type="button" className="mb-done-toggle mc-micro" aria-expanded onClick={() => setShowDone(false)}>
-                    ▾ {list.length} done
+                    {tr("mcNode.doneExpanded", { count: list.length })}
                   </button>
                 ) : (
-                  <div className="mb-group-head mc-micro">
-                    {STATE_TEXT[s]} · {list.length}
-                  </div>
+                  <div className="mb-group-head mc-micro">{tr("mcNode.groupHead", { state: tr(STATE_KEY[s]), count: list.length })}</div>
                 )}
                 <ul className="mb-tasks">
                   {list.map((t) => (
@@ -732,7 +739,7 @@ function Board({
                       {ask?.line === t.line && <AskReason ask={ask} onConfirm={(r) => void confirmBlock(r)} onCancel={cancelBlock} />}
                     </TaskRow>
                   ))}
-                  {list.length === 0 && <li className="mb-drop-empty">drop here → {STATE_TEXT[s]}</li>}
+                  {list.length === 0 && <li className="mb-drop-empty">{tr("mcNode.dropHere", { state: tr(STATE_KEY[s]) })}</li>}
                 </ul>
               </div>
             );
@@ -752,33 +759,58 @@ function Board({
         }}
       />
 
-      {error && <div className="mb-error">last re-read failed: {error}</div>}
+      {error && <div className="mb-error">{tr("mcNode.rereadFailed", { error })}</div>}
       <div className="mc-node-actions mb-actions">
         <span className="mc-path mb-path" title={file.path}>
           {shortPath(file.path, 48)}
         </span>
-        <button type="button" className="mc-btn" title="Edit the raw Markdown file (saved with a conflict check)" onClick={onEdit}>
-          edit file…
+        <button type="button" className="mc-btn" title={tr("mcNode.editFileTitle")} onClick={onEdit}>
+          {tr("mcNode.editFile")}
         </button>
-        <button type="button" className="mc-btn" title={`Show mission.md in ${fileManagerName()}`} onClick={() => void revealPath(file.path)}>
-          open folder
+        <button type="button" className="mc-btn" title={tr("mcNode.revealTitle", { app: fileManagerName() })} onClick={() => void revealPath(file.path)}>
+          {tr("mcNode.openFolder")}
         </button>
-        <button
-          type="button"
-          className="mc-btn is-primary"
-          title="Send each running agent one line about the mission file, based on its role (shows every line first; nothing is sent until you press Send)"
-          onClick={onBrief}
-        >
-          brief team…
+        {onBriefing && (
+          <button type="button" className="mc-btn mb-briefing" title={tr("mcNode.briefingButtonTitle")} onClick={onBriefing}>
+            {tr("mcNode.briefingButton")}
+          </button>
+        )}
+        <button type="button" className="mc-btn is-primary" title={tr("mcNode.briefTeamTitle")} onClick={onBrief}>
+          {tr("mcNode.briefTeam")}
         </button>
       </div>
     </div>
   );
 }
 
+const NONE: ReadonlySet<string> = new Set();
+
+/**
+ * Tasks that turned done since the last change of the board, by text (rows are keyed by line, which moves),
+ * for ~1.6 s. The first load is only the baseline.
+ */
+function useJustDone(tasks: Task[]): ReadonlySet<string> {
+  const [fresh, setFresh] = useState(NONE);
+  const base = useRef<Map<string, TaskState> | null>(null);
+  const timer = useRef<ReturnType<typeof setTimeout>>(undefined);
+  useEffect(() => {
+    const prev = base.current;
+    base.current = new Map(tasks.map((t) => [t.text, t.state]));
+    const now = prev ? tasks.filter((t) => t.state === "done" && prev.has(t.text) && prev.get(t.text) !== "done").map((t) => t.text) : [];
+    if (!now.length) return;
+    setFresh(new Set(now));
+    clearTimeout(timer.current);
+    timer.current = setTimeout(() => setFresh(NONE), 1600);
+  }, [tasks]);
+  useEffect(() => () => clearTimeout(timer.current), []);
+  return fresh;
+}
+
 // ---- rows ----------------------------------------------------------------------------------------
 
 interface RowCtx {
+  /** Texts of tasks that just turned done (a gold burst on their row). */
+  justDone: ReadonlySet<string>;
   team: TeamMember[];
   slugs: string[];
   writing: boolean;
@@ -807,7 +839,10 @@ interface RowCtx {
 }
 
 function TaskRow({ task, ctx, children }: { task: Task; ctx: RowCtx; children?: ReactNode }) {
+  const tr = useT();
   const next = nextState(task.state);
+  const stateWord = tr(STATE_KEY[task.state]);
+  const nextWord = tr(STATE_KEY[next]);
   const editing = ctx.editing === task.line;
   const dropPos = ctx.drop && ctx.drop.line === task.line ? ctx.drop.pos : null;
   const cls = [
@@ -816,6 +851,7 @@ function TaskRow({ task, ctx, children }: { task: Task; ctx: RowCtx; children?: 
     dropPos ? `is-drop-${dropPos}` : "",
     ctx.dragLine === task.line ? "is-dragged" : "",
     editing ? "is-editing" : "",
+    task.state === "done" && ctx.justDone.has(task.text) ? "is-just-done" : "",
   ]
     .filter(Boolean)
     .join(" ");
@@ -825,7 +861,11 @@ function TaskRow({ task, ctx, children }: { task: Task; ctx: RowCtx; children?: 
         className={cls}
         data-line={task.line}
         tabIndex={ctx.tabLine === task.line ? 0 : -1}
-        aria-label={`${task.text} — ${STATE_TEXT[task.state]}${task.owners.length ? `, ${task.owners.map((o) => `@${o}`).join(" ")}` : ", unassigned"}`}
+        aria-label={
+          task.owners.length
+            ? tr("mcNode.row.aria", { task: task.text, state: stateWord, owners: task.owners.map((o) => `@${o}`).join(" ") })
+            : tr("mcNode.row.ariaUnassigned", { task: task.text, state: stateWord })
+        }
         draggable={!editing && !ctx.writing}
         onFocus={(e) => {
           if (e.target === e.currentTarget) ctx.onFocusRow(task);
@@ -844,8 +884,8 @@ function TaskRow({ task, ctx, children }: { task: Task; ctx: RowCtx; children?: 
           className="mb-box"
           tabIndex={-1}
           disabled={ctx.writing}
-          title={`${STATE_TEXT[task.state]} — click: ${STATE_TEXT[next]} · Space on the row cycles · right-click: any state (blocked…) · drag the row to move it`}
-          aria-label={`${task.text}: ${STATE_TEXT[task.state]}. Mark ${STATE_TEXT[next]}`}
+          title={tr("mcNode.row.boxTitle", { state: stateWord, next: nextWord })}
+          aria-label={tr("mcNode.row.boxAria", { task: task.text, state: stateWord, next: nextWord })}
           onClick={() => ctx.onCycle(task)}
         >
           {BOX_TEXT[task.state]}
@@ -853,14 +893,14 @@ function TaskRow({ task, ctx, children }: { task: Task; ctx: RowCtx; children?: 
         {editing ? (
           <EditText task={task} slugs={ctx.slugs} onSave={(v, key) => ctx.onSaveText(task, v, key)} onCancel={(key) => ctx.onCancelEdit(task, key)} />
         ) : (
-          <span className="mb-text" title={`${task.text} — double-click (or F2) to edit`} onDoubleClick={() => !ctx.writing && ctx.onStartEdit(task)}>
-            {task.text || <span className="mb-muted">(empty)</span>}
+          <span className="mb-text" title={tr("mcNode.row.textTitle", { task: task.text })} onDoubleClick={() => !ctx.writing && ctx.onStartEdit(task)}>
+            {task.text || <span className="mb-muted">{tr("mcNode.row.empty")}</span>}
           </span>
         )}
         <span className="mb-owners">
           {task.owners.length === 0 && task.state !== "done" && (
-            <span className="mb-flag" title="No @owner on this task — drag it onto an agent's card, or right-click → assign to">
-              unassigned
+            <span className="mb-flag" title={tr("mcNode.row.unassignedTitle")}>
+              {tr("mcNode.row.unassigned")}
             </span>
           )}
           {task.owners.map((o) => (
@@ -871,8 +911,8 @@ function TaskRow({ task, ctx, children }: { task: Task; ctx: RowCtx; children?: 
           type="button"
           className="mb-more"
           tabIndex={-1}
-          aria-label={`Actions for ${task.text}`}
-          title="Task actions (right-click, Shift+F10)"
+          aria-label={tr("mcNode.row.moreAria", { task: task.text })}
+          title={tr("mcNode.row.moreTitle")}
           onClick={(e) => ctx.onMenu(task, anchorOf(e.currentTarget))}
         >
           ⋯
@@ -884,6 +924,7 @@ function TaskRow({ task, ctx, children }: { task: Task; ctx: RowCtx; children?: 
 }
 
 function OwnerChip({ owner, task, ctx }: { owner: string; task: Task; ctx: RowCtx }) {
+  const tr = useT();
   const key = `${task.line}:${owner}`;
   const ids = ownersFor({ owners: [owner] }, ctx.team);
   const first = ctx.team.find((m) => m.id === ids[0]);
@@ -895,7 +936,7 @@ function OwnerChip({ owner, task, ctx }: { owner: string; task: Task; ctx: RowCt
   const isDrop = ctx.chipDrop === key ? " is-drop" : "";
   if (!first)
     return (
-      <span className={`mb-owner is-unknown${isDrop}`} title={`No session in this workspace is named or has the role “${owner}” · drop a task here to give it to @${owner}`} {...dropProps}>
+      <span className={`mb-owner is-unknown${isDrop}`} title={tr("mcNode.owner.unknownTitle", { owner })} {...dropProps}>
         @{owner}
       </span>
     );
@@ -906,7 +947,7 @@ function OwnerChip({ owner, task, ctx }: { owner: string; task: Task; ctx: RowCt
       className={`mb-owner${isDrop}`}
       tabIndex={-1}
       style={roleStyle(first.role)}
-      title={`${names.join(", ")} — click to select${ids.length > 1 ? " the first" : ""} · drop a task here to reassign it to @${owner}`}
+      title={ids.length > 1 ? tr("mcNode.owner.titleMany", { names: names.join(", "), owner }) : tr("mcNode.owner.title", { names: names.join(", "), owner })}
       onClick={(e) => {
         e.stopPropagation();
         ctx.onSelectSession(first.id);
@@ -954,6 +995,7 @@ function completeOwnerTab(e: KeyboardEvent<HTMLInputElement>, slugs: readonly st
 }
 
 function EditText({ task, slugs, onSave, onCancel }: { task: Task; slugs: string[]; onSave: (v: string, key: boolean) => void; onCancel: (key: boolean) => void }) {
+  const tr = useT();
   const [value, setValue] = useState(task.text);
   const done = useRef(false);
   const cycle = useRef<TabCycle | null>(null);
@@ -969,8 +1011,8 @@ function EditText({ task, slugs, onSave, onCancel }: { task: Task; slugs: string
       value={value}
       autoFocus
       spellCheck={false}
-      aria-label="Task text (Enter saves, Esc cancels; @owner replaces the owners)"
-      title="Enter saves · Esc cancels · typing @owner replaces the owners · Tab completes @owners"
+      aria-label={tr("mcNode.edit.aria")}
+      title={tr("mcNode.edit.title")}
       onFocus={(e) => e.currentTarget.select()}
       onChange={(e) => setValue(e.target.value)}
       onBlur={() => finish(true, false)}
@@ -1004,6 +1046,7 @@ function QuickAdd({
   /** Move focus back to the task rows; false when there is no row to go to. */
   onLeave: () => boolean;
 }) {
+  const tr = useT();
   const [value, setValue] = useState("");
   const cycle = useRef<TabCycle | null>(null);
   const hint = useMemo(() => {
@@ -1030,8 +1073,8 @@ function QuickAdd({
         className="mb-input mb-add-input"
         value={value}
         spellCheck={false}
-        placeholder="add task — @owner assigns, Tab completes (n)"
-        aria-label="Add a task (Enter adds it under ## Tasks; @owner assigns it)"
+        placeholder={tr("mcNode.add.placeholder")}
+        aria-label={tr("mcNode.add.aria")}
         onChange={(e) => setValue(e.target.value)}
         onKeyDown={(e) => {
           if (e.key === "Tab" && completeOwnerTab(e, slugs, cycle, setValue)) return;
@@ -1044,12 +1087,13 @@ function QuickAdd({
           }
         }}
       />
-      {hint && <span className="mb-add-hint mc-micro">Tab: {hint.map((s) => `@${s}`).join(" ")}</span>}
+      {hint && <span className="mb-add-hint mc-micro">{tr("mcNode.add.hint", { owners: hint.map((s) => `@${s}`).join(" ") })}</span>}
     </form>
   );
 }
 
 function AskReason({ ask, onConfirm, onCancel }: { ask: BlockAsk; onConfirm: (reason: string) => void; onCancel: () => void }) {
+  const tr = useT();
   const [reason, setReason] = useState("");
   return (
     <li className="mb-ask">
@@ -1059,8 +1103,8 @@ function AskReason({ ask, onConfirm, onCancel }: { ask: BlockAsk; onConfirm: (re
         value={reason}
         autoFocus
         spellCheck={false}
-        placeholder={`why is “${short(ask.text)}” blocked? (optional) — Enter blocks · Esc cancels`}
-        aria-label="Reason the task is blocked (optional)"
+        placeholder={tr("mcNode.ask.placeholder", { task: short(ask.text) })}
+        aria-label={tr("mcNode.ask.aria")}
         onChange={(e) => setReason(e.target.value)}
         onKeyDown={(e) => {
           if (e.key === "Enter") {
@@ -1074,10 +1118,10 @@ function AskReason({ ask, onConfirm, onCancel }: { ask: BlockAsk; onConfirm: (re
         }}
       />
       <button type="button" className="mc-btn is-primary" onClick={() => onConfirm(reason)}>
-        block
+        {tr("mcNode.ask.block")}
       </button>
       <button type="button" className="mc-btn" onClick={onCancel}>
-        cancel
+        {tr("mcNode.ask.cancel")}
       </button>
     </li>
   );
@@ -1086,6 +1130,7 @@ function AskReason({ ask, onConfirm, onCancel }: { ask: BlockAsk; onConfirm: (re
 // ---- no mission file yet -------------------------------------------------------------------------
 
 function SetMission({ projectDir, path }: { projectDir: string; path: string }) {
+  const tr = useT();
   const [goal, setGoal] = useState("");
   const [tasks, setTasks] = useState("");
   const [busy, setBusy] = useState(false);
@@ -1094,7 +1139,7 @@ function SetMission({ projectDir, path }: { projectDir: string; path: string }) 
     setBusy(true);
     try {
       const r = await writeMission(projectDir, newMissionText(goal, "", tasks.split(/\r?\n/)), null);
-      if (r.ok) notify("info", "Mission set — brief the team so every agent knows where it is");
+      if (r.ok) notify("info", tr("mcNode.toast.missionSet"));
     } finally {
       setBusy(false);
     }
@@ -1107,28 +1152,33 @@ function SetMission({ projectDir, path }: { projectDir: string; path: string }) 
         void create();
       }}
     >
-      <div className="mc-empty">
-        no mission yet — set one and every agent can read and update it in <span title={path}>.gridkeeper\mission.md</span>
-      </div>
+      <div className="mc-empty">{tr.rich("mcNode.setMission.intro", { name: ".gridkeeper\\mission.md", file: (c) => <span title={path}>{c}</span> })}</div>
       <label className="mb-field">
-        <span className="mc-micro">goal</span>
-        <input className="mb-input" value={goal} onChange={(e) => setGoal(e.target.value)} placeholder="e.g. Add OAuth login" spellCheck={false} aria-label="Mission goal" />
+        <span className="mc-micro">{tr("mcNode.goal")}</span>
+        <input
+          className="mb-input"
+          value={goal}
+          onChange={(e) => setGoal(e.target.value)}
+          placeholder={tr("mcNode.setMission.goalPlaceholder")}
+          spellCheck={false}
+          aria-label={tr("mcNode.setMission.goalAria")}
+        />
       </label>
       <label className="mb-field">
-        <span className="mc-micro">tasks (optional, one per line, “@owner” to assign)</span>
+        <span className="mc-micro">{tr("mcNode.setMission.tasksLabel")}</span>
         <textarea
           className="mb-input mb-textarea"
           value={tasks}
           onChange={(e) => setTasks(e.target.value)}
-          placeholder={"Design the token storage @lead\nImplement /auth/callback @builder-1"}
+          placeholder={tr("mcNode.setMission.tasksPlaceholder")}
           spellCheck={false}
           rows={3}
-          aria-label="Mission tasks, one per line"
+          aria-label={tr("mcNode.setMission.tasksAria")}
         />
       </label>
       <div className="mc-empty-actions mb-form-actions">
         <button type="submit" className="mc-btn is-primary" disabled={!goal.trim() || busy}>
-          {busy ? "creating…" : "create mission"}
+          {busy ? tr("mcNode.setMission.creating") : tr("mcNode.setMission.create")}
         </button>
       </div>
     </form>
@@ -1138,6 +1188,7 @@ function SetMission({ projectDir, path }: { projectDir: string; path: string }) 
 // ---- raw editor ----------------------------------------------------------------------------------
 
 function EditMissionDialog({ projectDir, file, onClose }: { projectDir: string; file: MissionFile; onClose: () => void }) {
+  const tr = useT();
   const [text, setText] = useState(file.text);
   // What the edit is based on: the text + modification time last loaded from disk.
   const [baseText, setBaseText] = useState(file.text);
@@ -1160,7 +1211,11 @@ function EditMissionDialog({ projectDir, file, onClose }: { projectDir: string; 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [latest]);
   const requestClose = async () => {
-    if (dirty && !(await confirmDialog({ title: "Discard your edits?", message: "The mission file stays as it is on disk.", confirmLabel: "Discard", danger: true }))) return;
+    if (
+      dirty &&
+      !(await confirmDialog({ title: tr("mcNode.editor.discardTitle"), message: tr("mcNode.editor.discardMessage"), confirmLabel: tr("mcNode.editor.discard"), danger: true }))
+    )
+      return;
     onClose();
   };
   const save = async (overwrite = false) => {
@@ -1177,7 +1232,7 @@ function EditMissionDialog({ projectDir, file, onClose }: { projectDir: string; 
 
   return (
     <Modal
-      title="Mission file"
+      title={tr("mcNode.editor.title")}
       onClose={() => void requestClose()}
       width={780}
       footer={
@@ -1185,14 +1240,14 @@ function EditMissionDialog({ projectDir, file, onClose }: { projectDir: string; 
           <span className="mb-editor-path mono" title={file.path}>
             {file.path}
           </span>
-          <Button onClick={() => void requestClose()}>Cancel</Button>
+          <Button onClick={() => void requestClose()}>{tr("common.cancel")}</Button>
           {changedOnDisk ? (
-            <Button variant="danger" onClick={() => void save(true)} disabled={busy} title="Replace the newer file on disk with your text">
-              Overwrite
+            <Button variant="danger" onClick={() => void save(true)} disabled={busy} title={tr("mcNode.editor.overwriteTitle")}>
+              {tr("mcNode.editor.overwrite")}
             </Button>
           ) : (
             <Button variant="primary" onClick={() => void save()} disabled={busy || !dirty}>
-              {busy ? "Saving…" : "Save"}
+              {busy ? tr("mcNode.editor.saving") : tr("common.save")}
             </Button>
           )}
         </>
@@ -1200,11 +1255,13 @@ function EditMissionDialog({ projectDir, file, onClose }: { projectDir: string; 
     >
       {changedOnDisk && (
         <div className="mb-editor-warn" role="status">
-          The file changed on disk while you were editing (an agent may have updated it).{" "}
-          <button type="button" className="link-btn" onClick={loadLatest}>
-            Load the latest version
-          </button>{" "}
-          (discards your edits) or Overwrite it.
+          {tr.rich("mcNode.editor.changedOnDisk", {
+            load: (c) => (
+              <button type="button" className="link-btn" onClick={loadLatest}>
+                {c}
+              </button>
+            ),
+          })}
         </div>
       )}
       <textarea
@@ -1212,7 +1269,7 @@ function EditMissionDialog({ projectDir, file, onClose }: { projectDir: string; 
         value={text}
         onChange={(e) => setText(e.target.value)}
         spellCheck={false}
-        aria-label="Mission file (Markdown)"
+        aria-label={tr("mcNode.editor.aria")}
         data-autofocus
         onKeyDown={(e) => {
           if (e.key === "s" && (e.ctrlKey || e.metaKey) && !changedOnDisk) {
@@ -1221,10 +1278,7 @@ function EditMissionDialog({ projectDir, file, onClose }: { projectDir: string; 
           }
         }}
       />
-      <div className="mb-editor-hint muted">
-        Tasks: <code>- [ ] task @owner</code> · boxes <code>[ ]</code> todo, <code>[~]</code> doing, <code>[x]</code> done, <code>[!]</code> blocked · owners are
-        session names or roles (<code>@builder</code> = every builder).
-      </div>
+      <div className="mb-editor-hint muted">{tr.rich("mcNode.editor.hint", { code: (c) => <code>{c}</code> })}</div>
     </Modal>
   );
 }
@@ -1236,6 +1290,7 @@ interface Draft extends BriefRecipient {
 }
 
 function BriefDialog({ missionPath, team, onClose }: { missionPath: string; team: TeamMember[]; onClose: () => void }) {
+  const tr = useT();
   const [drafts, setDrafts] = useState<Draft[] | null>(null);
   const [skipped, setSkipped] = useState<BriefSkip[]>([]);
   const [busy, setBusy] = useState(false);
@@ -1262,10 +1317,10 @@ function BriefDialog({ missionPath, team, onClose }: { missionPath: string; team
     setBusy(true);
     try {
       const r = await sendBrief(chosen);
-      const bits = [`${r.sent.length} sent`];
-      if (r.skipped.length) bits.push(`skipped (now asking something): ${r.skipped.join(", ")}`);
-      if (r.failed.length) bits.push(`failed: ${r.failed.join(", ")}`);
-      notify(r.failed.length ? "error" : r.skipped.length ? "warn" : "info", `Mission brief — ${bits.join(" · ")}`);
+      const bits = [tr("mcNode.brief.toastSent", { count: r.sent.length })];
+      if (r.skipped.length) bits.push(tr("mcNode.brief.toastSkipped", { names: r.skipped.join(", ") }));
+      if (r.failed.length) bits.push(tr("mcNode.brief.toastFailed", { names: r.failed.join(", ") }));
+      notify(r.failed.length ? "error" : r.skipped.length ? "warn" : "info", tr("mcNode.brief.toast", { details: bits.join(" · ") }));
       onClose();
     } finally {
       setBusy(false);
@@ -1274,31 +1329,28 @@ function BriefDialog({ missionPath, team, onClose }: { missionPath: string; team
 
   return (
     <Modal
-      title="Brief the team"
+      title={tr("mcNode.brief.title")}
       onClose={onClose}
       width={760}
       footer={
         <>
-          <Button onClick={onClose}>Cancel</Button>
+          <Button onClick={onClose}>{tr("common.cancel")}</Button>
           <Button variant="primary" onClick={() => void send()} disabled={busy || chosen.length === 0}>
-            {busy ? "Sending…" : `Send to ${chosen.length} session${chosen.length === 1 ? "" : "s"}`}
+            {busy ? tr("mcNode.brief.sending") : tr("mcNode.brief.send", { count: chosen.length })}
           </Button>
         </>
       }
     >
-      <p className="confirm-msg">
-        Each line below is typed into that agent and submitted with Enter. Agents that are asking you something are skipped, because an Enter there would answer
-        it. Edit any line first; nothing is sent until you press Send.
-      </p>
+      <p className="confirm-msg">{tr("mcNode.brief.intro")}</p>
       {drafts === null ? (
-        <div className="muted">Checking the running sessions…</div>
+        <div className="muted">{tr("mcNode.brief.checking")}</div>
       ) : (
         <div className="mb-brief">
-          {drafts.length === 0 && <div className="muted">No running agent can be briefed right now.</div>}
+          {drafts.length === 0 && <div className="muted">{tr("mcNode.brief.none")}</div>}
           {drafts.map((d) => (
             <div key={d.id} className={`mb-brief-row${d.on ? "" : " is-off"}`}>
               <label className="mb-brief-who">
-                <input type="checkbox" checked={d.on} onChange={(e) => edit(d.id, { on: e.currentTarget.checked })} aria-label={`Send to ${d.name}`} />
+                <input type="checkbox" checked={d.on} onChange={(e) => edit(d.id, { on: e.currentTarget.checked })} aria-label={tr("mcNode.brief.sendToAria", { name: d.name })} />
                 <span className="mb-brief-name">{d.name}</span>
                 <RoleTag role={d.role} />
               </label>
@@ -1309,13 +1361,13 @@ function BriefDialog({ missionPath, team, onClose }: { missionPath: string; team
                 disabled={!d.on}
                 onChange={(e) => edit(d.id, { text: e.target.value })}
                 spellCheck={false}
-                aria-label={`Brief for ${d.name}`}
+                aria-label={tr("mcNode.brief.textAria", { name: d.name })}
               />
             </div>
           ))}
           {skipped.length > 0 && (
             <div className="mb-brief-skipped">
-              <div className="mc-micro">skipped</div>
+              <div className="mc-micro">{tr("mcNode.brief.skipped")}</div>
               {skipped.map((s) => (
                 <div key={s.id}>
                   {s.name} — <span className="muted">{s.reason}</span>

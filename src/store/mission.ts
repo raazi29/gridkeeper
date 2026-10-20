@@ -4,6 +4,10 @@ import { create } from "zustand";
 import { useAttentionUi } from "./attention";
 import { useUi } from "./uiStore";
 
+// Mission Control's deck state (views, selection, spotlight, pins…), re-exported for the dev e2e handles.
+export { useDeck } from "./missionDeck";
+export { useStateHistory } from "./stateHistory";
+
 /** `collapsed` key of the lead box (group ids are UUIDs, so they never collide with it). */
 export const LEAD_BOX = "lead";
 

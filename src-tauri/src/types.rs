@@ -173,8 +173,9 @@ pub struct SessionInfo {
 pub const EVT_SESSION_STATE: &str = "session-state";
 
 /// Emitted with payload `SessionAttention` when a session asks for attention
-/// (BEL / OSC 9 / OSC 777 / OSC 99), reports a status (OSC 7501), or its
-/// output activity starts / stops (heuristic).
+/// (BEL / OSC 9 / OSC 777 / OSC 99), reports a status (OSC 7501), its
+/// output activity starts / stops (heuristic), or a Claude Code hook reports
+/// its exact state (`kind = hook`, see `meter::hooks`).
 pub const EVT_SESSION_ATTENTION: &str = "session-attention";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -191,6 +192,10 @@ pub enum AttentionKind {
     Idle,
     /// Output started arriving steadily.
     Active,
+    /// Claude Code hook (opt-in, see `meter::hooks`): `status` = ready | working | tool | permission |
+    /// input | idle-prompt | stopped | ended; `tool` = tool name when known; `reason` = a short token
+    /// (stop failure type, `interrupt`, session start / end reason).
+    Hook,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -208,9 +213,12 @@ pub struct SessionAttention {
     /// OSC 7501 `kind` for blocked states: permission | question | auth.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reason: Option<String>,
-    /// Idle events: how long the active run lasted.
+    /// Idle events: how long the active run lasted. Hook `stopped`: how long the turn took.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub active_ms: Option<u64>,
+    /// Hook events: the tool name (e.g. `Bash`, `mcp__github__create_issue`), never its input.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tool: Option<String>,
 }
 
 /// Binary frame types on the per-session output `Channel` (first byte of each message).
@@ -476,13 +484,15 @@ pub struct MissionChanged {
     pub file: MissionChangeKind,
 }
 
-/// `MissionChanged.file`: `"mission"` (`.gridkeeper/mission.md`) or `"outbox"` (a file created in or
-/// renamed into `.gridkeeper/outbox/`). `team.md` (written by Gridkeeper) never produces an event.
+/// `MissionChanged.file`: `"mission"` (`.gridkeeper/mission.md`), `"outbox"` (a file created in or
+/// renamed into `.gridkeeper/outbox/`) or `"brain"` (a note in `.gridkeeper/brain/notes/` or
+/// `brain/inbox/` changed). `team.md` and `brain/INDEX.md` (written by Gridkeeper) never produce an event.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum MissionChangeKind {
     Mission,
     Outbox,
+    Brain,
 }
 
 /// One instruction file directly in `<projectDir>/.gridkeeper/outbox/` (`mission_outbox_list`).
@@ -604,6 +614,8 @@ pub struct Settings {
     pub notifications: NotificationSettings,
     /// Confirm before pasting large text (>64 KiB or >20 lines) into a program without bracketed paste.
     pub paste_warning: bool,
+    /// Test runs: concurrency cap and default time limit (see `testrun`).
+    pub test_runs: TestRunSettings,
     /// Blade colour preset for the Saber Duel theme (frontend registry; unknown = default blade).
     pub saber_color: String,
     /// Workspace-switch star-streak transition: "auto" | "on" | "off" (string so unknown values never fail loading).
@@ -626,6 +638,50 @@ pub struct Settings {
     /// The one-time "turn on the cost meter" hint was dismissed.
     #[serde(default)]
     pub cost_meter_hint_dismissed: bool,
+    /// Browser panes: "native" (a child webview per pane, Windows; `browser_view.rs`) | "frame"
+    /// (sandboxed iframe). String so unknown values never fail loading; the frontend falls back to
+    /// "frame" where native panes are not supported.
+    #[serde(default = "default_browser_engine")]
+    pub browser_engine: String,
+    /// Native browser panes: target=_blank / window.open opens in a new pane ("pane") or the same one ("same").
+    #[serde(default = "default_browser_new_window")]
+    pub browser_new_window: String,
+    /// Exact status for Claude panes from Claude Code hooks (`meter::hooks`). Injected into the same
+    /// `--settings` file as the meter, so it only applies while `cost_meter` is on.
+    #[serde(default = "default_true")]
+    pub claude_hooks: bool,
+    /// Daily spend guard per workspace id (frontend: src/lib/spend.ts). Missing = no guard.
+    #[serde(default)]
+    pub spend_guards: BTreeMap<String, SpendGuard>,
+}
+
+fn default_browser_engine() -> String {
+    "native".into()
+}
+
+fn default_browser_new_window() -> String {
+    "pane".into()
+}
+
+/// Daily budget of one workspace, in USD of Claude Code's own estimate (API-equivalent on subscriptions).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct SpendGuard {
+    pub budget_usd: f64,
+    /// Toast at this share of the budget (percent, 1-99).
+    pub warn_pct: u8,
+    /// At 100 %: "warn" | "pause" (Autopilot) | "pauseNotify". A string, so unknown values never fail loading.
+    pub action: String,
+}
+
+impl Default for SpendGuard {
+    fn default() -> Self {
+        Self { budget_usd: 10.0, warn_pct: 80, action: "warn".into() }
+    }
+}
+
+fn default_true() -> bool {
+    true
 }
 
 fn default_right_click_action() -> String {
@@ -744,6 +800,7 @@ impl Default for Settings {
             ui_density: "compact".into(),
             notifications: NotificationSettings::default(),
             paste_warning: true,
+            test_runs: TestRunSettings::default(),
             saber_color: "blue".into(),
             hyperspace_transition: "auto".into(),
             right_click_action: default_right_click_action(),
@@ -752,6 +809,10 @@ impl Default for Settings {
             saber_sound: false,
             cost_meter: false,
             cost_meter_hint_dismissed: false,
+            browser_engine: default_browser_engine(),
+            browser_new_window: default_browser_new_window(),
+            claude_hooks: true,
+            spend_guards: BTreeMap::new(),
         }
     }
 }
@@ -776,6 +837,9 @@ pub struct Group {
     /// Ordered pane membership.
     #[serde(default)]
     pub session_ids: Vec<SessionId>,
+    /// Test command for this lane's worktrees (overrides the workspace's; see `testrun`).
+    #[serde(default)]
+    pub test_command: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -791,6 +855,9 @@ pub struct Workspace {
     pub active_group_id: Option<String>,
     #[serde(default)]
     pub created_at: Option<String>,
+    /// Test command for the workspace's folders; `None` = auto-detect per folder (see `testrun`).
+    #[serde(default)]
+    pub test_command: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1153,4 +1220,384 @@ pub struct SessionMeter {
     pub seven_day_pct: Option<f64>,
     /// When the helper last wrote data (ms since the epoch); `None` = no data yet.
     pub updated_ms: Option<u64>,
+}
+
+// ---------------------------------------------------------------------------
+// Brain (`brain`): long-term project memory in `<projectDir>/.gridkeeper/brain/`
+// ---------------------------------------------------------------------------
+
+/// One memory file (`brain/notes/<slug>.md`, or a suggestion in `brain/inbox/`) as listed by `brain_list`.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BrainNoteMeta {
+    /// File stem (`token-storage` for `token-storage.md`).
+    pub slug: String,
+    /// From `brain/inbox/` (a suggestion waiting for the user).
+    pub inbox: bool,
+    /// `title:`, else the first heading / line of the body, else the slug.
+    pub title: String,
+    /// `decision`, `convention`, `gotcha`, `howto`, `fact` or `context` (unknown kinds read as `fact`).
+    pub kind: String,
+    pub tags: Vec<String>,
+    pub source: Option<String>,
+    /// `YYYY-MM-DD` as written in the note (`None` when missing or malformed).
+    pub created: Option<String>,
+    /// `updated:`, else `created:`.
+    pub updated: Option<String>,
+    /// `confirmed` or `suggested` (default: by folder).
+    pub confidence: String,
+    /// Slug of the note this one replaces.
+    pub supersedes: Option<String>,
+    /// Slug of the confirmed note that replaces this one (computed from the other notes).
+    pub superseded_by: Option<String>,
+    /// The body's first ~160 characters on one line.
+    pub excerpt: String,
+    /// Last-write time in ms since the epoch (0 when unknown).
+    pub modified_ms: u64,
+    /// File size; above `brain::MAX_NOTE_BYTES` only the beginning was read and `brain_read` refuses it.
+    pub bytes: u64,
+}
+
+/// `brain_list`: every note and suggestion of a project.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BrainIndex {
+    /// Absolute path of `<projectDir>/.gridkeeper/brain` (whether or not it exists).
+    pub dir: String,
+    pub exists: bool,
+    /// `.gridkeeper/.gitignore` carries the "share the brain through git" block.
+    pub shared: bool,
+    /// `brain/notes/`, newest `updated` first.
+    pub notes: Vec<BrainNoteMeta>,
+    /// `brain/inbox/`, newest file first.
+    pub inbox: Vec<BrainNoteMeta>,
+    /// `.md` files whose names are not valid slugs (`notes/My Note.md`); not read.
+    pub ignored: Vec<String>,
+    /// More than `brain::MAX_NOTES` files in a folder: the list was cut.
+    pub truncated: bool,
+}
+
+/// One note file (`brain_read` / `brain_write`).
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BrainNoteFile {
+    pub slug: String,
+    pub inbox: bool,
+    /// Absolute path (whether or not it exists).
+    pub path: String,
+    pub exists: bool,
+    /// Contents (UTF-8 lossy, BOM stripped, at most 16 KiB; "" when missing).
+    pub text: String,
+    /// Last-write time in ms; `None` when missing. Passed back to `brain_write` for the conflict check.
+    pub modified_ms: Option<u64>,
+}
+
+/// One `brain_search` result (best first).
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BrainHit {
+    pub slug: String,
+    pub inbox: bool,
+    pub title: String,
+    pub kind: String,
+    pub tags: Vec<String>,
+    pub score: f64,
+    /// The body line that matched (or the excerpt), one line.
+    pub snippet: String,
+    /// A newer note supersedes this one.
+    pub superseded: bool,
+}
+
+/// `brain_share` result.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BrainShare {
+    pub shared: bool,
+    /// Absolute path of `.gridkeeper/.gitignore`.
+    pub gitignore_path: String,
+}
+
+// ---------------------------------------------------------------------------
+// Test runs (a workspace's test command in a session's worktree; see `testrun`)
+// ---------------------------------------------------------------------------
+
+/// Emitted with payload `TestRunInfo` whenever a run is queued, starts or finishes.
+pub const EVT_TEST_RUN: &str = "test-run";
+
+/// Test-run settings (all workspaces).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct TestRunSettings {
+    /// At most this many runs at once; the rest wait in a queue. 1..=8, default 2.
+    pub max_concurrent: u32,
+    /// Default time limit per run in minutes. 1..=240, default 15.
+    pub timeout_min: u32,
+}
+
+impl Default for TestRunSettings {
+    fn default() -> Self {
+        Self { max_concurrent: 2, timeout_min: 15 }
+    }
+}
+
+/// One way to run a folder's tests that `testrun::detect` found.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TestCandidate {
+    pub command: String,
+    /// Where it came from, e.g. `package.json "test": vitest run · pnpm-lock.yaml`.
+    pub source: String,
+}
+
+/// Result of `testrun::detect`: the preferred command (first candidate) and every candidate.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TestDetection {
+    pub dir: String,
+    pub command: Option<String>,
+    pub source: Option<String>,
+    pub candidates: Vec<TestCandidate>,
+}
+
+/// What to run, where (`test_run_start`).
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct TestRunSpec {
+    /// Absolute folder: a session's worktree or the project folder.
+    pub cwd: String,
+    /// One line, run by `cmd.exe /d /s /c` (Windows) or `sh -c` (macOS / Linux).
+    pub command: String,
+    /// What the UI calls the run ("builder 1", "lane Build").
+    pub label: String,
+    /// The session whose folder this is (for "ask the agent to fix"), if any.
+    pub session_id: Option<SessionId>,
+    /// Time limit in seconds; `None` = the settings' default.
+    pub timeout_sec: Option<u32>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum TestRunStatus {
+    /// Waiting for a free slot (`TestRunSettings::max_concurrent`).
+    #[default]
+    Queued,
+    Running,
+    /// Exit code 0.
+    Passed,
+    /// Non-zero exit code.
+    Failed,
+    /// Could not run (spawn failure, command not found, ...): see `error`.
+    Error,
+    Cancelled,
+    TimedOut,
+}
+
+impl TestRunStatus {
+    pub fn is_active(self) -> bool {
+        matches!(self, TestRunStatus::Queued | TestRunStatus::Running)
+    }
+}
+
+/// Counts parsed from a runner's summary (best effort; `testrun::parse_counts`).
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TestCounts {
+    /// "vitest", "jest", "cargo", "pytest", "go", "mocha" (several joined with "+").
+    pub runner: String,
+    /// "tests", or "packages" for `go test` without `-v`.
+    pub unit: String,
+    pub passed: u32,
+    pub failed: u32,
+    pub skipped: u32,
+}
+
+/// One test run (no log text; that comes from `test_run_log`).
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TestRunInfo {
+    pub id: String,
+    pub cwd: String,
+    pub command: String,
+    pub label: String,
+    pub session_id: Option<SessionId>,
+    pub status: TestRunStatus,
+    /// ms since the epoch.
+    pub queued_ms: u64,
+    pub started_ms: Option<u64>,
+    pub ended_ms: Option<u64>,
+    pub duration_ms: Option<u64>,
+    pub exit_code: Option<i32>,
+    pub counts: Option<TestCounts>,
+    /// Failing test names found in the output (best effort, at most 10).
+    pub failures: Vec<String>,
+    /// Last non-empty output lines (ANSI stripped, at most 20).
+    pub last_lines: Vec<String>,
+    pub error: Option<String>,
+    /// Output bytes seen (stdout + stderr), including what the 2 MiB ring dropped.
+    pub output_bytes: u64,
+    pub timeout_sec: u32,
+    /// Git facts at start (the merge gate needs tests that ran on exactly the commit being merged).
+    pub repo_root: Option<String>,
+    pub head_sha: Option<String>,
+    /// Uncommitted or untracked files at start (`git status --porcelain`); `None` = not a repository.
+    pub uncommitted: Option<u32>,
+}
+
+/// The captured output of a run (ANSI stripped). `dropped_bytes` = what the ring no longer holds.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TestRunLog {
+    pub id: String,
+    pub status: TestRunStatus,
+    pub text: String,
+    pub dropped_bytes: u64,
+}
+
+// ---------------------------------------------------------------------------
+// Merge assistant (the first git write operation; see `merge` and ADR-020)
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum MergeStrategy {
+    /// `git merge --ff-only <sha>`: only when the base is an ancestor of the branch.
+    FastForward,
+    /// `git merge --no-ff --no-edit -m <message> <sha>`.
+    #[default]
+    MergeCommit,
+    /// `git merge --squash <sha>` + `git commit -m <message>`.
+    Squash,
+}
+
+/// A commit the merge would bring in.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MergeCommitInfo {
+    pub sha: String,
+    pub subject: String,
+    pub author: String,
+    pub time_ms: u64,
+}
+
+/// A file that would conflict, with git's conflict type ("content", "modify/delete", ...).
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MergeConflict {
+    pub path: String,
+    pub kind: String,
+}
+
+/// Everything the merge dialog shows before anything is written (`merge::preview`).
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MergePreview {
+    /// Root of the worktree that holds the branch.
+    pub path: String,
+    pub branch: Option<String>,
+    pub branch_sha: Option<String>,
+    pub base: Option<String>,
+    pub base_sha: Option<String>,
+    /// The main checkout (first entry of `git worktree list`): where the merge happens.
+    pub main_path: Option<String>,
+    pub main_branch: Option<String>,
+    pub ahead: u32,
+    pub behind: u32,
+    pub files_changed: u32,
+    pub insertions: u32,
+    pub deletions: u32,
+    pub files: Vec<BranchFile>,
+    pub files_truncated: bool,
+    pub commits: Vec<MergeCommitInfo>,
+    pub commits_truncated: bool,
+    pub last_subject: Option<String>,
+    pub can_fast_forward: bool,
+    /// `Some(true)` clean, `Some(false)` conflicts, `None` = the check could not run.
+    pub clean: Option<bool>,
+    pub conflicts: Vec<MergeConflict>,
+    /// "fast-forward", "merge-tree" or "temporary worktree".
+    pub check_method: String,
+    pub git_version: Option<String>,
+    /// Uncommitted / untracked files in the branch's worktree (not part of the merge).
+    pub worktree_uncommitted: u32,
+    /// Reasons the merge is refused (empty = allowed).
+    pub blockers: Vec<String>,
+    pub warnings: Vec<String>,
+}
+
+/// A merge the user confirmed. The SHAs pin exactly what was previewed (and tested).
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct MergeRequest {
+    /// The branch's worktree (as in the preview).
+    pub path: String,
+    /// The main checkout the preview found (the merge refuses if it changed).
+    pub main_path: String,
+    pub base: String,
+    pub branch: String,
+    pub base_sha: String,
+    pub branch_sha: String,
+    pub strategy: MergeStrategy,
+    /// One line; required for a merge commit and a squash.
+    pub message: String,
+    /// Refuse unless a passing test run exists for `branch_sha` in that worktree (clean at start).
+    pub require_tests: bool,
+}
+
+/// The exact commands a merge runs (`git -C <main> ...`), shown before anything runs.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MergePlan {
+    pub main_path: String,
+    pub commands: Vec<String>,
+    /// Run only when a step fails, to put the checkout back.
+    pub on_failure: Vec<String>,
+}
+
+/// One command a merge or clean-up ran.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GitStepLog {
+    pub command: String,
+    pub ok: bool,
+    /// stdout + stderr, redacted, at most 8 KiB.
+    pub output: String,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MergeOutcome {
+    pub ok: bool,
+    pub strategy: MergeStrategy,
+    /// The base branch's tip afterwards.
+    pub new_sha: Option<String>,
+    pub conflicts: Vec<MergeConflict>,
+    /// A step failed and the checkout was put back (`merge --abort` / `reset --merge`).
+    pub rolled_back: bool,
+    pub error: Option<String>,
+    pub steps: Vec<GitStepLog>,
+}
+
+/// "Remove worktree + branch" (after a merge): what would run, and links that are unlinked first.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WorktreeCleanupPlan {
+    pub path: String,
+    pub branch: String,
+    pub main_path: String,
+    /// Junctions / symlinks inside the worktree (unlinked first; their targets are never touched).
+    pub links: Vec<String>,
+    pub commands: Vec<String>,
+    /// The branch is contained in the base (`git branch -d` will accept it).
+    pub branch_merged: bool,
+    pub blockers: Vec<String>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WorktreeCleanupOutcome {
+    pub links_removed: u32,
+    pub worktree_removed: bool,
+    pub branch_deleted: bool,
+    pub error: Option<String>,
+    pub steps: Vec<GitStepLog>,
 }

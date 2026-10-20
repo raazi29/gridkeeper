@@ -117,11 +117,28 @@ fn drain_capped<R: Read + Send + 'static>(
 
 /// Like [`run_with_timeout`], but never buffers more than `max_stdout` bytes of stdout (and 64 KiB
 /// of stderr): once stdout goes over the cap the child is killed and the result is marked truncated.
-pub fn run_capped(mut cmd: Command, timeout: Duration, max_stdout: usize) -> io::Result<CappedOutput> {
+pub fn run_capped(cmd: Command, timeout: Duration, max_stdout: usize) -> io::Result<CappedOutput> {
+    run_capped_inner(cmd, timeout, max_stdout, None)
+}
+
+/// Like [`run_capped`], but `input` is written to the child's stdin (then closed). Used to hand
+/// curl a config (`-K -`) so request headers never appear on a command line.
+pub fn run_capped_with_input(cmd: Command, timeout: Duration, max_stdout: usize, input: Vec<u8>) -> io::Result<CappedOutput> {
+    run_capped_inner(cmd, timeout, max_stdout, Some(input))
+}
+
+fn run_capped_inner(mut cmd: Command, timeout: Duration, max_stdout: usize, input: Option<Vec<u8>>) -> io::Result<CappedOutput> {
     use std::sync::atomic::{AtomicBool, Ordering};
     use std::sync::Arc;
-    cmd.stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::piped());
+    cmd.stdin(if input.is_some() { Stdio::piped() } else { Stdio::null() }).stdout(Stdio::piped()).stderr(Stdio::piped());
     let mut child = cmd.spawn()?;
+    if let (Some(bytes), Some(mut stdin)) = (input, child.stdin.take()) {
+        // A thread, so a child that does not read its stdin can never block us; dropping closes it.
+        std::thread::spawn(move || {
+            use std::io::Write;
+            let _ = stdin.write_all(&bytes);
+        });
+    }
     let over = Arc::new(AtomicBool::new(false));
     let out_rx = drain_capped(child.stdout.take(), max_stdout, Arc::clone(&over));
     let err_rx = drain_capped(child.stderr.take(), 64 * 1024, Arc::new(AtomicBool::new(false)));
@@ -237,6 +254,21 @@ mod tests {
         assert!(!out.truncated);
         assert!(out.status.is_some_and(|s| s.success()));
         assert_eq!(first_line(&out.stdout).as_deref(), Some("small"));
+    }
+
+    #[test]
+    fn capped_with_input_feeds_stdin() {
+        #[cfg(windows)]
+        let cmd = {
+            let mut c = hidden_command("cmd.exe");
+            c.args(["/d", "/c", "more"]);
+            c
+        };
+        #[cfg(not(windows))]
+        let cmd = hidden_command("cat");
+        let out = run_capped_with_input(cmd, Duration::from_secs(10), 1000, b"from-stdin\n".to_vec()).expect("runs");
+        assert!(!out.truncated);
+        assert_eq!(first_line(&out.stdout).as_deref(), Some("from-stdin"));
     }
 
     #[test]

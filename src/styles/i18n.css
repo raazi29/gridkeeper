@@ -1,0 +1,120 @@
+/* Layout rules for translated UIs (src/i18n): right-to-left (Arabic) and long labels (German, Russian …).
+   Visual check per language: docs/translating.md. */
+
+/* ---- Right-to-left ------------------------------------------------------------------------------------------
+   src/i18n sets <html dir="rtl">. Flex rows already follow the direction and the stylesheets use logical
+   properties (margin-inline-start, inset-inline-end, text-align: start …) where position matters. These rules keep
+   left-to-right content left-to-right and mirror directional glyphs. */
+
+/* Terminals: xterm.js lays out cells left to right; never inherit rtl. */
+[dir="rtl"] .terminal-view,
+[dir="rtl"] .xterm {
+  direction: ltr;
+}
+
+/* The pane grid keeps its left-to-right order (pane 1 top left, matching Alt+1 … and "Move left / right", and
+   splitters drag the way they point); each pane's own chrome is right-to-left again. */
+[dir="rtl"] .group-grid {
+  direction: ltr;
+}
+[dir="rtl"] .group-grid .pane,
+[dir="rtl"] .group-grid .grid-empty {
+  direction: rtl;
+}
+
+/* Paths, code, key combos, commands: isolated left-to-right runs inside right-to-left text. */
+[dir="rtl"] .mono,
+[dir="rtl"] code,
+[dir="rtl"] kbd,
+[dir="rtl"] .kbd,
+[dir="rtl"] pre {
+  direction: ltr;
+  unicode-bidi: isolate;
+}
+
+/* A left-to-right block lines up with the right-to-left text around it (its end is the right edge). */
+[dir="rtl"] .mono:not(input):not(textarea),
+[dir="rtl"] pre {
+  text-align: end;
+}
+
+/* Switch knob travels toward the inline end. */
+[dir="rtl"] .switch.is-on .switch-knob {
+  transform: translateX(-14px);
+}
+
+/* Chevrons and other directional icons (`icon-dir` in components/icons.tsx). */
+[dir="rtl"] .icon-dir {
+  transform: scaleX(-1);
+}
+
+/* ---- Long labels (German, Russian, French …) ----------------------------------------------------------------
+   Prefer wrapping or shrinking with a tooltip over fixed widths. */
+
+/* Sidebar footer labels shrink and ellipsize (each button has a tooltip). */
+.footer-btn span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Inspector action grid (3 columns): labels wrap onto a second line instead of being cut. */
+.inspector-actions .btn {
+  height: auto;
+  min-height: var(--control-h);
+  padding-block: 3px;
+  white-space: normal;
+  line-height: 1.15;
+  text-align: center;
+  overflow-wrap: anywhere;
+}
+
+/* Inspector key column: room for longer labels where the language needs it; ellipsis beyond that. */
+:root:is([lang="de"], [lang="ru"], [lang="fr"], [lang="es"], [lang="pt-BR"], [lang="tr"]) .kv-k {
+  width: 104px;
+}
+.kv-k {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Fleet header row: the keyboard hint gives way first. */
+.attn-fleet-head {
+  overflow: hidden;
+}
+.attn-fleet-hint {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Comms popover header: the title shrinks before the buttons do. */
+.attn-comms-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Skills tabs: scroll sideways when five long tab names don't fit. */
+.skills-tabs {
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+/* Account rows: action buttons wrap under each other instead of pushing the row wider. */
+.profile-actions {
+  flex: 0 1 auto;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+/* Flight log chip in the Mission Control header (has a tooltip). */
+.mc-btn.fl-chip .fl-chip-text {
+  max-width: 24ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

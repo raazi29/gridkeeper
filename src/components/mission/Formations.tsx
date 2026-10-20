@@ -24,6 +24,7 @@ import {
 import { deleteSavedFormation, launchFormation, loadSavedFormations, reusableEmptyGroup, saveWorkspaceAsFormation } from "../../actions/formations";
 import { formationBriefPrompts } from "../../actions/missionBrief";
 import { notify } from "../../actions/notify";
+import { useT } from "../../i18n";
 import { ipc } from "../../lib/ipc";
 import { roleInfo } from "../../lib/roles";
 import type { GitInfo } from "../../lib/types";
@@ -36,20 +37,23 @@ import { Field, Input, Segmented, Select, Toggle } from "../ui/Field";
 import { Modal } from "../ui/Modal";
 import { pickFolder } from "../util/pick";
 import { RoleTag } from "./RoleTag";
+import { TeamTemplates } from "../teamTemplates/TeamTemplates";
+import { useTeamTemplateUi } from "../../store/teamTemplates";
 import "../../styles/mission.css";
 
 type Choice = { kind: "builtin"; id: BuiltinFormationId } | { kind: "saved"; id: string };
 
 function Stepper({ value, min, max, onChange, label }: { value: number; min: number; max: number; onChange: (n: number) => void; label: string }) {
+  const t = useT();
   return (
     <div className="stepper" role="group" aria-label={label}>
-      <button type="button" className="stepper-btn" aria-label="Fewer" disabled={value <= min} onClick={() => onChange(Math.max(min, value - 1))}>
+      <button type="button" className="stepper-btn" aria-label={t("formations.stepper.fewer")} disabled={value <= min} onClick={() => onChange(Math.max(min, value - 1))}>
         −
       </button>
       <span className="stepper-val" aria-live="polite">
         {value}
       </span>
-      <button type="button" className="stepper-btn" aria-label="More" disabled={value >= max} onClick={() => onChange(Math.min(max, value + 1))}>
+      <button type="button" className="stepper-btn" aria-label={t("formations.stepper.more")} disabled={value >= max} onClick={() => onChange(Math.min(max, value + 1))}>
         +
       </button>
     </div>
@@ -57,6 +61,7 @@ function Stepper({ value, min, max, onChange, label }: { value: number; min: num
 }
 
 export function FormationDialog() {
+  const t = useT();
   const close = () => useMission.getState().closeFormation();
   const wsId = useApp((s) => selectActiveWorkspace(s)?.id ?? null);
   const wsName = useApp((s) => selectActiveWorkspace(s)?.name ?? "");
@@ -65,6 +70,7 @@ export function FormationDialog() {
   const agents = useApp((s) => s.agents);
   const runtime = useApp((s) => s.runtime);
 
+  const [tab, setTab] = useState<"formations" | "templates">(() => (useTeamTemplateUi.getState().intent ? "templates" : "formations"));
   const [saved, setSaved] = useState<FormationTemplate[]>(() => loadSavedFormations());
   const [choice, setChoice] = useState<Choice>({ kind: "builtin", id: "pbv" });
   const [params, setParams] = useState<BuiltinParams>(DEFAULT_PARAMS);
@@ -121,8 +127,9 @@ export function FormationDialog() {
 
   const template = useMemo<FormationTemplate | null>(() => {
     if (choice.kind === "builtin") return builtinTemplate(choice.id, params);
-    return saved.find((t) => t.id === choice.id) ?? null;
-  }, [choice, params, saved]);
+    return saved.find((x) => x.id === choice.id) ?? null;
+    // `t`: a language change re-reads the built-in name (and re-plans, so errors / warnings follow).
+  }, [choice, params, saved, t]);
 
   // Roles in the template (in order) and which of them run Claude.
   const roles = useMemo(() => {
@@ -200,11 +207,11 @@ export function FormationDialog() {
   const extraWarnings = useMemo(() => {
     const w: string[] = [];
     const needs = new Set(plan?.groups.flatMap((g) => g.sessions.map((s) => s.agent)) ?? []);
-    for (const k of ["claude", "codex"] as const) if (needs.has(k) && agents.some((a) => a.kind === k && !a.path)) w.push(`${k === "claude" ? "Claude Code" : "Codex"} was not detected on this PC; those sessions will fail to start until a path is set in Settings.`);
-    if (plan && plan.sessionCount > 12) w.push(`${plan.sessionCount} sessions will start (launches of the same agent are spaced out automatically).`);
-    if (useWorktrees && gitState === "none" && template?.groups.some((g) => g.slots.some((s) => s.worktreeKey))) w.push("The folder is not a Git repository, so sessions will share the folder instead of using worktrees.");
+    for (const k of ["claude", "codex"] as const) if (needs.has(k) && agents.some((a) => a.kind === k && !a.path)) w.push(t("formations.warn.notDetected", { agent: k === "claude" ? "Claude Code" : "Codex" }));
+    if (plan && plan.sessionCount > 12) w.push(t("formations.warn.manySessions", { count: plan.sessionCount }));
+    if (useWorktrees && gitState === "none" && template?.groups.some((g) => g.slots.some((s) => s.worktreeKey))) w.push(t("formations.warn.notRepo"));
     return w;
-  }, [plan, agents, useWorktrees, gitState, template]);
+  }, [plan, agents, useWorktrees, gitState, template, t]);
 
   const targetGroupId = useMission((s) => s.formationGroupId);
   const reuse = wsId ? reusableEmptyGroup(wsId, targetGroupId) : null;
@@ -212,22 +219,25 @@ export function FormationDialog() {
 
   const launch = async () => {
     if (!plan || !wsId || !canLaunch) return;
+    const counts = { groups: plan.groups.length, sessions: plan.sessionCount, worktrees: plan.worktrees.length };
     const ok = await confirmDialog({
-      title: `Launch “${plan.name}” in ${wsName}?`,
-      message:
-        `Creates ${plan.groups.length} group${plan.groups.length === 1 ? "" : "s"} and starts ${plan.sessionCount} session${plan.sessionCount === 1 ? "" : "s"}` +
-        (plan.worktrees.length ? `, after creating ${plan.worktrees.length} Git worktree${plan.worktrees.length === 1 ? "" : "s"} on new branches from the current HEAD` : "") +
-        (reuse ? `. The empty group “${reuse.name}” is reused as “${plan.groups[0]?.name}”` : "") +
-        ". Nothing is deleted. Agents are never auto-approved; starter prompts are held while an agent asks for confirmation.",
+      title: t("formations.confirm.title", { name: plan.name, workspace: wsName }),
+      message: [
+        plan.worktrees.length ? t("formations.confirm.createsWorktrees", counts) : t("formations.confirm.creates", counts),
+        reuse ? t("formations.confirm.reuse", { group: reuse.name, name: plan.groups[0]?.name ?? "" }) : "",
+        t("formations.confirm.safety"),
+      ]
+        .filter(Boolean)
+        .join(" "),
       detail: describePlan(plan),
-      confirmLabel: "Create and start",
+      confirmLabel: t("formations.confirm.ok"),
     });
     if (!ok) return;
     setBusy(true);
     try {
       const r = await launchFormation(plan, wsId, { groupId: targetGroupId });
       if (r.ok) {
-        notify("info", `Formation “${plan.name}” started: ${r.sessionIds.length} sessions`);
+        notify("info", t("formations.toast.started", { name: plan.name, count: r.sessionIds.length }));
         close();
       }
     } finally {
@@ -237,41 +247,62 @@ export function FormationDialog() {
 
   const save = () => {
     if (!wsId) return;
-    const t = saveWorkspaceAsFormation(wsId, saveName.trim() || wsName);
-    if (t) {
+    const tpl = saveWorkspaceAsFormation(wsId, saveName.trim() || wsName);
+    if (tpl) {
       setSaved(loadSavedFormations());
-      setChoice({ kind: "saved", id: t.id });
+      setChoice({ kind: "saved", id: tpl.id });
       setSaveName("");
-      notify("info", `Saved formation “${t.name}”`);
+      notify("info", t("formations.toast.saved", { name: tpl.name }));
     }
   };
 
   const claudeRoles = roles.filter((r) => r.claude);
   const codexOrTools = useMemo(() => agents.filter((a) => a.preset && !a.error), [agents]);
 
+  const tabs = (
+    <Segmented
+      size="sm"
+      ariaLabel={t("formations.tabsAria")}
+      value={tab}
+      onChange={setTab}
+      options={[
+        { value: "formations", label: t("formations.tab.formations") },
+        { value: "templates", label: t("formations.tab.templates") },
+      ]}
+    />
+  );
+  if (tab === "templates") return <TeamTemplates onClose={close} tabs={tabs} />;
+
   return (
     <Modal
-      title="Launch formation"
+      title={t("formations.title")}
       onClose={close}
       width={720}
+      headerExtra={tabs}
       footer={
         <>
           <span className="fm-save">
-            <Input value={saveName} onChange={(e) => setSaveName(e.target.value)} placeholder={wsName ? `save “${wsName}” as…` : "formation name"} aria-label="Saved formation name" style={{ width: 200 }} />
-            <Button size="sm" onClick={save} disabled={!wsId} title="Save this workspace's groups, roles, agents and accounts (no prompts, env or conversation ids)">
-              Save current workspace
+            <Input
+              value={saveName}
+              onChange={(e) => setSaveName(e.target.value)}
+              placeholder={wsName ? t("formations.save.placeholder", { name: wsName }) : t("formations.save.placeholderEmpty")}
+              aria-label={t("formations.save.aria")}
+              style={{ width: 200 }}
+            />
+            <Button size="sm" onClick={save} disabled={!wsId} title={t("formations.save.title")}>
+              {t("formations.save.button")}
             </Button>
           </span>
-          <Button onClick={close}>Cancel</Button>
+          <Button onClick={close}>{t("common.cancel")}</Button>
           <Button variant="primary" onClick={() => void launch()} disabled={!canLaunch}>
-            {busy ? "Launching…" : "Review and launch…"}
+            {busy ? t("formations.launching") : t("formations.review")}
           </Button>
         </>
       }
     >
       <div className="form">
-        <Field label="Formation">
-          <div className="fm-list" role="radiogroup" aria-label="Formation">
+        <Field label={t("formations.field.formation")}>
+          <div className="fm-list" role="radiogroup" aria-label={t("formations.field.formation")}>
             {BUILTIN_FORMATIONS.map((f) => (
               <button
                 key={f.id}
@@ -285,27 +316,29 @@ export function FormationDialog() {
                 <span className="fm-card-desc">{f.description}</span>
               </button>
             ))}
-            {saved.map((t) => (
-              <div key={t.id} style={{ position: "relative" }}>
+            {saved.map((tpl) => (
+              <div key={tpl.id} style={{ position: "relative" }}>
                 <button
                   type="button"
                   role="radio"
-                  aria-checked={choice.kind === "saved" && choice.id === t.id}
-                  className={`fm-card${choice.kind === "saved" && choice.id === t.id ? " is-selected" : ""}`}
+                  aria-checked={choice.kind === "saved" && choice.id === tpl.id}
+                  className={`fm-card${choice.kind === "saved" && choice.id === tpl.id ? " is-selected" : ""}`}
                   style={{ width: "100%" }}
-                  onClick={() => setChoice({ kind: "saved", id: t.id })}
+                  onClick={() => setChoice({ kind: "saved", id: tpl.id })}
                 >
-                  <span className="fm-card-name">{t.name}</span>
-                  <span className="fm-card-desc">Saved · {t.description}</span>
+                  <span className="fm-card-name">{tpl.name}</span>
+                  <span className="fm-card-desc">
+                    {t("formations.savedCard", { groups: tpl.groups.length, sessions: tpl.groups.reduce((n, g) => n + g.slots.length, 0) })}
+                  </span>
                 </button>
                 <button
                   type="button"
                   className="icon-btn icon-btn-sm fm-card-del"
-                  aria-label={`Delete saved formation ${t.name}`}
-                  title="Delete saved formation"
+                  aria-label={t("formations.deleteAria", { name: tpl.name })}
+                  title={t("formations.deleteTitle")}
                   onClick={() => {
-                    setSaved(deleteSavedFormation(t.id));
-                    if (choice.kind === "saved" && choice.id === t.id) setChoice({ kind: "builtin", id: "pbv" });
+                    setSaved(deleteSavedFormation(tpl.id));
+                    if (choice.kind === "saved" && choice.id === tpl.id) setChoice({ kind: "builtin", id: "pbv" });
                   }}
                 >
                   ✕
@@ -317,13 +350,13 @@ export function FormationDialog() {
 
         {choice.kind === "builtin" && choice.id === "pbv" && (
           <div className="fm-row">
-            <Field label="Builders">
-              <Stepper label="Number of builders" value={params.builders} min={1} max={MAX_BUILDERS} onChange={(n) => setParams({ ...params, builders: n })} />
+            <Field label={t("formations.field.builders")}>
+              <Stepper label={t("formations.buildersAria")} value={params.builders} min={1} max={MAX_BUILDERS} onChange={(n) => setParams({ ...params, builders: n })} />
             </Field>
-            <Field label="Builder agent">
+            <Field label={t("formations.field.builderAgent")}>
               <Segmented
                 size="sm"
-                ariaLabel="Builder agent"
+                ariaLabel={t("formations.field.builderAgent")}
                 value={params.builderAgent}
                 onChange={(v) => setParams({ ...params, builderAgent: v })}
                 options={[
@@ -332,18 +365,18 @@ export function FormationDialog() {
                 ]}
               />
             </Field>
-            <Field label="Verify">
-              <Toggle checked={params.verifier} onChange={(v) => setParams({ ...params, verifier: v })} label="Add a Claude verifier next to the Codex reviewer" />
+            <Field label={t("formations.field.verify")}>
+              <Toggle checked={params.verifier} onChange={(v) => setParams({ ...params, verifier: v })} label={t("formations.verifierToggle")} />
             </Field>
           </div>
         )}
         {choice.kind === "builtin" && choice.id === "swarm" && (
           <div className="fm-row">
-            <Field label="Scouts">
-              <Stepper label="Number of scouts" value={params.scouts} min={1} max={MAX_SCOUTS} onChange={(n) => setParams({ ...params, scouts: n })} />
+            <Field label={t("formations.field.scouts")}>
+              <Stepper label={t("formations.scoutsAria")} value={params.scouts} min={1} max={MAX_SCOUTS} onChange={(n) => setParams({ ...params, scouts: n })} />
             </Field>
-            <Field label="Scout agent">
-              <Select value={params.scoutAgent} onChange={(e) => setParams({ ...params, scoutAgent: e.target.value })} aria-label="Scout agent">
+            <Field label={t("formations.field.scoutAgent")}>
+              <Select value={params.scoutAgent} onChange={(e) => setParams({ ...params, scoutAgent: e.target.value })} aria-label={t("formations.field.scoutAgent")}>
                 <option value="claude">Claude Code</option>
                 <option value="codex">Codex</option>
                 {codexOrTools.map((a) => (
@@ -358,22 +391,30 @@ export function FormationDialog() {
         )}
 
         <Field
-          label="Project folder"
-          hint={gitState === "checking" ? "Checking…" : gitState === "ok" ? `Git repository · ⎇ ${git?.branch ?? "detached"}${git?.dirty ? " · uncommitted changes" : ""}` : gitState === "none" ? "Not a Git repository (worktrees unavailable)" : undefined}
+          label={t("formations.field.projectFolder")}
+          hint={
+            gitState === "checking"
+              ? t("formations.git.checking")
+              : gitState === "ok"
+                ? t(git?.dirty ? "formations.git.repoDirty" : "formations.git.repo", { branch: git?.branch ?? t("formations.git.detached") })
+                : gitState === "none"
+                  ? t("formations.git.none")
+                  : undefined
+          }
         >
           <div className="input-group">
-            <Input mono value={dir} onChange={(e) => setDir(e.target.value)} onBlur={(e) => void checkDir(e.currentTarget.value)} placeholder={"D:\\code\\project"} aria-label="Project folder" />
+            <Input mono value={dir} onChange={(e) => setDir(e.target.value)} onBlur={(e) => void checkDir(e.currentTarget.value)} placeholder={"D:\\code\\project"} aria-label={t("formations.field.projectFolder")} />
             <Button
               icon={<IconFolder size={13} />}
               onClick={async () => {
-                const d = await pickFolder("Project folder", dir || null);
+                const d = await pickFolder(t("formations.field.projectFolder"), dir || null);
                 if (d) {
                   setDir(d);
                   void checkDir(d);
                 }
               }}
             >
-              Browse…
+              {t("common.browse")}
             </Button>
           </div>
         </Field>
@@ -384,29 +425,29 @@ export function FormationDialog() {
               checked={useWorktrees && gitState === "ok"}
               disabled={gitState !== "ok"}
               onChange={setUseWorktrees}
-              label="Own Git worktree per builder (isolated copy on a new branch)"
-              hint="Created one by one with git worktree add -b; nothing is ever deleted"
+              label={t("formations.worktrees.label")}
+              hint={t("formations.worktrees.hint")}
             />
-            <Field label="Branch prefix">
-              <Input mono value={prefix} onChange={(e) => setPrefix(e.target.value)} aria-label="Branch prefix" style={{ width: 110 }} disabled={!useWorktrees || gitState !== "ok"} />
+            <Field label={t("formations.field.branchPrefix")}>
+              <Input mono value={prefix} onChange={(e) => setPrefix(e.target.value)} aria-label={t("formations.field.branchPrefix")} style={{ width: 110 }} disabled={!useWorktrees || gitState !== "ok"} />
             </Field>
           </div>
         )}
 
         {claudeRoles.length > 0 && (
-          <Field label="Claude accounts">
+          <Field label={t("formations.field.claudeAccounts")}>
             <div className="fm-roles">
               {claudeRoles.map(({ role }) => (
                 <FragmentRow key={role} role={role}>
                   <Select
                     value={effectiveProfiles[role] ?? ""}
                     onChange={(e) => setProfileByRole({ ...profileByRole, [role]: e.target.value })}
-                    aria-label={`Claude profile for ${role}`}
+                    aria-label={t("formations.profileAria", { role })}
                   >
-                    {choice.kind === "saved" && <option value={PROFILE_SAVED}>As saved</option>}
-                    {profiles.length > 1 && <option value={PROFILE_RR}>Round-robin across {profiles.length} profiles</option>}
-                    {profiles.length === 0 && <option value={PROFILE_RR}>Default (~/.claude)</option>}
-                    {profiles.length > 0 && <option value="">Default (~/.claude)</option>}
+                    {choice.kind === "saved" && <option value={PROFILE_SAVED}>{t("formations.profile.asSaved")}</option>}
+                    {profiles.length > 1 && <option value={PROFILE_RR}>{t("formations.profile.roundRobin", { count: profiles.length })}</option>}
+                    {profiles.length === 0 && <option value={PROFILE_RR}>{t("formations.profile.default")}</option>}
+                    {profiles.length > 0 && <option value="">{t("formations.profile.default")}</option>}
                     {profiles.map((p) => (
                       <option key={p.id} value={p.id}>
                         {p.name}
@@ -425,12 +466,12 @@ export function FormationDialog() {
               <Toggle
                 checked={briefOn}
                 onChange={toggleBrief}
-                label="Brief the team from the mission file"
-                hint={`Fills each role's starter prompt with how to use ${missionPath} (lead: split it into tasks; others: claim and finish theirs)`}
+                label={t("formations.brief.label")}
+                hint={t("formations.brief.hint", { path: missionPath })}
               />
             </div>
           )}
-          <Toggle checked={showPrompts} onChange={setShowPrompts} label="Starter prompts (optional)" hint="Sent once per new agent after it has started and gone quiet; held while it asks for confirmation" />
+          <Toggle checked={showPrompts} onChange={setShowPrompts} label={t("formations.prompts.label")} hint={t("formations.prompts.hint")} />
           {showPrompts && (
             <div className="fm-roles" style={{ marginTop: 8 }}>
               {roles.map(({ role }) => (
@@ -439,8 +480,8 @@ export function FormationDialog() {
                     className="fm-textarea"
                     value={prompts[role] ?? ""}
                     onChange={(e) => setPrompts({ ...prompts, [role]: e.target.value })}
-                    placeholder={`First message for every ${role} (one line)`}
-                    aria-label={`Starter prompt for ${role}`}
+                    placeholder={t("formations.prompts.placeholder", { role })}
+                    aria-label={t("formations.prompts.aria", { role })}
                     spellCheck={false}
                   />
                 </FragmentRow>
@@ -449,11 +490,11 @@ export function FormationDialog() {
           )}
         </div>
 
-        <Field label="What will happen">
-          {plan ? <pre className="fm-plan">{describePlan(plan)}</pre> : <div className="muted">Choose a formation.</div>}
+        <Field label={t("formations.field.plan")}>
+          {plan ? <pre className="fm-plan">{describePlan(plan)}</pre> : <div className="muted">{t("formations.choose")}</div>}
           {(plan?.errors.length || plan?.warnings.length || extraWarnings.length || !wsId) && (
             <div className="fm-msgs" style={{ marginTop: 6 }}>
-              {!wsId && <span className="fm-msg-err">Create a workspace first.</span>}
+              {!wsId && <span className="fm-msg-err">{t("formations.noWorkspace")}</span>}
               {plan?.errors.map((e) => (
                 <span key={e} className="fm-msg-err">
                   ✕ {e}
@@ -473,11 +514,12 @@ export function FormationDialog() {
 }
 
 function FragmentRow({ role, children }: { role: string; children: React.ReactNode }) {
+  const t = useT();
   return (
     <>
       <span className="fm-role-name">
         <RoleTag role={role} />
-        <span className="muted">{roleInfo(role)?.builtin ? "" : role === "agent" ? "no role" : role}</span>
+        <span className="muted">{roleInfo(role)?.builtin ? "" : role === "agent" ? t("formations.noRole") : role}</span>
       </span>
       {children}
     </>

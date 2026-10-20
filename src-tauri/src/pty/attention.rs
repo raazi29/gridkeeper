@@ -488,7 +488,7 @@ pub struct Tracker {
 }
 
 fn event(id: &str, kind: AttentionKind) -> SessionAttention {
-    SessionAttention { id: id.to_string(), kind, title: None, body: None, status: None, reason: None, active_ms: None }
+    SessionAttention { id: id.to_string(), kind, title: None, body: None, status: None, reason: None, active_ms: None, tool: None }
 }
 
 impl Tracker {

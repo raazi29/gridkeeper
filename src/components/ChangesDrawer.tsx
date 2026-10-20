@@ -6,6 +6,7 @@
 // repository goes idle. No polling.
 
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useT } from "../i18n";
 import { errorMessage, ipc, onSessionAttention } from "../lib/ipc";
 import type { BranchFile, BranchFiles, ChangedFile, FileDiff, RepoChanges } from "../lib/types";
 import { selectActiveWorkspace, useApp } from "../store/appStore";
@@ -46,6 +47,7 @@ function selKey(s: Selection): string {
 }
 
 export function ChangesDrawer() {
+  const t = useT();
   const close = () => useUi.getState().setChangesOpen(false);
   const wsId = useApp((s) => selectActiveWorkspace(s)?.id);
   const dirsKey = useApp((s) => repoDirsFor(selectActiveWorkspace(s), s.persisted.sessions).join("\u0000"));
@@ -165,22 +167,24 @@ export function ChangesDrawer() {
   }, [repos, branches, sel]);
 
   return (
-    <aside className="changes-drawer" aria-label="Changes (read-only)">
+    <aside className="changes-drawer" aria-label={t("changes.aria")}>
       <div className="inspector-head">
-        <span className="panel-title">Changes</span>
-        <span className="changes-ro" title="This panel never stages, commits, checks out or resets">read-only</span>
+        <span className="panel-title">{t("changes.title")}</span>
+        <span className="changes-ro" title={t("changes.readOnlyTitle")}>
+          {t("changes.readOnly")}
+        </span>
         <span className="changes-spacer" />
-        <IconButton size="sm" label="Refresh" onClick={() => void refresh()} disabled={busy}>
+        <IconButton size="sm" label={t("common.refresh")} onClick={() => void refresh()} disabled={busy}>
           <IconRestart size={13} />
         </IconButton>
-        <IconButton size="sm" label="Close changes" onClick={close}>
+        <IconButton size="sm" label={t("changes.close")} onClick={close}>
           <IconClose size={13} />
         </IconButton>
       </div>
       <div className="changes-list">
-        {dirs.length === 0 && <div className="inspector-empty">Set a project folder for this workspace to see its changes.</div>}
+        {dirs.length === 0 && <div className="inspector-empty">{t("changes.noFolder")}</div>}
         {error && <div className="callout is-error">{error}</div>}
-        {!busy && dirs.length > 0 && repos.length === 0 && !error && <div className="inspector-empty">No git repository in this workspace’s folders.</div>}
+        {!busy && dirs.length > 0 && repos.length === 0 && !error && <div className="inspector-empty">{t("changes.noRepo")}</div>}
         {repos.map((r) => (
           <RepoSection
             key={r.root}
@@ -212,6 +216,7 @@ const RepoSection = memo(function RepoSection({
   /** The focused worktree / folder inside this repository, when this is the focused one. */
   focus: string | null;
 }) {
+  const t = useT();
   const [open, setOpen] = useState(true);
   const root = repo.root ?? "";
   const ref = useRef<HTMLElement>(null);
@@ -227,22 +232,24 @@ const RepoSection = memo(function RepoSection({
         <span className="changes-caret">{open ? "▾" : "▸"}</span>
         <span className="changes-repo-name">{basename(root)}</span>
         <span className="changes-branch mono">
-          <IconBranch size={11} /> {repo.branch ?? "detached"}
+          <IconBranch size={11} /> {repo.branch ?? t("changes.detached")}
         </span>
         {(repo.ahead > 0 || repo.behind > 0) && (
-          <span className="changes-ab mono" title={repo.upstream ? `vs ${repo.upstream}` : undefined}>
+          <span className="changes-ab mono" title={repo.upstream ? t("changes.vsUpstream", { upstream: repo.upstream }) : undefined}>
             ↑{repo.ahead} ↓{repo.behind}
           </span>
         )}
-        <span className="changes-count" title="Uncommitted files">
+        <span className="changes-count" title={t("changes.uncommittedTitle")}>
           {repo.files.length}
           {repo.truncated ? "+" : ""}
         </span>
       </button>
-      {open && committed && <div className="changes-sub-head is-static">uncommitted ({repo.files.length}{repo.truncated ? "+" : ""})</div>}
+      {open && committed && (
+        <div className="changes-sub-head is-static">{t("changes.uncommittedHeading", { count: `${repo.files.length}${repo.truncated ? "+" : ""}` })}</div>
+      )}
       {open && (
         <ul className="changes-files">
-          {repo.files.length === 0 && <li className="changes-clean">Working tree clean</li>}
+          {repo.files.length === 0 && <li className="changes-clean">{t("changes.clean")}</li>}
           {repo.files.map((f) => {
             const active = sel?.kind === "status" && sameRoot(sel.root, root) && sel.file.path === f.path;
             const letter = statusLetter(f);
@@ -251,17 +258,21 @@ const RepoSection = memo(function RepoSection({
                 <button
                   type="button"
                   className={`changes-file${active ? " is-active" : ""}`}
-                  title={`${f.origPath ? `${f.origPath} → ` : ""}${f.path}\nindex ${f.index} · work tree ${f.worktree}`}
+                  title={t("changes.fileTitle", { path: `${f.origPath ? `${f.origPath} → ` : ""}${f.path}`, index: f.index, worktree: f.worktree })}
                   onClick={() => onSelect({ kind: "status", root, file: f, side: defaultDiffSide(f) })}
                 >
                   <span className={`changes-letter is-${letterClass(letter)}`}>{letter}</span>
                   <span className="changes-path mono">{f.path}</span>
-                  {f.index !== "." && f.kind !== "untracked" && <span className="changes-staged" title="Has staged changes">S</span>}
+                  {f.index !== "." && f.kind !== "untracked" && (
+                    <span className="changes-staged" title={t("changes.stagedTitle")}>
+                      S
+                    </span>
+                  )}
                 </button>
               </li>
             );
           })}
-          {repo.truncated && <li className="changes-clean">List cut at 5000 entries</li>}
+          {repo.truncated && <li className="changes-clean">{t("changes.truncatedStatus")}</li>}
         </ul>
       )}
       {open && committed && <CommittedFiles root={root} list={committed} sel={sel} onSelect={onSelect} />}
@@ -281,16 +292,17 @@ function CommittedFiles({
   sel: Selection | null;
   onSelect: (s: Selection) => void;
 }) {
+  const t = useT();
   const [open, setOpen] = useState(true);
   const totals = useMemo(() => branchTotals(list.files), [list.files]);
-  const commits = `${list.ahead} commit${list.ahead === 1 ? "" : "s"}`;
+  const commits = t("changes.commits", { count: list.ahead });
   return (
     <div className="changes-committed-files">
       <button
         type="button"
         className="changes-sub-head"
         onClick={() => setOpen(!open)}
-        title={`Files changed by the ${commits} on ${list.branch ?? "HEAD"} since it left ${list.base} (git diff ${list.base}...HEAD)`}
+        title={t("changes.committedTitle", { count: list.ahead, branch: list.branch ?? "HEAD", base: list.base })}
       >
         <span className="changes-caret">{open ? "▾" : "▸"}</span>
         <span className="changes-sub-title">{committedHeading(list)}</span>
@@ -300,7 +312,7 @@ function CommittedFiles({
       </button>
       {open && (
         <ul className="changes-files">
-          {list.files.length === 0 && <li className="changes-clean">No file differences (the commits cancel out)</li>}
+          {list.files.length === 0 && <li className="changes-clean">{t("changes.noFileDiffs")}</li>}
           {list.files.map((f) => {
             const active = sel?.kind === "branch" && sameRoot(sel.root, root) && sel.file.path === f.path;
             const letter = branchFileLetter(f);
@@ -309,14 +321,14 @@ function CommittedFiles({
                 <button
                   type="button"
                   className={`changes-file${active ? " is-active" : ""}`}
-                  title={`${f.origPath ? `${f.origPath} → ` : ""}${f.path}\ncommitted on ${list.branch ?? "HEAD"} vs ${list.base}`}
+                  title={t("changes.committedFileTitle", { path: `${f.origPath ? `${f.origPath} → ` : ""}${f.path}`, branch: list.branch ?? "HEAD", base: list.base })}
                   onClick={() => onSelect({ kind: "branch", root, file: f, base: list.base, branch: list.branch })}
                 >
                   <span className={`changes-letter is-${letterClass(letter)}`}>{letter}</span>
                   <span className="changes-path mono">{f.path}</span>
                   <span className="changes-nums mono">
                     {f.binary ? (
-                      <span className="is-bin">bin</span>
+                      <span className="is-bin">{t("changes.binaryShort")}</span>
                     ) : (
                       <>
                         <span className="is-add">+{f.insertions}</span> <span className="is-del">−{f.deletions}</span>
@@ -327,9 +339,9 @@ function CommittedFiles({
               </li>
             );
           })}
-          {list.truncated && <li className="changes-clean">List cut at 2000 files</li>}
+          {list.truncated && <li className="changes-clean">{t("changes.truncatedBranch")}</li>}
           <li className="changes-hint">
-            in a terminal: <code className="mono">{branchDiffCommand(root, list.base, list.branch)}</code>
+            {t.rich("changes.terminalHint", { command: branchDiffCommand(root, list.base, list.branch), code: (c) => <code className="mono">{c}</code> })}
           </li>
         </ul>
       )}
@@ -340,6 +352,7 @@ function CommittedFiles({
 const ROW_H = 17;
 
 function DiffViewer({ sel, onSide }: { sel: Selection; onSide: (s: Side) => void }) {
+  const t = useT();
   const [diff, setDiff] = useState<FileDiff | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [scroll, setScroll] = useState({ top: 0, height: 300 });
@@ -379,8 +392,8 @@ function DiffViewer({ sel, onSide }: { sel: Selection; onSide: (s: Side) => void
           {path}
         </span>
         {sel.kind === "branch" ? (
-          <span className="changes-range mono" title={`What the commits on ${sel.branch ?? "HEAD"} changed since it left ${sel.base}`}>
-            {sel.branch ?? "HEAD"} vs {sel.base}
+          <span className="changes-range mono" title={t("changes.rangeTitle", { branch: sel.branch ?? "HEAD", base: sel.base })}>
+            {t("changes.range", { branch: sel.branch ?? "HEAD", base: sel.base })}
           </span>
         ) : (
           sel.file.kind !== "untracked" && (
@@ -391,10 +404,10 @@ function DiffViewer({ sel, onSide }: { sel: Selection; onSide: (s: Side) => void
                 disabled={sel.file.worktree === "."}
                 onClick={() => onSide("unstaged")}
               >
-                Unstaged
+                {t("changes.unstaged")}
               </button>
               <button type="button" className={sel.side === "staged" ? "is-active" : ""} disabled={sel.file.index === "."} onClick={() => onSide("staged")}>
-                Staged
+                {t("changes.staged")}
               </button>
             </span>
           )
@@ -402,10 +415,10 @@ function DiffViewer({ sel, onSide }: { sel: Selection; onSide: (s: Side) => void
       </div>
       <div ref={ref} className="changes-diff-body mono" onScroll={(e) => setScroll({ top: e.currentTarget.scrollTop, height: e.currentTarget.clientHeight })}>
         {error && <div className="callout is-error">{error}</div>}
-        {!diff && !error && <div className="inspector-empty">Loading diff…</div>}
-        {diff?.binary && <div className="inspector-empty">Binary file — no text diff.</div>}
+        {!diff && !error && <div className="inspector-empty">{t("changes.loadingDiff")}</div>}
+        {diff?.binary && <div className="inspector-empty">{t("changes.binary")}</div>}
         {diff && !diff.binary && lines.length === 0 && (
-          <div className="inspector-empty">{sel.kind === "branch" ? "No differences." : "No differences on this side."}</div>
+          <div className="inspector-empty">{sel.kind === "branch" ? t("changes.noDiff") : t("changes.noDiffSide")}</div>
         )}
         {diff && !diff.binary && lines.length > 0 && (
           <div style={{ height: lines.length * ROW_H, position: "relative" }}>
@@ -418,7 +431,7 @@ function DiffViewer({ sel, onSide }: { sel: Selection; onSide: (s: Side) => void
             </div>
           </div>
         )}
-        {diff?.truncated && <div className="callout">Diff cut at 2 MB.</div>}
+        {diff?.truncated && <div className="callout">{t("changes.diffTruncated")}</div>}
       </div>
     </div>
   );

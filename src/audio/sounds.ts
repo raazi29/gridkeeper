@@ -2,6 +2,7 @@
 // notes with short envelopes (plus the saber ignite / retract: a filtered oscillator sweep). Note sequences come from a pure function (unit-tested); playback is
 // best-effort and the AudioContext is suspended shortly after each sound so it costs nothing when idle.
 
+import { t, type MessageKey } from "../i18n";
 import type { SoundSet } from "../lib/types";
 
 export type SoundEvent = "needsInput" | "done" | "error" | "bell";
@@ -20,11 +21,24 @@ export interface Note {
   gain: number;
 }
 
-export const SOUND_SETS: { id: SoundSet; name: string; hint: string }[] = [
-  { id: "comm", name: "Comm beep", hint: "Two-tone chirp, like an incoming transmission" },
-  { id: "console", name: "Console", hint: "One soft blip" },
-  { id: "droid", name: "Droid chatter", hint: "A short, quiet burst of beeps and boops — different every time" },
-  { id: "none", name: "None", hint: "Silent" },
+/** A sound set whose name and hint are read in the current UI language (getters). */
+function soundSet(id: SoundSet, nameKey: MessageKey, hintKey: MessageKey): { readonly id: SoundSet; readonly name: string; readonly hint: string } {
+  return {
+    id,
+    get name() {
+      return t(nameKey);
+    },
+    get hint() {
+      return t(hintKey);
+    },
+  };
+}
+
+export const SOUND_SETS: readonly { readonly id: SoundSet; readonly name: string; readonly hint: string }[] = [
+  soundSet("comm", "notifications.soundSet.commName", "notifications.soundSet.commHint"),
+  soundSet("console", "notifications.soundSet.consoleName", "notifications.soundSet.consoleHint"),
+  soundSet("droid", "notifications.soundSet.droidName", "notifications.soundSet.droidHint"),
+  soundSet("none", "notifications.soundSet.noneName", "notifications.soundSet.noneHint"),
 ];
 
 /** Note sequence for a sound set + event. `rand` is injectable for tests. */

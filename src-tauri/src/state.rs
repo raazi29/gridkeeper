@@ -72,6 +72,12 @@ impl AppCtx {
                 }
             }),
         ));
+        let hook_emitter = app.clone();
+        meter.set_hook_sink(Arc::new(move |a: &crate::types::SessionAttention| {
+            if let Err(e) = hook_emitter.emit(crate::types::EVT_SESSION_ATTENTION, a) {
+                tracing::warn!(error = %e, "could not emit session-attention (hook)");
+            }
+        }));
         if let Err(e) = meter.start_watch() {
             tracing::warn!(error = %e, "cost meter folder watch failed; meters update on the next start");
         }
@@ -91,6 +97,7 @@ impl AppCtx {
     /// Graceful shutdown of every session's process tree. Called once on app exit.
     pub fn shutdown(&self) {
         tracing::info!("shutting down sessions");
+        crate::testrun::shutdown();
         self.sessions.shutdown_all(std::time::Duration::from_millis(1500));
         self.missions.clear();
         self.meter.stop();

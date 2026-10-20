@@ -2,7 +2,9 @@ import ReactDOM from "react-dom/client";
 import "@xterm/xterm/css/xterm.css";
 import "./styles/tokens.css";
 import "./styles/app.css";
+import "./styles/i18n.css";
 import App from "./App";
+import { initI18n } from "./i18n";
 import { ipc } from "./lib/ipc";
 
 window.addEventListener("error", (e) => ipc.log("error", `uncaught: ${e.message}`));
@@ -23,5 +25,7 @@ if (import.meta.env.DEV) {
   });
 }
 
+// The UI language (and right-to-left direction) is applied before the first frame; a non-English catalog is one
+// small local chunk. Any failure falls back to English inside initI18n.
 // No StrictMode: double-invoked effects would create/dispose terminals and channels twice.
-ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(<App />);
+void initI18n().finally(() => ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(<App />));

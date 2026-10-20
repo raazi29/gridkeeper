@@ -1,0 +1,604 @@
+/* Brain panel, "add memory" dialog and the "remember…" chip (src/components/brain/*). Theme tokens only
+   (tokens.css); the terminal / box-drawing look of Mission Control: monospace, thin boxes with corner labels,
+   "label [ n ]" counters. Motion: none beyond the shared modal rise-in (reduced motion handled globally). */
+
+.br-modal {
+  --br-line: var(--mc-line, var(--border-strong));
+  --br-fs: 11.5px;
+  --br-fs-micro: 10px;
+  height: min(820px, calc(100vh - 48px));
+}
+.br-modal .modal-body {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  padding: 0;
+  overflow: hidden;
+}
+.br-title {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+  font-family: var(--font-mono);
+}
+.br-glyph {
+  color: var(--accent);
+}
+.br-title-text {
+  color: var(--text-0);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  font-size: var(--fs-s);
+}
+.br-title-sub {
+  color: var(--text-2);
+  font-size: var(--fs-xs);
+  font-weight: 400;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.br-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  font-family: var(--font-mono);
+  font-size: var(--br-fs);
+  color: var(--text-1);
+}
+.br-spacer {
+  flex: 1;
+}
+.br-muted {
+  color: var(--text-2);
+}
+.br-pad {
+  padding: 10px 12px;
+}
+.br-error {
+  margin: 8px 10px;
+  color: var(--err-fg);
+}
+.br-warn {
+  margin: 0 0 8px;
+  padding: 6px 8px;
+  border: 1px solid var(--warn-line);
+  border-radius: var(--radius-s);
+  background: var(--warn-soft);
+  color: var(--text-0);
+}
+.br-empty-panel {
+  padding: 18px;
+  color: var(--text-1);
+  font-size: var(--fs-s);
+}
+
+/* ---- toolbar ---- */
+.br-toolbar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+  background: color-mix(in srgb, var(--bg-0) 35%, var(--bg-1));
+  flex: none;
+}
+.br-search {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1 1 260px;
+  max-width: 420px;
+  height: 26px;
+  padding: 0 8px;
+  border: 1px solid var(--br-line);
+  border-radius: var(--radius-s);
+  background: var(--bg-0);
+}
+.br-search:focus-within {
+  border-color: var(--accent);
+}
+.br-search-glyph {
+  color: var(--text-2);
+}
+.br-search-input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  outline: none;
+  background: transparent;
+  color: var(--text-0);
+  font: inherit;
+  user-select: text;
+}
+.br-kinds {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.br-chip,
+.br-btn,
+.br-tag-select {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 22px;
+  padding: 0 7px;
+  border: 1px solid var(--br-line);
+  border-radius: var(--radius-s);
+  background: transparent;
+  color: var(--text-1);
+  font-family: var(--font-mono);
+  font-size: var(--br-fs-micro);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+.br-chip:hover,
+.br-btn:hover:not(:disabled),
+.br-tag-select:hover {
+  color: var(--text-0);
+  border-color: var(--text-2);
+  background: var(--bg-2);
+}
+.br-chip.is-on {
+  color: var(--text-0);
+  border-color: color-mix(in srgb, var(--accent) 60%, transparent);
+  background: var(--accent-soft);
+}
+.br-chip-n {
+  color: var(--text-2);
+}
+.br-tag-select {
+  text-transform: none;
+  letter-spacing: 0;
+}
+.br-btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+.br-btn.is-primary {
+  border-color: color-mix(in srgb, var(--accent) 60%, transparent);
+  color: var(--text-0);
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+}
+.br-btn.is-danger:hover:not(:disabled) {
+  border-color: var(--err-line);
+  color: var(--err-fg);
+  background: var(--err-soft);
+}
+.br-chip:focus-visible,
+.br-btn:focus-visible,
+.br-row:focus-visible,
+.br-tab:focus-visible {
+  outline: 1px solid var(--accent);
+  outline-offset: 1px;
+}
+
+/* kind marks: the theme's semantic colours */
+.br-mark {
+  display: inline-block;
+  width: 1.2ch;
+  text-align: center;
+  color: var(--text-2);
+}
+.is-decision > .br-mark,
+.is-decision .br-row-head > .br-mark {
+  color: var(--accent);
+}
+.is-convention > .br-mark,
+.is-convention .br-row-head > .br-mark {
+  color: var(--info);
+}
+.is-gotcha > .br-mark,
+.is-gotcha .br-row-head > .br-mark {
+  color: var(--warn-fg);
+}
+.is-howto > .br-mark,
+.is-howto .br-row-head > .br-mark {
+  color: var(--ok-fg);
+}
+
+/* ---- columns ---- */
+.br-cols {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(260px, 2fr) minmax(0, 3fr);
+}
+.br-left {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  border-inline-end: 1px solid var(--border);
+}
+.br-tabs {
+  display: flex;
+  gap: 2px;
+  padding: 0 8px;
+  border-bottom: 1px solid var(--border);
+  flex: none;
+}
+.br-tab {
+  position: relative;
+  height: 28px;
+  padding: 0 8px;
+  border: 0;
+  background: none;
+  color: var(--text-2);
+  font: inherit;
+  font-size: var(--br-fs-micro);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+}
+.br-tab b {
+  color: var(--text-0);
+  font-weight: 600;
+}
+.br-tab.is-selected {
+  color: var(--text-0);
+}
+.br-tab.is-selected::after {
+  content: "";
+  position: absolute;
+  left: 6px;
+  right: 6px;
+  bottom: -1px;
+  height: 2px;
+  background: var(--accent);
+}
+.br-tab.has-items:not(.is-selected) b {
+  color: var(--accent-fg);
+}
+.br-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 4px 0;
+}
+.br-row {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 100%;
+  padding: 5px 12px 6px 10px;
+  border: 0;
+  border-inline-start: 2px solid transparent;
+  background: none;
+  color: var(--text-1);
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+}
+.br-row:hover {
+  background: var(--bg-2);
+}
+.br-row.is-selected {
+  border-inline-start-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--text-0);
+}
+.br-row.is-superseded .br-row-title {
+  color: var(--text-2);
+  text-decoration: line-through;
+  text-decoration-color: color-mix(in srgb, var(--text-2) 60%, transparent);
+}
+.br-row-head {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
+}
+.br-row-title {
+  flex: 1;
+  min-width: 0;
+  color: var(--text-0);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.br-row-meta,
+.br-row-snippet {
+  padding-inline-start: calc(1.2ch + 6px);
+  color: var(--text-2);
+  font-size: var(--br-fs-micro);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.br-row-snippet {
+  color: var(--text-1);
+  white-space: normal;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+.br-badge {
+  flex: none;
+  padding: 0 4px;
+  border: 1px solid var(--br-line);
+  border-radius: var(--radius-s);
+  color: var(--accent-fg);
+  font-size: var(--br-fs-micro);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+/* ---- right column: intro / detail (a box with a corner label) ---- */
+.br-right {
+  min-height: 0;
+  overflow-y: auto;
+  padding: 18px 16px 12px;
+}
+.br-intro,
+.br-detail {
+  position: relative;
+  border: 1px solid var(--br-line);
+  border-radius: var(--radius-s);
+  background: var(--bg-1);
+  padding: 14px 12px 10px;
+}
+.br-intro {
+  border-style: dashed;
+  color: var(--text-1);
+  line-height: 1.55;
+  user-select: text;
+}
+.br-intro p {
+  margin: 0 0 8px;
+}
+.br-steps {
+  margin: 0 0 10px;
+  padding-inline-start: 0;
+  list-style: none;
+}
+.br-steps li {
+  padding-inline-start: 2ch;
+  text-indent: -2ch;
+  margin-bottom: 4px;
+}
+.br-steps li::before {
+  content: "├ ";
+  color: var(--text-2);
+}
+.br-steps li:last-child::before {
+  content: "└ ";
+}
+.br-steps b {
+  color: var(--text-0);
+  font-weight: 600;
+}
+.br-box-label {
+  position: absolute;
+  top: -7px;
+  left: 8px;
+  right: 8px;
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  pointer-events: none;
+  font-size: var(--br-fs-micro);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  line-height: 14px;
+  white-space: nowrap;
+}
+/* the label text sits on the box's top border */
+.br-box-label > span {
+  padding: 0 5px;
+  background: var(--bg-1);
+  color: var(--text-2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.br-box-label > .br-box-label-right {
+  text-transform: none;
+  letter-spacing: 0;
+}.br-detail-title {
+  margin: 4px 0 10px;
+  color: var(--text-0);
+  font-size: var(--fs-m);
+  font-weight: 600;
+  display: flex;
+  gap: 6px;
+  align-items: baseline;
+  user-select: text;
+}
+.br-fields {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 3px 12px;
+  margin: 0 0 10px;
+  user-select: text;
+}
+.br-fields dt {
+  color: var(--text-2);
+  font-size: var(--br-fs-micro);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  line-height: 18px;
+}
+.br-fields dd {
+  margin: 0;
+  color: var(--text-1);
+  line-height: 18px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.br-fields dd.is-suggested {
+  color: var(--accent-fg);
+}
+.br-fields dd.is-confirmed {
+  color: var(--ok-fg);
+}
+.br-text {
+  margin: 0 0 10px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-s);
+  background: var(--bg-0);
+  color: var(--text-0);
+  font-family: var(--font-mono);
+  font-size: var(--br-fs);
+  line-height: 1.55;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  user-select: text;
+}
+.br-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding-top: 8px;
+  border-top: 1px dashed var(--border);
+}
+.br-path {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: start;
+  color: var(--text-2);
+  font-size: var(--br-fs-micro);
+}
+
+/* ---- forms (editor + add memory) ---- */
+.br-form {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px 10px;
+  margin-bottom: 8px;
+}
+.br-form > .br-warn {
+  grid-column: 1 / -1;
+}
+.br-field {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+.br-field-wide {
+  grid-column: 1 / -1;
+}
+.br-label {
+  color: var(--text-2);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+.br-input {
+  width: 100%;
+  padding: 4px 7px;
+  border: 1px solid var(--br-line, var(--border-strong));
+  border-radius: var(--radius-s);
+  background: var(--bg-0);
+  color: var(--text-0);
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  user-select: text;
+}
+.br-input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+.br-body {
+  resize: vertical;
+  min-height: 120px;
+  line-height: 1.5;
+}
+.br-hint {
+  grid-column: 1 / -1;
+  color: var(--text-2);
+  font-family: var(--font-mono);
+  font-size: 10px;
+}
+.br-compose .modal-body {
+  padding: 14px 16px 6px;
+}
+.br-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--text-1);
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.br-check input {
+  accent-color: var(--accent);
+  margin: 0;
+}
+
+/* ---- status line ---- */
+.br-status {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  padding: 6px 12px;
+  border-top: 1px solid var(--border);
+  background: var(--bg-1);
+  color: var(--text-2);
+  font-size: var(--br-fs-micro);
+  letter-spacing: 0.06em;
+  flex: none;
+}
+.br-status b {
+  color: var(--text-0);
+  font-weight: 600;
+}
+.br-status .is-attn b {
+  color: var(--accent-fg);
+}
+
+/* ---- "remember…" chip over Mission Control (above the overlay, below dialogs) ---- */
+.br-remember {
+  position: fixed;
+  z-index: var(--z-popover);
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 22px;
+  padding: 0 8px;
+  border: 1px solid color-mix(in srgb, var(--accent) 60%, transparent);
+  border-radius: var(--radius-s);
+  background: var(--bg-2);
+  box-shadow: var(--elev-2);
+  color: var(--text-0);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+.br-remember:hover {
+  background: color-mix(in srgb, var(--accent) 18%, var(--bg-2));
+}
+.br-remember > span {
+  color: var(--accent);
+}
+
+@media (max-width: 900px) {
+  .br-cols {
+    grid-template-columns: 1fr;
+    grid-template-rows: minmax(160px, 2fr) 3fr;
+  }
+  .br-left {
+    border-inline-end: 0;
+    border-bottom: 1px solid var(--border);
+  }
+}
+.br-push {
+  margin-inline-end: auto;
+}

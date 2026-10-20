@@ -42,6 +42,8 @@ pub const MAX_INPUT_QUEUE: usize = 8 * 1024 * 1024;
 const WRITE_CHUNK: usize = 16 * 1024;
 /// Graceful stop: time allowed after Ctrl+C before closing the console (Unix: SIGHUP).
 const STOP_CTRL_C_GRACE: Duration = Duration::from_secs(2);
+/// Graceful stop: a second Ctrl+C after this long (agents that ask for Ctrl+C twice to exit).
+const STOP_SECOND_CTRL_C: Duration = Duration::from_millis(300);
 /// Graceful stop: time allowed after CTRL_CLOSE_EVENT (Unix: SIGHUP) before killing the job.
 const STOP_CLOSE_GRACE: Duration = Duration::from_secs(3);
 /// On exit, wait for ConPTY output to go quiet this long before closing it...
@@ -679,7 +681,13 @@ impl Session {
         self.input.send_internal(b"\x03");
         let me = Arc::clone(self);
         spawn_guarded(format!("pty-stop-{}", self.label), move || {
-            if me.wait_exit(STOP_CTRL_C_GRACE) {
+            // Claude Code and Codex treat one Ctrl+C at their prompt as "press again to exit": a second
+            // one shortly after lets them exit cleanly instead of waiting out the grace period.
+            if me.wait_exit(STOP_SECOND_CTRL_C) {
+                return;
+            }
+            me.input.send_internal(b"\x03");
+            if me.wait_exit(STOP_CTRL_C_GRACE - STOP_SECOND_CTRL_C) {
                 return;
             }
             #[cfg(windows)]

@@ -7,6 +7,7 @@
 // When lead control is on for the project (store/leadControl.ts), the briefs also explain the channel: the
 // lead reads .gridkeeper/team.md and instructs teammates through .gridkeeper/outbox/; others message the lead.
 
+import { brainBriefText } from "../lib/brain";
 import { errorMessage, ipc } from "../lib/ipc";
 import { slugify } from "../lib/missionDoc";
 import { normalizeRole } from "../lib/roles";
@@ -14,6 +15,7 @@ import type { SessionId, SessionInfo } from "../lib/types";
 import { isLive, useApp } from "../store/appStore";
 import { recordActivity, sessionLabelOf } from "../store/activity";
 import { useAttention } from "../store/attention";
+import { brainBriefsOn } from "../store/brain";
 import { policyOf } from "../store/leadControl";
 import { isTerminalSession } from "./groupActions";
 import { looksLikeQuestion } from "./starterPrompt";
@@ -45,6 +47,11 @@ export interface BriefContext {
    * the same way. Off (default): the outbox is ignored, so the briefs don't mention it.
    */
   channel?: boolean;
+  /**
+   * Point the agent at the project's brain (.gridkeeper/brain): read INDEX.md first, suggest memories in inbox/
+   * (lib/brain.ts brainBriefText). Default for the dialogs: the project's "mention in briefs" brain setting (on).
+   */
+  brain?: boolean;
 }
 
 /** `<project>\.gridkeeper` (same separator style) from the mission file path. */
@@ -94,7 +101,8 @@ function ownerList(team: BriefMember[], self: BriefTarget): string {
 /** The one-line brief for a session (or, with `name` null, for every session of a role). Pure. */
 export function briefText(target: BriefTarget, ctx: BriefContext): string {
   const base = roleBrief(target, ctx);
-  return ctx.channel ? oneLine(`${base} ${channelBriefText(target.role, ctx.missionPath)}`) : base;
+  const withChannel = ctx.channel ? oneLine(`${base} ${channelBriefText(target.role, ctx.missionPath)}`) : base;
+  return ctx.brain ? oneLine(`${withChannel} ${brainBriefText(ctx.missionPath)}`) : withChannel;
 }
 
 function roleBrief(target: BriefTarget, ctx: BriefContext): string {
@@ -143,12 +151,13 @@ export function formationBriefPrompts(
   team: readonly BriefMember[],
   missionPath: string,
   channel: boolean = leadControlOn(missionPath),
+  brain: boolean = brainBriefsOn(projectDirOfMission(missionPath)),
 ): Record<string, string> {
   const out: Record<string, string> = {};
   for (const key of roleKeys) {
     const role = key === "agent" ? null : key;
     const names = team.filter((m) => (normalizeRole(m.role) ?? "agent") === key).map((m) => m.name);
-    out[key] = briefText({ name: names.length === 1 ? names[0] : null, role, names }, { missionPath, team: [...team], channel });
+    out[key] = briefText({ name: names.length === 1 ? names[0] : null, role, names }, { missionPath, team: [...team], channel, brain });
   }
   return out;
 }
@@ -245,7 +254,7 @@ export async function gatherBrief(ids: readonly SessionId[], missionPath: string
     }),
   );
   const team = cands.filter((c) => c.terminal).map((c) => ({ name: c.name, role: c.role }));
-  return planBrief(cands, { missionPath, team, channel: leadControlOn(missionPath) });
+  return planBrief(cands, { missionPath, team, channel: leadControlOn(missionPath), brain: brainBriefsOn(projectDirOfMission(missionPath)) });
 }
 
 // ---- sending ----------------------------------------------------------------------------------

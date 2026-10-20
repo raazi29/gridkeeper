@@ -2,9 +2,10 @@
 //! (status + diff).
 //!
 //! Shells out to `git` (hidden window, bounded time). Only read-only commands
-//! plus `worktree add` are ever run — nothing destructive; the Changes panel never stages,
+//! plus `worktree add` are ever run here — nothing destructive; the Changes panel never stages,
 //! commits, checks out or resets. A missing `git` or a non-repository path yields
-//! `GitInfo::default()` / `RepoChanges::default()`, not an error.
+//! `GitInfo::default()` / `RepoChanges::default()`, not an error. The one write path (merging a
+//! branch into its base in the main checkout, worktree clean-up) lives in `crate::merge` (ADR-020).
 
 use std::path::{Path, PathBuf};
 use std::process::Output;
@@ -13,16 +14,16 @@ use std::time::Duration;
 use crate::adapters::{discovery, process};
 use crate::types::*;
 
-const QUICK_TIMEOUT: Duration = Duration::from_secs(5);
+pub(crate) const QUICK_TIMEOUT: Duration = Duration::from_secs(5);
 const WORKTREE_TIMEOUT: Duration = Duration::from_secs(60);
 
-fn git_exe() -> Option<PathBuf> {
+pub(crate) fn git_exe() -> Option<PathBuf> {
     static GIT: once_cell::sync::Lazy<Option<PathBuf>> =
         once_cell::sync::Lazy::new(|| discovery::which_exe("git").filter(|e| !e.via_cmd).map(|e| e.path));
     GIT.clone()
 }
 
-fn run_git(dir: &Path, args: &[&str], timeout: Duration) -> Option<Output> {
+pub(crate) fn run_git(dir: &Path, args: &[&str], timeout: Duration) -> Option<Output> {
     let git = git_exe()?;
     let mut cmd = process::hidden_command(git);
     cmd.arg("-C").arg(dir).args(args);
@@ -31,13 +32,13 @@ fn run_git(dir: &Path, args: &[&str], timeout: Duration) -> Option<Output> {
     process::run_with_timeout(cmd, timeout).ok()
 }
 
-fn git_stdout(dir: &Path, args: &[&str]) -> Option<String> {
+pub(crate) fn git_stdout(dir: &Path, args: &[&str]) -> Option<String> {
     let out = run_git(dir, args, QUICK_TIMEOUT)?;
     out.status.success().then(|| String::from_utf8_lossy(&out.stdout).trim().to_string())
 }
 
 /// Convert git's forward-slash paths to Windows form (unchanged on macOS / Linux).
-fn win_path(p: &str) -> String {
+pub(crate) fn win_path(p: &str) -> String {
     if cfg!(windows) { p.replace('/', "\\") } else { p.to_string() }
 }
 
@@ -96,16 +97,16 @@ pub fn info(path: &str) -> AppResult<GitInfo> {
 // Changes panel (strictly read-only: status + diff, never stage/commit/checkout/reset)
 // ---------------------------------------------------------------------------
 
-const STATUS_TIMEOUT: Duration = Duration::from_secs(10);
-const DIFF_TIMEOUT: Duration = Duration::from_secs(15);
+pub(crate) const STATUS_TIMEOUT: Duration = Duration::from_secs(10);
+pub(crate) const DIFF_TIMEOUT: Duration = Duration::from_secs(15);
 /// Larger status lists are cut (a generated folder without .gitignore can hold 100k files).
 pub const MAX_STATUS_FILES: usize = 5000;
 /// Diffs are cut at 2 MiB (the git child is killed once its output passes the cap).
 pub const MAX_DIFF_BYTES: usize = 2 * 1024 * 1024;
-const MAX_STATUS_BYTES: usize = 8 * 1024 * 1024;
+pub(crate) const MAX_STATUS_BYTES: usize = 8 * 1024 * 1024;
 
 /// Read-only git run with a stdout cap. Pathspecs are literal (no `:(magic)`), locks optional.
-fn run_git_capped(dir: &Path, args: &[&str], timeout: Duration, cap: usize) -> AppResult<process::CappedOutput> {
+pub(crate) fn run_git_capped(dir: &Path, args: &[&str], timeout: Duration, cap: usize) -> AppResult<process::CappedOutput> {
     let git = git_exe().ok_or_else(|| AppError::MissingExecutable("git".into()))?;
     let mut cmd = process::hidden_command(git);
     cmd.arg("-C").arg(dir).args(["-c", "core.quotepath=off", "-c", "color.ui=never"]).args(args);
@@ -195,7 +196,7 @@ pub fn parse_status_v2(raw: &[u8]) -> RepoChanges {
 }
 
 /// Repository root of `path`, or `None` when it is not inside a work tree.
-fn repo_root(path: &str) -> AppResult<Option<PathBuf>> {
+pub(crate) fn repo_root(path: &str) -> AppResult<Option<PathBuf>> {
     if path.contains('\0') {
         return Err(AppError::Invalid("Path contains a NUL character".into()));
     }
@@ -352,13 +353,13 @@ pub fn parse_shortstat(s: &str) -> (u32, u32, u32) {
     (files, ins, del)
 }
 
-fn git_stdout_timeout(dir: &Path, args: &[&str], timeout: Duration) -> Option<String> {
+pub(crate) fn git_stdout_timeout(dir: &Path, args: &[&str], timeout: Duration) -> Option<String> {
     let out = run_git(dir, args, timeout)?;
     out.status.success().then(|| String::from_utf8_lossy(&out.stdout).trim().to_string())
 }
 
 /// A requested base: blank = none (use the default); anything else must be a valid ref name.
-fn requested_base(base: Option<&str>) -> AppResult<Option<&str>> {
+pub(crate) fn requested_base(base: Option<&str>) -> AppResult<Option<&str>> {
     let requested = base.map(str::trim).filter(|b| !b.is_empty());
     if let Some(b) = requested
         && !is_valid_ref_name(b)
@@ -368,11 +369,11 @@ fn requested_base(base: Option<&str>) -> AppResult<Option<&str>> {
     Ok(requested)
 }
 
-fn names_commit(dir: &Path, rev: &str) -> bool {
+pub(crate) fn names_commit(dir: &Path, rev: &str) -> bool {
     git_stdout(dir, &["rev-parse", "--verify", "--quiet", &format!("{rev}^{{commit}}")]).is_some_and(|s| !s.is_empty())
 }
 
-fn current_branch(dir: &Path) -> Option<String> {
+pub(crate) fn current_branch(dir: &Path) -> Option<String> {
     git_stdout(dir, &["symbolic-ref", "--quiet", "--short", "HEAD"]).filter(|b| !b.is_empty())
 }
 
@@ -553,7 +554,7 @@ pub fn merge_branch_files(
 }
 
 /// stdout of a capped list command; a cut output keeps only its complete NUL-terminated records.
-fn complete_records(out: process::CappedOutput, what: &str) -> AppResult<Vec<u8>> {
+pub(crate) fn complete_records(out: process::CappedOutput, what: &str) -> AppResult<Vec<u8>> {
     if !out.truncated && !out.status.is_some_and(|s| s.success()) {
         let msg = String::from_utf8_lossy(&out.stderr).trim().to_string();
         return Err(AppError::Other(format!("git {what} failed: {}", crate::redact::redact(&msg))));
@@ -692,7 +693,7 @@ pub fn worktree_add(repo: &str, path: &str, branch: &str, new_branch: bool) -> A
     }))
 }
 
-fn same_path(a: &Path, b: &Path) -> bool {
+pub(crate) fn same_path(a: &Path, b: &Path) -> bool {
     let norm = |p: &Path| {
         std::fs::canonicalize(p)
             .unwrap_or_else(|_| p.to_path_buf())

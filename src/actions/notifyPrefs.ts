@@ -4,6 +4,7 @@
 import type { NotificationSettings, SessionId } from "../lib/types";
 import { useApp } from "../store/appStore";
 import { notify } from "./notify";
+import { t } from "../i18n";
 import { normalizeNotifications, toggleIn } from "./notifyRules";
 
 export function getNotif(): NotificationSettings {
@@ -33,7 +34,7 @@ export function isWorkspaceMuted(id: string): boolean {
 }
 
 function nameOfSession(id: SessionId) {
-  return useApp.getState().persisted.sessions.find((m) => m.id === id)?.name ?? "session";
+  return useApp.getState().persisted.sessions.find((m) => m.id === id)?.name ?? t("command.sessionFallbackName");
 }
 
 export function toggleSessionMute(id: SessionId, on?: boolean): void {
@@ -41,19 +42,19 @@ export function toggleSessionMute(id: SessionId, on?: boolean): void {
   const next = toggleIn(n.mutedSessions, id, on);
   updateNotif({ mutedSessions: next });
   const muted = next.includes(id);
-  notify("info", muted ? `Notifications muted for “${nameOfSession(id)}” — alerts still land in Comms` : `Notifications on for “${nameOfSession(id)}”`);
+  notify("info", muted ? t("notifications.toast.sessionMuted", { name: nameOfSession(id) }) : t("notifications.toast.sessionUnmuted", { name: nameOfSession(id) }));
 }
 
 export function toggleWorkspaceMute(id: string, on?: boolean): void {
   const n = getNotif();
   const next = toggleIn(n.mutedWorkspaces, id, on);
   updateNotif({ mutedWorkspaces: next });
-  const name = useApp.getState().persisted.workspaces.find((w) => w.id === id)?.name ?? "workspace";
-  notify("info", next.includes(id) ? `Notifications muted for workspace “${name}”` : `Notifications on for workspace “${name}”`);
+  const name = useApp.getState().persisted.workspaces.find((w) => w.id === id)?.name ?? t("notifications.toast.workspaceFallback");
+  notify("info", next.includes(id) ? t("notifications.toast.workspaceMuted", { name }) : t("notifications.toast.workspaceUnmuted", { name }));
 }
 
 export function toggleDnd(on?: boolean): void {
   const dnd = on ?? !getNotif().dnd;
   updateNotif({ dnd });
-  notify("info", dnd ? "Do not disturb on — alerts collect silently in Comms" : "Do not disturb off");
+  notify("info", dnd ? t("notifications.toast.dndOn") : t("notifications.toast.dndOff"));
 }

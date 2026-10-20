@@ -6,6 +6,7 @@
 
 import { useEffect, useMemo } from "react";
 import { useShallow } from "zustand/react/shallow";
+import { useT, type MessageKey } from "../../i18n";
 import { isTerminalMeta } from "../../lib/browserPanes";
 import type { AgentKind } from "../../lib/types";
 import { isLive, selectActiveWorkspace, useApp } from "../../store/appStore";
@@ -19,20 +20,21 @@ import "../../styles/skills.css";
 
 /** Mounted once by Shell; renders the panel while open. */
 export function SkillsLayer() {
+  const t = useT();
   const open = useSkills((s) => s.open);
   return (
-    <ErrorBoundary key={open ? "open" : "closed"} scope="Skills">
+    <ErrorBoundary key={open ? "open" : "closed"} scope={t("skills.title")}>
       {open && <SkillsPanel />}
     </ErrorBoundary>
   );
 }
 
-const TABS: { id: SkillsTab; label: string }[] = [
-  { id: "trending", label: "Trending" },
-  { id: "top", label: "Top" },
-  { id: "search", label: "Search" },
-  { id: "paste", label: "Paste a repo" },
-  { id: "installed", label: "Installed" },
+const TABS: { id: SkillsTab; label: MessageKey }[] = [
+  { id: "trending", label: "skills.tab.trending" },
+  { id: "top", label: "skills.tab.top" },
+  { id: "search", label: "skills.tab.search" },
+  { id: "paste", label: "skills.tab.paste" },
+  { id: "installed", label: "skills.tab.installed" },
 ];
 
 /** Terminal sessions of the active workspace (agent kind, running or not). */
@@ -58,6 +60,7 @@ function useWorkspaceAgents(): WorkspaceAgent[] {
 }
 
 function SkillsPanel() {
+  const t = useT();
   const tab = useSkills((s) => s.tab);
   const projectDir = useApp((s) => selectActiveWorkspace(s)?.projectDir ?? null);
   const installedCount = useSkills((s) => (s.installed && s.installed.projectDir === projectDir ? s.installed.items.length : null));
@@ -72,32 +75,32 @@ function SkillsPanel() {
     <Modal
       title={
         <span className="skills-title">
-          <IconSkills size={15} /> Skills
-          <span className="skills-title-sub">Agent Skills for every agent in this project</span>
+          <IconSkills size={15} /> {t("skills.title")}
+          <span className="skills-title-sub">{t("skills.subtitle")}</span>
         </span>
       }
-      ariaLabel="Skills"
+      ariaLabel={t("skills.title")}
       onClose={closeSkills}
       width={1100}
       className="skills-modal"
     >
-      <div className="skills-tabs" role="tablist" aria-label="Skills">
-        {TABS.map((t) => (
+      <div className="skills-tabs" role="tablist" aria-label={t("skills.title")}>
+        {TABS.map((tb) => (
           <button
-            key={t.id}
+            key={tb.id}
             type="button"
             role="tab"
-            aria-selected={tab === t.id}
-            className={`skills-tab${tab === t.id ? " is-selected" : ""}`}
-            onClick={() => setSkillsTab(t.id)}
+            aria-selected={tab === tb.id}
+            className={`skills-tab${tab === tb.id ? " is-selected" : ""}`}
+            onClick={() => setSkillsTab(tb.id)}
           >
-            {t.label}
-            {t.id === "installed" && installedCount !== null && <span className="skills-tab-count">{installedCount}</span>}
+            {t(tb.label)}
+            {tb.id === "installed" && installedCount !== null && <span className="skills-tab-count">{installedCount}</span>}
           </button>
         ))}
         <span className="skills-spacer" />
-        <span className="skills-source" title="Discovery is fetched only when you open a tab, search or open a repository. Nothing runs in the background.">
-          GitHub data via api.github.com, on request only
+        <span className="skills-source" title={t("skills.sourceTitle")}>
+          {t("skills.source")}
         </span>
       </div>
       <div className="skills-cols">
@@ -126,17 +129,11 @@ function DetailPane({ tab, projectDir, agents }: { tab: SkillsTab; projectDir: s
 }
 
 function Intro() {
+  const t = useT();
   return (
     <div className="skills-detail-empty">
-      <p>
-        <b>Agent Skills</b> are folders with a <span className="mono">SKILL.md</span> (plus optional references, scripts and assets) that teach an agent a
-        task. Adding one to this project gives it to every agent in the workspace: Claude Code reads <span className="mono">.claude/skills</span>, Codex and
-        other Agent Skills hosts read <span className="mono">.agents/skills</span>.
-      </p>
-      <p>
-        Pick a repository to see its skills. Each is pinned to one commit and reviewed before anything is written; Gridkeeper never runs what a skill
-        contains.
-      </p>
+      <p>{t.rich("skills.intro", { b: (c) => <b>{c}</b>, mono: (c) => <span className="mono">{c}</span> })}</p>
+      <p>{t("skills.introPick")}</p>
     </div>
   );
 }

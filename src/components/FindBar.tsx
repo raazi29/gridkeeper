@@ -6,9 +6,11 @@ import type { SessionId } from "../lib/types";
 import { useFind } from "../store/findStore";
 import { findKeyAction, findLabel, queryError, type FindResults } from "../terminal/findState";
 import { clearSearch, findInTerminal, focusTerminal, onSearchResults } from "../terminal/registry";
+import { useT } from "../i18n";
 import "../styles/tools.css";
 
 export const FindBar = memo(function FindBar({ sessionId }: { sessionId: SessionId }) {
+  const t = useT();
   const nonce = useFind((s) => s.nonce);
   const input = useRef<HTMLInputElement>(null);
   const [query, setQuery] = useState("");
@@ -44,7 +46,7 @@ export const FindBar = memo(function FindBar({ sessionId }: { sessionId: Session
   };
 
   const label = findLabel({ query, regex, found, results });
-  const miss = !!query && (label === "No results" || label === "Invalid regex");
+  const miss = !!query && (label === t("find.noResults") || label === t("find.invalidRegex"));
 
   return (
     <div className="findbar" role="search" onMouseDown={(e) => e.stopPropagation()}>
@@ -52,8 +54,8 @@ export const FindBar = memo(function FindBar({ sessionId }: { sessionId: Session
         ref={input}
         className={`findbar-input${miss ? " is-miss" : ""}`}
         value={query}
-        placeholder="Find"
-        aria-label="Find in terminal"
+        placeholder={t("find.placeholder")}
+        aria-label={t("find.ariaLabel")}
         spellCheck={false}
         onChange={(e) => {
           const q = e.currentTarget.value;
@@ -76,7 +78,7 @@ export const FindBar = memo(function FindBar({ sessionId }: { sessionId: Session
         type="button"
         className={`findbar-btn${caseSensitive ? " is-on" : ""}`}
         aria-pressed={caseSensitive}
-        title="Match case"
+        title={t("find.matchCase")}
         onClick={() => {
           setCaseSensitive(!caseSensitive);
           run("next", true, query, !caseSensitive);
@@ -89,7 +91,7 @@ export const FindBar = memo(function FindBar({ sessionId }: { sessionId: Session
         type="button"
         className={`findbar-btn${regex ? " is-on" : ""}`}
         aria-pressed={regex}
-        title="Regular expression"
+        title={t("find.regex")}
         onClick={() => {
           setRegex(!regex);
           run("next", true, query, caseSensitive, !regex);
@@ -98,13 +100,13 @@ export const FindBar = memo(function FindBar({ sessionId }: { sessionId: Session
       >
         .*
       </button>
-      <button type="button" className="findbar-btn" title="Previous match (Shift+Enter)" aria-label="Previous match" onClick={() => run("prev")}>
+      <button type="button" className="findbar-btn" title={t("find.prevTitle")} aria-label={t("find.prev")} onClick={() => run("prev")}>
         ↑
       </button>
-      <button type="button" className="findbar-btn" title="Next match (Enter)" aria-label="Next match" onClick={() => run("next")}>
+      <button type="button" className="findbar-btn" title={t("find.nextTitle")} aria-label={t("find.next")} onClick={() => run("next")}>
         ↓
       </button>
-      <button type="button" className="findbar-btn" title="Close (Esc)" aria-label="Close find" onClick={close}>
+      <button type="button" className="findbar-btn" title={t("ui.closeEsc")} aria-label={t("find.close")} onClick={close}>
         ✕
       </button>
     </div>

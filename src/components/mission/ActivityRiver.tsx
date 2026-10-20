@@ -7,6 +7,7 @@
 import { memo, useEffect, useRef } from "react";
 import type { SessionId } from "../../lib/types";
 import { roleInfo } from "../../lib/roles";
+import { useT } from "../../i18n";
 import { RATE_HISTORY, useRates } from "../../store/rates";
 import { usePref } from "./mcPrefs";
 import { roleStyle } from "./RoleTag";
@@ -30,6 +31,7 @@ export const ActivityRiver = memo(function ActivityRiver({
   /** Roles present in the workspace, in legend order. */
   roles: string[];
 }) {
+  const t = useT();
   const canvas = useRef<HTMLCanvasElement>(null);
   const sessionsRef = useRef(sessions);
   sessionsRef.current = sessions;
@@ -63,7 +65,7 @@ export const ActivityRiver = memo(function ActivityRiver({
       probe.remove();
     };
 
-    const draw = (t: number) => {
+    const draw = (ts: number) => {
       const dpr = window.devicePixelRatio || 1;
       const w = el.clientWidth;
       const h = el.clientHeight;
@@ -118,13 +120,13 @@ export const ActivityRiver = memo(function ActivityRiver({
         ctx.fill(path);
       });
       ctx.globalAlpha = 1;
-      last = t;
+      last = ts;
     };
 
-    const loop = (t: number) => {
+    const loop = (ts: number) => {
       raf = 0;
       if (!onScreen || document.visibilityState !== "visible") return;
-      if (t - last >= FRAME_MS) draw(t);
+      if (ts - last >= FRAME_MS) draw(ts);
       raf = requestAnimationFrame(loop);
     };
     const start = () => {
@@ -162,23 +164,23 @@ export const ActivityRiver = memo(function ActivityRiver({
   }, [still, open]);
 
   return (
-    <section className={`mc-river${open ? "" : " is-folded"}`} aria-label="Activity river">
+    <section className={`mc-river${open ? "" : " is-folded"}`} aria-label={t("activity.river.label")}>
       <div className="mc-band-head">
         <button
           type="button"
           className="mc-fold"
           aria-expanded={open}
-          aria-label={open ? "Fold the activity river" : "Show the activity river"}
-          title={open ? "Fold to one line (remembered on this device)" : "Show the activity river"}
+          aria-label={open ? t("activity.river.fold") : t("activity.river.show")}
+          title={open ? t("activity.foldHint") : t("activity.river.show")}
           onClick={() => setOpen(!open)}
         >
           {open ? "▾" : "▸"}
         </button>
-        <span className="mc-micro">activity river · out rate per session</span>
+        <span className="mc-micro">{t("activity.river.title")}</span>
         <span className="mc-spacer" />
-        {open && <span className="mc-micro mc-river-note">thickness = KB/s (log)</span>}
+        {open && <span className="mc-micro mc-river-note">{t("activity.river.note")}</span>}
         {roles.length > 0 && (
-          <span className="mc-legend" aria-label="Colour = role">
+          <span className="mc-legend" aria-label={t("activity.river.legendAria")}>
             {roles.map((r) => (
               <span key={r} className="mc-legend-item" style={roleStyle(r)}>
                 <span className="mc-legend-sq" />
@@ -190,11 +192,11 @@ export const ActivityRiver = memo(function ActivityRiver({
       </div>
       {open && (
         <div className="mc-river-body">
-          <canvas ref={canvas} aria-label="Output rate of each session over the last 120 seconds" role="img" />
+          <canvas ref={canvas} aria-label={t("activity.river.canvasAria")} role="img" />
           <div className="mc-river-axis">
-            <span>−120 s</span>
-            <span>−60 s</span>
-            <span>now</span>
+            <span>{t("activity.river.secondsAgo", { n: 120 })}</span>
+            <span>{t("activity.river.secondsAgo", { n: 60 })}</span>
+            <span>{t("activity.river.now")}</span>
           </div>
         </div>
       )}

@@ -7,7 +7,7 @@
   margin-top: 8px;
   padding-top: 8px;
   border-top: 1px dashed var(--mc-line);
-  text-align: left;
+  text-align: start;
 }
 .lc-hint {
   margin-top: 6px;
@@ -49,7 +49,7 @@
   height: 22px;
   padding: 0 9px;
   border: 0;
-  border-left: 1px solid var(--mc-line);
+  border-inline-start: 1px solid var(--mc-line);
   background: transparent;
   color: var(--text-2);
   font-family: var(--font-mono);
@@ -59,7 +59,7 @@
   cursor: pointer;
 }
 .lc-seg-btn:first-child {
-  border-left: 0;
+  border-inline-start: 0;
 }
 .lc-seg-btn:hover {
   color: var(--text-0);
@@ -119,12 +119,12 @@
   gap: 4px;
   padding: 6px 8px;
   border: 1px solid var(--mc-line);
-  border-left: 2px solid var(--role-lead);
+  border-inline-start: 2px solid var(--role-lead);
   border-radius: var(--radius-s);
   background: var(--bg-0);
 }
 .lc-prop.is-queued {
-  border-left-color: var(--accent);
+  border-inline-start-color: var(--accent);
 }
 .lc-prop.is-busy {
   opacity: 0.7;

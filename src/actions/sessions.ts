@@ -9,12 +9,16 @@ import { autoStartable, isBrowserMeta } from "../lib/browserPanes";
 import { dropNav, getNav } from "../browser/nav";
 import { notify } from "./notify";
 import { shellLabel } from "../lib/platform";
+import { t } from "../i18n";
 
-const AGENT_LABEL: Record<AgentKind, string> = {
+/** Default session names ("Claude Code 2"): product names stay; "Command" follows the UI language (getter). */
+const AGENT_LABEL: Readonly<Record<AgentKind, string>> = {
   powershell: shellLabel(),
   claude: "Claude Code",
   codex: "Codex",
-  generic: "Command",
+  get generic() {
+    return t("sessions.defaultNameCommand");
+  },
 };
 
 export function defaultResume(agent: AgentKind, presetResumes = false): ResumeMode {
@@ -118,7 +122,8 @@ export function maybeAutoRetry(info: SessionInfo) {
   const upMs = Date.parse(info.endedAt) - Date.parse(info.startedAt);
   if (!(upMs >= 0 && upMs < STARTUP_FAIL_WINDOW_MS) || retried.has(info.id)) return;
   retried.add(info.id);
-  writeLocalNotice(info.id, `[startup failed after ${Math.round(upMs / 1000)} s — retrying once in 3 s]`);
+  // Local notice drawn in the pane only (never sent to the program), so it follows the UI language.
+  writeLocalNotice(info.id, t("sessions.startupRetry", { seconds: Math.round(upMs / 1000) }));
   window.setTimeout(() => {
     const cur = useApp.getState().runtime[info.id];
     if (cur && !isLive(cur) && useApp.getState().persisted.sessions.some((m) => m.id === info.id))
@@ -135,6 +140,7 @@ export async function startSession(
   // Browser panes have no process.
   if (!meta0 || isBrowserMeta(meta0)) return false;
   if (isLive(useApp.getState().runtime[id])) return true;
+  userStopped.delete(id); // a stop only suppresses the retry of the run it ended
   lastResume.set(id, resume);
   if (!opts.keepRetryBudget) retried.delete(id);
   await launchSlot(meta0.agent);
@@ -146,6 +152,13 @@ export async function startSession(
   const size = getTerminalSize(id) ?? { cols: 120, rows: 32 };
   let agentSessionId: string | null = null;
   let effectiveResume = resume;
+  // Codex can't pin a conversation id up front, so `resume --last` in a folder shared by several Codex
+  // panes would make them all resume the SAME conversation. Those panes get Codex's picker instead.
+  if (meta.agent === "codex" && resume.mode === "continue") {
+    const cwd = meta.cwd.toLowerCase();
+    if (st.persisted.sessions.some((m) => m.id !== id && m.agent === "codex" && m.cwd.toLowerCase() === cwd))
+      effectiveResume = { mode: "pick" };
+  }
   if (meta.agent === "claude") {
     if (resume.mode === "continue" && meta.agentSessionId) {
       // Resume the exact conversation this pane owns (falls back to a fresh pinned id in Rust if absent).
@@ -196,7 +209,7 @@ export async function startSession(
       ...useApp.getState().runtime[id],
       state: { state: "failed", message },
     });
-    notify("error", `${meta.name}: ${message}`);
+    notify("error", t("sessions.startFailed", { name: meta.name, error: message }));
     return false;
   }
 }
@@ -250,6 +263,9 @@ export async function closeSession(id: SessionId) {
     useApp.getState().removeSessionMeta(id);
     return;
   }
+  // The pane goes away at once; the process is stopped in the background (runtime events still arrive, so
+  // waitForExit works without the meta) and the host entry is removed once it has exited.
+  useApp.getState().removeSessionMeta(id);
   if (isLive(useApp.getState().runtime[id])) {
     await stopSession(id, false);
     if (!(await waitForExit(id, 4000))) await stopSession(id, true);
@@ -257,7 +273,6 @@ export async function closeSession(id: SessionId) {
   }
   await ipc.sessionRemove(id).catch(() => {});
   useApp.getState().dropRuntime(id);
-  useApp.getState().removeSessionMeta(id);
 }
 
 export function hideView(id: SessionId) {
@@ -272,7 +287,7 @@ export async function copyOutput(id: SessionId) {
   try {
     const text = await ipc.sessionOutputText(id);
     await writeText(text);
-    notify("info", `Copied ${text.length.toLocaleString()} characters`);
+    notify("info", t("sessions.copiedChars", { count: text.length }));
   } catch (e) {
     notify("error", errorMessage(e));
   }
@@ -284,25 +299,19 @@ export async function clearSession(id: SessionId) {
 }
 
 export function renameSession(id: SessionId, name: string) {
-  if (name.trim()) useApp.getState().updateSessionMeta(id, { name: name.trim() });
+  if (name.trim()) useApp.getState().updateSessionMeta(id, { name: name.trim(), titleAsName: false });
 }
 
 /** Called once after state hydration: restart sessions that were marked auto-start. */
 export async function restoreSessions() {
-  const { persisted } = useApp.getState();
+  const { persisted, runtime } = useApp.getState();
   const inGroups = new Set(persisted.workspaces.flatMap((w) => w.groups.flatMap((g) => g.sessionIds)));
   // Terminal panes only: browser panes have no process (their URL reopens when the pane mounts).
-  const toStart = autoStartable(persisted.sessions).filter((m) => inGroups.has(m.id));
+  // Skip sessions the host already knows (renderer reload): live ones are running, stopped/exited ones were stopped on purpose.
+  const toStart = autoStartable(persisted.sessions).filter((m) => inGroups.has(m.id) && !runtime[m.id]);
   // Stagger launches slightly so many agents don't all hit the disk/network in the same tick.
-  // Codex can't pin a conversation id up front, so `resume --last` in a folder shared by several Codex
-  // panes would make them all resume the SAME conversation. Those panes get Codex's picker instead.
-  const codexPerCwd = new Map<string, number>();
-  for (const m of toStart)
-    if (m.agent === "codex" && m.resumeOnRestore.mode === "continue")
-      codexPerCwd.set(m.cwd.toLowerCase(), (codexPerCwd.get(m.cwd.toLowerCase()) ?? 0) + 1);
   for (const m of toStart) {
-    const shared = m.agent === "codex" && m.resumeOnRestore.mode === "continue" && (codexPerCwd.get(m.cwd.toLowerCase()) ?? 0) > 1;
-    void startSession(m.id, shared ? { mode: "pick" } : m.resumeOnRestore);
+    void startSession(m.id, m.resumeOnRestore);
     await new Promise((r) => setTimeout(r, 120));
   }
 }

@@ -97,7 +97,7 @@
 .attn-rail-dot {
   position: absolute;
   top: 4px;
-  left: 4px;
+  inset-inline-start: 4px;
 }
 
 .attn-count {
@@ -150,7 +150,7 @@
 
 .attn-comms {
   position: fixed;
-  right: 8px;
+  inset-inline-end: 8px;
   bottom: calc(var(--statusbar-h) + 6px);
   width: min(400px, calc(100vw - 16px));
   max-height: min(520px, calc(100vh - var(--statusbar-h) - 24px));
@@ -168,7 +168,7 @@
   content: "";
   position: absolute;
   top: 0;
-  left: 12px;
+  inset-inline-start: 12px;
   width: 28px;
   height: 2px;
   background: var(--accent);
@@ -209,7 +209,7 @@
   background: transparent;
   color: inherit;
   font: inherit;
-  text-align: left;
+  text-align: start;
   cursor: pointer;
   transition: background-color var(--dur) var(--ease);
 }
@@ -291,7 +291,7 @@
   content: "";
   position: absolute;
   top: 0;
-  left: 16px;
+  inset-inline-start: 16px;
   width: 28px;
   height: 2px;
   background: var(--accent);
@@ -328,7 +328,7 @@
   font-weight: 600;
 }
 .attn-fleet-count {
-  margin-left: 2px;
+  margin-inline-start: 2px;
   color: var(--text-2);
   font-family: var(--font-mono);
   font-size: var(--fs-2xs);
@@ -530,10 +530,10 @@
 .attn-broadcast-group {
   color: var(--text-2);
   font-size: var(--fs-xs);
-  margin-left: auto;
+  margin-inline-start: auto;
 }
 .attn-broadcast-summary {
-  margin-right: auto;
+  margin-inline-end: auto;
   color: var(--text-2);
   font-family: var(--font-mono);
   font-size: var(--fs-2xs);

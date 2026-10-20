@@ -3,6 +3,7 @@
 
 import { useEffect, useRef } from "react";
 import { createRoot } from "react-dom/client";
+import { t } from "../i18n";
 import "./layout.css";
 
 export interface ConfirmOptions {
@@ -52,14 +53,14 @@ function ConfirmDialog({
         onMouseDown={(e) => e.stopPropagation()}
       >
         <div id="confirm-title" className="confirm-title">
-          {opts.title ?? "Are you sure?"}
+          {opts.title ?? t("confirm.areYouSure")}
         </div>
         <div id="confirm-message" className="confirm-message">
           {message}
         </div>
         <div className="confirm-actions">
           <button type="button" className="lay-btn lay-btn--ghost" onClick={() => done(false)}>
-            {opts.cancelLabel ?? "Cancel"}
+            {opts.cancelLabel ?? t("common.cancel")}
           </button>
           <button
             ref={okRef}
@@ -67,7 +68,7 @@ function ConfirmDialog({
             className={`lay-btn ${opts.danger === false ? "lay-btn--primary" : "lay-btn--danger"}`}
             onClick={() => done(true)}
           >
-            {opts.confirmLabel ?? "Confirm"}
+            {opts.confirmLabel ?? t("confirm.confirm")}
           </button>
         </div>
       </div>

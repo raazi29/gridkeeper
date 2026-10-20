@@ -2,7 +2,7 @@
 //! blocking pool, never on the main thread.
 
 use tauri::ipc::{InvokeBody, Request};
-use tauri::{AppHandle, Manager};
+use tauri::AppHandle;
 use tauri_plugin_dialog::DialogExt;
 
 use crate::types::*;
@@ -40,7 +40,7 @@ pub async fn replay_delete(project_dir: String, name: String) -> Result<(), AppE
     tauri::async_runtime::spawn_blocking(move || crate::replay::delete(&project_dir, &name)).await.map_err(join_err)?
 }
 
-/// Native save dialog for an export (`kind` = "mp4" | "webm" | "gif"). Returns null when cancelled,
+/// Native save dialog for an export (`kind` = "mp4" | "webm" | "gif", or "json" for a team template). Returns null when cancelled,
 /// else the chosen path and a one-time token for `replay_save_file`.
 #[tauri::command]
 pub async fn replay_save_dialog(
@@ -53,17 +53,18 @@ pub async fn replay_save_dialog(
     let label = match kind {
         "gif" => "GIF animation",
         "webm" => "WebM video",
+        "json" => "Gridkeeper team template",
         _ => "MP4 video",
     };
     tauri::async_runtime::spawn_blocking(move || {
         let mut dialog = app
             .dialog()
             .file()
-            .set_title("Export mission replay")
+            .set_title(if kind == "json" { "Export team template" } else { "Export mission replay" })
             .set_file_name(name)
             .add_filter(label, &[kind])
             .set_can_create_directories(true);
-        if let Some(w) = app.get_webview_window(crate::webview_guard::MAIN) {
+        if let Some(w) = crate::webview_guard::main_window(&app) {
             dialog = dialog.set_parent(&w);
         }
         let Some(picked) = dialog.blocking_save_file() else {

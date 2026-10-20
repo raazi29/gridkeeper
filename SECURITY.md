@@ -46,6 +46,12 @@ The full model is in [docs/ARCHITECTURE.md §12](docs/ARCHITECTURE.md#12-securit
 - **Local-first, no telemetry.** No cloud backend, no analytics and no network calls of the app's own. The only
   exception is user-initiated: when you open an http(s) address in a browser pane, `curl.exe` fetches that same
   address once to check whether it may be embedded.
+- **Phone alerts are opt-in.** Off by default. When you turn them on (Settings › Notifications › Phone alerts), each
+  alert is one HTTPS POST, sent with the system curl, to the ntfy server you chose (ntfy.sh or your own), rate
+  limited and never retried. The text is generic ("builder-1 needs you · OAuth demo"), never terminal output, and is
+  scrubbed of paths, URLs, e-mail addresses and secrets; task names only if you allow them. The topic acts as a
+  password and is kept out of `workspaces.json`, logs and diagnostics bundles; the optional access token goes to
+  Windows Credential Manager (a 0600 file on macOS / Linux) and never back to the UI.
 - **No HTTP server.** The UI talks to the Rust host only over Tauri IPC. A strict CSP is set in
   `src-tauri/tauri.conf.json`.
 - **Credentials are never read.** Agent logins are checked by file existence and by each CLI's own status command

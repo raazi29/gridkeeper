@@ -66,3 +66,24 @@
   padding-top: 12px;
   border-top: 1px solid var(--border);
 }
+
+/* Exact Claude status from hooks (components/HookChip.tsx) */
+.hook-chip {
+  flex: none;
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-mono);
+  cursor: default;
+}
+.hook-chip.is-needs {
+  color: var(--warn-fg);
+  border-color: var(--warn-line);
+  background: var(--warn-soft);
+}
+.hook-chip.is-error {
+  color: var(--err-fg);
+  border-color: var(--err-line);
+  background: var(--err-soft);
+}

@@ -10,6 +10,7 @@ import { useUi } from "../../store/uiStore";
 import { quickLaunch } from "../QuickLaunch";
 import { memoryPressureNow } from "../ResourceWarnings";
 import type { MenuAction, MenuItem } from "../ui/Menu";
+import { t } from "../../i18n";
 
 /** Display text of the shortcut bound to a command ("" when unbound). */
 export function shortcutHint(commandId: string): string | undefined {
@@ -18,7 +19,7 @@ export function shortcutHint(commandId: string): string | undefined {
 }
 
 /** "New session ▸": one entry per agent / signed-in account (adds to `groupId`), plus the full dialog and formations. */
-export function newSessionSubmenu(groupId: string | undefined, label = "New session"): MenuAction {
+export function newSessionSubmenu(groupId: string | undefined, label = t("menu.newSession")): MenuAction {
   const s = useApp.getState();
   const options = launchOptions(s.accounts, s.agents);
   const pressure = memoryPressureNow();
@@ -32,10 +33,10 @@ export function newSessionSubmenu(groupId: string | undefined, label = "New sess
     });
   children.push(
     "separator",
-    { label: "Browser", onSelect: () => void openBrowserPane({ groupId }) },
-    { label: "Open URL…", hint: shortcutHint("browser.open"), onSelect: () => promptOpenUrl(groupId) },
+    { label: t("menu.browser"), onSelect: () => void openBrowserPane({ groupId }) },
+    { label: t("menu.openUrl"), hint: shortcutHint("browser.open"), onSelect: () => promptOpenUrl(groupId) },
     "separator",
-    { label: "More options…", hint: shortcutHint("session.new"), onSelect: () => useUi.getState().openDialog({ kind: "newSession", groupId }) },
+    { label: t("menu.moreOptions"), hint: shortcutHint("session.new"), onSelect: () => useUi.getState().openDialog({ kind: "newSession", groupId }) },
     formationItem(groupId),
   );
   return { label, children };
@@ -49,7 +50,7 @@ export function formationItem(groupId: string | undefined): MenuAction {
   let empty = false;
   if (groupId) for (const w of useApp.getState().persisted.workspaces) for (const g of w.groups) if (g.id === groupId) empty = g.sessionIds.length === 0;
   return {
-    label: empty ? "Launch formation here…" : "Launch formation…",
+    label: empty ? t("menu.formationHere") : t("menu.formation"),
     onSelect: () => useMission.getState().openFormation({ groupId: empty ? groupId : null }),
   };
 }
@@ -58,10 +59,10 @@ export function formationItem(groupId: string | undefined): MenuAction {
 export function splitSubmenu(groupId: string | undefined): MenuAction {
   const open = (preset: LayoutPreset) => useUi.getState().openDialog({ kind: "newSession", groupId, preset });
   return {
-    label: "Split",
+    label: t("menu.split"),
     children: [
-      { label: "New session in columns", hint: shortcutHint("session.splitColumns"), onSelect: () => open("columns") },
-      { label: "New session in rows", hint: shortcutHint("session.splitRows"), onSelect: () => open("rows") },
+      { label: t("menu.splitColumns"), hint: shortcutHint("session.splitColumns"), onSelect: () => open("columns") },
+      { label: t("menu.splitRows"), hint: shortcutHint("session.splitRows"), onSelect: () => open("rows") },
     ],
   };
 }
@@ -76,7 +77,7 @@ export function layoutSubmenu(groupId: string, current: LayoutPreset | undefined
     onSelect: () => set(preset),
   });
   return {
-    label: "Layout",
-    children: [item("grid", "Grid", "layout.grid"), item("columns", "Columns", "layout.columns"), item("rows", "Rows", "layout.rows")],
+    label: t("menu.layout"),
+    children: [item("grid", t("menu.layoutGrid"), "layout.grid"), item("columns", t("menu.layoutColumns"), "layout.columns"), item("rows", t("menu.layoutRows"), "layout.rows")],
   };
 }

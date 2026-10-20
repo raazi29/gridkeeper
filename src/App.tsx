@@ -8,6 +8,7 @@ import { errorMessage, ipc, onSessionState } from "./lib/ipc";
 import { flushPersistence, startPersistence, useApp } from "./store/appStore";
 import { preloadFont } from "./styles/fonts";
 import "./theme/applyTheme";
+import { t, useT } from "./i18n";
 
 let booted = false;
 
@@ -37,7 +38,7 @@ async function boot() {
     app.hydrate(state);
     await preloadFont(useApp.getState().persisted.settings.fontFamily);
     if (state.workspaces.length === 0) {
-      useApp.getState().createWorkspace("Workspace", null);
+      useApp.getState().createWorkspace(t("command.defaultWorkspaceName"), null);
     }
   } catch (e) {
     useApp.setState({ loaded: true, loadError: errorMessage(e) });
@@ -62,13 +63,14 @@ async function boot() {
 }
 
 export default function App() {
+  const tr = useT();
   const loaded = useApp((s) => s.loaded);
   useEffect(() => {
     void boot();
   }, []);
   if (!loaded) return <div className="boot" />;
   return (
-    <ErrorBoundary scope="The app">
+    <ErrorBoundary scope={tr("errors.scopeApp")}>
       <Shell />
     </ErrorBoundary>
   );

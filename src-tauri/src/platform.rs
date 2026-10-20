@@ -152,7 +152,7 @@ pub fn shell_path_args(shell: &Path) -> Option<Vec<String>> {
     let name = shell.file_name()?.to_str()?.trim_start_matches('-');
     let args: Vec<String> = match name {
         "bash" | "zsh" | "sh" | "dash" | "ash" | "ksh" | "mksh" => {
-            vec!["-i".into(), "-l".into(), "-c".into(), format!("printf '%s' \"{PATH_START}$PATH{PATH_END}\"")]
+            vec!["-i".into(), "-l".into(), "-c".into(), format!("printf '%s' \"{PATH_START}${{PATH}}{PATH_END}\"")]
         }
         "fish" => vec![
             "-i".into(),
@@ -190,20 +190,47 @@ pub fn parse_shell_path(stdout: &[u8]) -> Option<Vec<PathBuf>> {
 }
 
 /// Ask `shell` for its `PATH` (see the module docs). Returns the entries and how long it took.
+/// Tries an interactive login shell first (that is where most users set PATH), then a plain login shell,
+/// then a plain shell, within one time budget: some startup files make an interactive shell without a
+/// terminal exit before it runs the command (seen on CI images).
 #[cfg(unix)]
 pub fn capture_shell_path(shell: &Path, timeout: Duration) -> Result<(Vec<PathBuf>, Duration), String> {
+    let primary = shell_path_args(shell).ok_or_else(|| format!("{} is not a shell this can ask for PATH", shell.display()))?;
+    let mut variants = vec![primary.clone()];
+    for drop in [&["-i"][..], &["-i", "-l"][..]] {
+        let v: Vec<String> = primary.iter().filter(|a| !drop.contains(&a.as_str())).cloned().collect();
+        if v.len() < primary.len() && !variants.contains(&v) {
+            variants.push(v);
+        }
+    }
+    let started = std::time::Instant::now();
+    let mut last = String::from("no answer");
+    for args in variants {
+        let left = timeout.saturating_sub(started.elapsed());
+        if left.is_zero() {
+            break;
+        }
+        match capture_with_args(shell, &args, left) {
+            Ok((dirs, _)) => return Ok((dirs, started.elapsed())),
+            Err(e) => last = e,
+        }
+    }
+    Err(last)
+}
+
+#[cfg(unix)]
+fn capture_with_args(shell: &Path, args: &[String], timeout: Duration) -> Result<(Vec<PathBuf>, Duration), String> {
     use std::io::Read;
     use std::os::fd::AsRawFd;
     use std::os::unix::process::CommandExt;
     use std::process::{Command, Stdio};
     use std::time::Instant;
 
-    let args = shell_path_args(shell).ok_or_else(|| format!("{} is not a shell this can ask for PATH", shell.display()))?;
     let started = Instant::now();
     let deadline = started + timeout;
     let mut cmd = Command::new(shell);
     // The same opt-outs fix-path-env / shell-env pass: no oh-my-zsh update prompt, no tmux autostart.
-    cmd.args(&args)
+    cmd.args(args)
         .env(RESOLVING_ENV, "1")
         .env("DISABLE_AUTO_UPDATE", "true")
         .env("ZSH_TMUX_AUTOSTART", "false")
@@ -586,7 +613,9 @@ mod tests {
         for sh in ["/bin/zsh", "/bin/bash", "/usr/bin/dash", "/bin/sh", "-zsh"] {
             let a = args(sh).unwrap_or_else(|| panic!("{sh}"));
             assert_eq!(&a[..3], ["-i", "-l", "-c"], "{sh}");
-            assert!(a[3].contains("$PATH") && a[3].contains(PATH_START) && a[3].contains(PATH_END));
+            // `$PATH__GK…` would be read as one (unset) variable: braces end the name before the marker.
+            assert!(a[3].contains("${PATH}"), "{sh}: {}", a[3]);
+            assert!(a[3].contains(PATH_START) && a[3].contains(PATH_END));
         }
         let fish = args("/opt/homebrew/bin/fish").unwrap();
         assert!(fish[3].contains("string join : $PATH"));

@@ -2,6 +2,7 @@
 // duel watcher and the one-time welcome sheet. Renders nothing visible by itself.
 
 import { useEffect } from "react";
+import { useT } from "../i18n";
 import { ipc } from "../lib/ipc";
 import { useApp } from "../store/appStore";
 import { useUi } from "../store/uiStore";
@@ -11,6 +12,7 @@ import { SaberDuel } from "./SaberDuel";
 import { hasBeenWelcomed } from "./Welcome";
 
 export function ExperienceLayer() {
+  const t = useT();
   const loaded = useApp((s) => s.loaded);
   const loadError = useApp((s) => s.loadError);
 
@@ -19,7 +21,7 @@ export function ExperienceLayer() {
     let cancelled = false;
     // Let the shell paint first; never stack over a dialog the user already opened, and never in bench
     // mode (a modal would suspend shortcuts and skew measurements).
-    const t = window.setTimeout(() => {
+    const timer = window.setTimeout(() => {
       void ipc
         .appInfo()
         .catch(() => null)
@@ -30,12 +32,12 @@ export function ExperienceLayer() {
     }, 350);
     return () => {
       cancelled = true;
-      window.clearTimeout(t);
+      window.clearTimeout(timer);
     };
   }, [loaded, loadError]);
 
   return (
-    <ErrorBoundary scope="Effects">
+    <ErrorBoundary scope={t("errors.scopeEffects")}>
       <HyperspaceJump />
       <SaberDuel />
     </ErrorBoundary>

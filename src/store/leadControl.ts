@@ -191,9 +191,9 @@ export function removeDirProposals(dk: string): void {
   useLeadControl.setState((s) => (s.proposals.some((p) => p.dirKey === dk) ? { proposals: s.proposals.filter((p) => p.dirKey !== dk) } : s));
 }
 
-/** The user typed in a proposal's text box. */
+/** The user typed in a proposal's text box. A queued one goes back to waiting for the user: autopilot must not type a half-edited text. */
 export function editProposal(key: string, text: string): void {
-  patchProposal(key, { text, edited: true });
+  patchProposal(key, { text, edited: true, ...(getProposal(key)?.status === "queued" && { status: "proposal", queuedAt: null }) });
 }
 
 // ---- primitive selectors (safe as zustand selector results) ----------------------------------------

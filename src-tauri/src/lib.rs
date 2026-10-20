@@ -14,28 +14,39 @@
 //! - `git`         repo info, worktrees, read-only status / diff (Changes panel), branch summary
 //! - `mission`     `<project>/.gridkeeper/mission.md`: capped read, atomic checked write, debounced watch;
 //!               lead control outbox (list / archive) and the generated team.md
+//! - `brain`       long-term project memory: `.gridkeeper/brain/` notes + inbox, generated INDEX.md, search
 //! - `replay`      mission replay recordings (`.gridkeeper/replay/*.jsonl`) and export saves
 //! - `sandbox`     GRIDKEEPER_SANDBOX isolated instances (own data folder + WebView2 profile)
 //! - `diagnostics` host/webview/session resource attribution
 //! - `ports`       LISTENING TCP ports per session process tree
 //! - `browser`     browser panes: URL validation, embeddability probe, pop-out windows
+//! - `browser_view` native browser panes: one child webview per pane (Windows)
 //! - `skills`      Agent Skills: GitHub discovery (user-initiated), review, install into a project
+//! - `phone`       opt-in phone alerts through ntfy (user-chosen server; curl; rate limited; generic text)
 //! - `meter`       Claude Code cost & context meter: status line helper mode, `--settings` file, folder watch
+//! - `testrun`     test runs: command detection, contained background runs (queue, ring, timeout), summaries
+//! - `merge`       merge assistant: the one git write path (preview, guarded merge, worktree clean-up)
+//! - `agent_browser` shared browser for agents (a tab each): MCP helper mode, CDP pipe, take-over, confirmations
 //! - `logging` / `redact` structured logs with secret redaction
 //! - `webview_guard` reload / rebuild the main window when a WebView2 process dies
 
 pub mod accounts;
+pub mod agent_browser;
 pub mod adapters;
 pub mod app_menu;
+pub mod brain;
 pub mod browser;
+pub mod browser_view;
 pub mod commands;
 pub mod diagnostics;
 pub mod git;
 pub mod gpu;
 pub mod logging;
+pub mod merge;
 pub mod meter;
 pub mod mission;
 pub mod persistence;
+pub mod phone;
 pub mod platform;
 pub mod ports;
 pub mod procs;
@@ -47,6 +58,7 @@ pub mod sandbox;
 pub mod selftest;
 pub mod skills;
 pub mod state;
+pub mod testrun;
 pub mod types;
 pub mod webview_guard;
 
@@ -80,7 +92,7 @@ pub fn run() {
     // single-instance lock.
     if std::env::var_os("GRIDKEEPER_BENCH").is_none() && sandbox.is_none() {
         builder = builder.plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
-            if let Some(w) = app.get_webview_window(webview_guard::MAIN) {
+            if let Some(w) = webview_guard::main_window(app) {
                 // macOS: the main window may be hidden (⌘W).
                 #[cfg(target_os = "macos")]
                 let _ = w.show();
@@ -110,6 +122,16 @@ pub fn run() {
                 }
             });
     }
+    // Windows / Linux: closing the main window quits, even with a browser pop-out (it has no parent) still
+    // open; a headless app would keep its agents running and ignore a relaunch (no main window to focus).
+    #[cfg(not(target_os = "macos"))]
+    {
+        builder = builder.on_window_event(|window, event| {
+            if matches!(event, tauri::WindowEvent::Destroyed) && window.label() == webview_guard::MAIN && !webview_guard::rebuilding() {
+                window.app_handle().exit(0);
+            }
+        });
+    }
     builder
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
@@ -118,6 +140,8 @@ pub fn run() {
         .setup(move |app| {
             let ctx = state::AppCtx::init(app.handle())?;
             app.manage(ctx);
+            // Agent browser: helper endpoint + config (the browser itself starts on the first tool call).
+            agent_browser::app::install(app.handle());
             // What init_process_env changed (logging exists from AppCtx::init on).
             platform::log_env_report();
             if gui_self_test {
@@ -125,7 +149,7 @@ pub fn run() {
             }
             // Unix: stop sessions on SIGTERM/SIGINT/SIGHUP and on a main-thread panic (no-op on Windows).
             platform::install_exit_guards(app.handle());
-            if let Some(w) = app.get_webview_window(webview_guard::MAIN) {
+            if let Some(w) = webview_guard::main_webview(app.handle()) {
                 webview_guard::install(&w);
             }
             Ok(())
@@ -182,6 +206,17 @@ pub fn run() {
             commands::tools::browser_open_window,
             commands::tools::browser_close_window,
             commands::tools::browser_devtools,
+            browser_view::browser_view_supported,
+            browser_view::browser_view_create,
+            browser_view::browser_view_set_bounds,
+            browser_view::browser_view_navigate,
+            browser_view::browser_view_focus,
+            browser_view::browser_view_blur,
+            browser_view::browser_view_close,
+            browser_view::browser_view_retain,
+            browser_view::browser_view_snapshot,
+            browser_view::browser_view_set_shortcuts,
+            browser_view::browser_view_devtools,
             commands::skills::skills_search,
             commands::skills::skills_inspect,
             commands::skills::skills_file,
@@ -196,6 +231,43 @@ pub fn run() {
             commands::replay::replay_save_dialog,
             commands::replay::replay_save_file,
             commands::meter::meter_snapshot,
+            phone::phone_alerts_get,
+            phone::phone_alerts_set,
+            phone::phone_alerts_new_topic,
+            phone::phone_alerts_set_token,
+            phone::phone_alert_send,
+            phone::phone_alerts_test,
+            commands::brain::brain_list,
+            commands::brain::brain_read,
+            commands::brain::brain_write,
+            commands::brain::brain_approve,
+            commands::brain::brain_delete,
+            commands::brain::brain_search,
+            commands::brain::brain_share,
+            commands::meter::spend_ledger_read,
+            commands::meter::spend_ledger_write,
+            // Test runs + merge assistant (testrun.rs, merge.rs)
+            commands::testrun::test_detect,
+            commands::testrun::test_run_start,
+            commands::testrun::test_run_cancel,
+            commands::testrun::test_run_list,
+            commands::testrun::test_run_log,
+            commands::merge::merge_preview,
+            commands::merge::merge_plan,
+            commands::merge::merge_execute,
+            commands::merge::merge_cleanup_plan,
+            commands::merge::merge_cleanup,
+            commands::agent_browser::agent_browser_state,
+            commands::agent_browser::agent_browser_set_session,
+            commands::agent_browser::agent_browser_set_allowlist,
+            commands::agent_browser::agent_browser_set_idle_minutes,
+            commands::agent_browser::agent_browser_set_stopped,
+            commands::agent_browser::agent_browser_take_over,
+            commands::agent_browser::agent_browser_answer,
+            commands::agent_browser::agent_browser_watch,
+            commands::agent_browser::agent_browser_unwatch,
+            commands::agent_browser::agent_browser_input,
+            commands::agent_browser::agent_browser_stop_browser,
         ])
         .build(context)
         .unwrap_or_else(|e| fatal_startup_error(&e.to_string()))
@@ -208,6 +280,7 @@ pub fn run() {
                 if let Some(ctx) = app.try_state::<state::AppCtx>() {
                     ctx.shutdown();
                 }
+                agent_browser::shutdown();
             }
             // macOS: Dock icon clicked (or the app opened again) while the main window is hidden.
             #[cfg(target_os = "macos")]

@@ -7,6 +7,8 @@ import { isWorkspaceMuted, toggleWorkspaceMute } from "../../actions/notifyPrefs
 import { useApp } from "../../store/appStore";
 import { useMission } from "../../store/mission";
 import type { MenuItem } from "../ui/Menu";
+import { t } from "../../i18n";
+import { laneTestsSubmenu, workspaceTestMenuItem } from "../testrun/menus";
 import { formationItem, layoutSubmenu, newSessionSubmenu, shortcutHint } from "./common";
 
 function findGroup(groupId: string) {
@@ -20,22 +22,23 @@ function findGroup(groupId: string) {
 /** Group tab right-click. `onRename` starts the tab's inline rename. */
 export function buildGroupMenu(groupId: string, ctx: { onRename?: () => void } = {}): MenuItem[] {
   const loc = findGroup(groupId);
-  if (!loc) return [{ label: "Group not found", disabled: true }];
+  if (!loc) return [{ label: t("menu.group.notFound"), disabled: true }];
   const { ws, group } = loc;
-  const what = `“${group.name}”`;
+  const what = t("menu.quoted", { name: group.name });
   const empty = group.sessionIds.length === 0;
   return [
-    ...(ctx.onRename ? [{ label: "Rename", hint: "F2", onSelect: ctx.onRename } as MenuItem] : []),
+    ...(ctx.onRename ? [{ label: t("common.rename"), hint: "F2", onSelect: ctx.onRename } as MenuItem] : []),
     newSessionSubmenu(groupId),
     formationItem(groupId),
     layoutSubmenu(groupId, group.layout.preset),
     "separator",
-    { label: "Message all in group…", disabled: empty, onSelect: () => messageSessions(groupSessionIds(groupId), what) },
-    { label: "Restart all…", disabled: empty, onSelect: () => void restartSessions(groupSessionIds(groupId), what) },
-    { label: "Stop all…", disabled: empty, onSelect: () => void stopSessions(groupSessionIds(groupId), what) },
+    { label: t("menu.group.messageAll"), disabled: empty, onSelect: () => messageSessions(groupSessionIds(groupId), what) },
+    { label: t("menu.group.restartAll"), disabled: empty, onSelect: () => void restartSessions(groupSessionIds(groupId), what) },
+    { label: t("menu.group.stopAll"), disabled: empty, onSelect: () => void stopSessions(groupSessionIds(groupId), what) },
+    laneTestsSubmenu(groupId),
     "separator",
-    { label: "Close all sessions…", danger: true, disabled: empty, onSelect: () => void closeSessions(groupSessionIds(groupId), what) },
-    { label: "Delete group…", danger: true, disabled: ws.groups.length <= 1, onSelect: () => void deleteGroupFlow(groupId) },
+    { label: t("menu.group.closeAll"), danger: true, disabled: empty, onSelect: () => void closeSessions(groupSessionIds(groupId), what) },
+    { label: t("menu.group.delete"), danger: true, disabled: ws.groups.length <= 1, onSelect: () => void deleteGroupFlow(groupId) },
   ];
 }
 
@@ -49,15 +52,16 @@ export function workspaceExtraItems(workspaceId: string): MenuItem[] {
   return [
     { ...newSessionSubmenu(targetGroup), disabled: !targetGroup },
     {
-      label: "Open Mission Control",
+      label: t("menu.workspace.openMission"),
       hint: shortcutHint("view.mission"),
       onSelect: () => {
         switchWorkspace(workspaceId);
         useMission.getState().toggle(true);
       },
     },
-    { label: muted ? "Unmute notifications" : "Mute notifications", checked: muted, hint: "alerts still reach Comms", onSelect: () => toggleWorkspaceMute(workspaceId) },
-    { label: "Stop all sessions…", disabled: !hasSessions, onSelect: () => void stopSessions(workspaceSessionIds(workspaceId), `“${ws.name}”`) },
+    { label: muted ? t("menu.unmuteNotifications") : t("menu.muteNotifications"), checked: muted, hint: t("menu.workspace.muteHint"), onSelect: () => toggleWorkspaceMute(workspaceId) },
+    { label: t("menu.workspace.stopAll"), disabled: !hasSessions, onSelect: () => void stopSessions(workspaceSessionIds(workspaceId), t("menu.quoted", { name: ws.name })) },
+    workspaceTestMenuItem(workspaceId),
   ];
 }
 
@@ -70,8 +74,8 @@ export function buildBackgroundMenu(groupId: string): MenuItem[] {
     formationItem(groupId),
     layoutSubmenu(groupId, loc.group.layout.preset),
     "separator",
-    { label: "Message all in group…", disabled: loc.group.sessionIds.length === 0, onSelect: () => messageSessions(groupSessionIds(groupId), `“${loc.group.name}”`) },
-    { label: "Mission Control", hint: shortcutHint("view.mission"), onSelect: () => useMission.getState().toggle(true) },
-    { label: "Fleet overview", hint: shortcutHint("view.fleet"), onSelect: () => runCommand("view.fleet") },
+    { label: t("menu.group.messageAll"), disabled: loc.group.sessionIds.length === 0, onSelect: () => messageSessions(groupSessionIds(groupId), t("menu.quoted", { name: loc.group.name })) },
+    { label: t("menu.missionControl"), hint: shortcutHint("view.mission"), onSelect: () => useMission.getState().toggle(true) },
+    { label: t("menu.fleetOverview"), hint: shortcutHint("view.fleet"), onSelect: () => runCommand("view.fleet") },
   ];
 }

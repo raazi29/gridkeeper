@@ -23,7 +23,8 @@ anything.
 | Path | What lives there |
 |---|---|
 | `lib.rs` | App setup: plugins (single-instance, opener, dialog, clipboard, notification), `generate_handler![…]` (every IPC command), the `Exit` handler (`shutdown_all`). Sandbox mode (`GRIDKEEPER_SANDBOX`) skips the single-instance lock and uses its own data and WebView2 folders. |
-| `main.rs` | Entry point: `--gk-statusline` (meter helper) and `--gk-self-test` are handled before Tauri starts; otherwise `gridkeeper_lib::run()`. |
+| `main.rs` | Entry point: `--gk-statusline` (meter helper), `--gk-hook <event>` (Claude hook helper) and `--gk-self-test` are handled before Tauri starts; otherwise `gridkeeper_lib::run()`. |
+| `meter/` | Claude cost & context meter and exact status: `launch.rs` writes the per-pane `--settings` file (`statusLine` + `hooks`; the user's hooks are never copied, Claude Code merges hooks across settings sources), `helper.rs` (status line helper), `hooks.rs` (hook helper + per-pane hook state machine → `session-attention` with `kind: "hook"`), `ledger.rs` (stores the spend guard's `spend-ledger.json`), `mod.rs` (`MeterHub`: `<data>\meter` watch). Research: `docs/research-notes/cost-token-sources.md`, `claude-hooks-status.md`. |
 | `selftest.rs` | `--gk-self-test` (headless: env fix-up + login-shell PATH, data folder probe, default shell in a PTY answering a typed command, forced-stop containment of a tree with an orphaned grandchild; one line per check, exit 0/1) and `--gk-self-test-gui` (real window as sandbox `self-test`; passes when the frontend's boot calls `state_load`). Run by CI on the built binary (section 10). |
 | `app_menu.rs` | The native macOS menu (App, Edit, View, Window, Help) as plain data + a macOS-only builder. Edit items are native; custom items emit `native-menu` → `src/lib/nativeMenu.ts`. |
 | `state.rs` | `AppCtx`, the context shared by all commands (session manager, stores, paths). |
@@ -48,14 +49,19 @@ anything.
 | `profiles.rs` | `profiles.json` store and `claude auth status --json`. |
 | `persistence.rs` | Versioned, atomic, lenient `workspaces.json` (sanitize, migrate, read-only on newer versions). |
 | `git.rs` | Repo info, `git worktree add`, read-only status/diff for the Changes drawer, branch summaries for sign-off (`git_branch_summary`). |
+| `merge.rs` | **The only git write path** (ADR-022): merge preview (`merge-tree --write-tree`, temp-worktree fallback), guarded merge into the base in the main checkout (ff / merge commit / squash, pinned SHAs, rollback), worktree + branch clean-up (unlinks junctions first: Git for Windows' `worktree remove` follows them). |
+| `testrun.rs` | Test runs (ADR-023): command detection, contained background runs (queue, 2 MiB ring, timeout, cancel), summary parsers, the merge gate's evidence. |
 | *(mission file)* | `mission_read` / `mission_write` (atomic, conflict check) / `mission_watch` (filesystem watch, no polling → `mission-changed`) for `<projectDir>/.gridkeeper/mission.md`. |
+| `brain.rs`, `commands/brain.rs` | Brain (long-term project memory) in `<project>/.gridkeeper/brain/`: `brain_list` / `brain_read` / `brain_write` (atomic, redacted, 16 KiB cap, conflict check) / `brain_approve` (inbox → notes) / `brain_delete` (returns the text for Undo) / `brain_search` (local BM25-style ranking, prefix matching) / `brain_share` (marked `.gitignore` block). `INDEX.md` is regenerated from the notes (debounced after each change, by the mission watcher on agents' edits, by `brain_list` when stale). The mission watch also watches `brain/` recursively and emits `mission-changed` with `file: "brain"`. |
 | `ports.rs` | Listening TCP ports attributed to session trees: `GetExtendedTcpTable` (Windows), `/proc/net/tcp{,6}` + `/proc/<pid>/fd` (Linux), `lsof` (macOS). |
 | `browser.rs` | URL validation, `curl.exe` embed probe (`frame_verdict`, `html_title`), pop-out `WebviewWindow`s. |
+| `phone.rs` | Opt-in phone alerts through ntfy (ADR-020): `phone-alerts.json` settings, token in Credential Manager (0600 file on Unix), payload scrubbing, rate limiter, curl with the request on stdin (`-K -`), `phone_*` commands. |
+| `browser_view.rs` | Native browser panes (Windows, ADR-021): one child webview per pane (`bv-<pane id>`, `Window::add_child`, Tauri `unstable` for the Windows target only), bounds / visibility / navigation / snapshot / focus commands, WebView2 events → `browser-view-*`, app shortcuts via `AcceleratorKeyPressed`, downloads to the Downloads folder. Commands report "unsupported" on macOS / Linux. |
 | `diagnostics.rs` | CPU/RAM attribution via one Toolhelp snapshot (host / WebView2 / session trees), export bundle. macOS / Linux: one sysinfo walk (`procs.rs`); the webview bucket is the WebKit helper processes, best effort. |
 | `gpu.rs` | GPU telemetry from PDH counters (engine utilization, GPU memory), opened lazily. Windows only ("unavailable" elsewhere). |
 | `platform.rs` | Per-OS bits: `os()` for `app_info`; `init_process_env` for macOS / Linux GUI launches (PATH from the login shell when `TERM` is unset, 5 s cap; tool folders appended; macOS `LANG`; Linux `WEBKIT_DISABLE_DMABUF_RENDERER=1` with the NVIDIA proprietary driver or in an AppImage); Unix termination guards (SIGTERM/SIGINT/SIGHUP → normal exit; main-thread panic → kill sessions). |
 | `procs.rs` | Unix process table (one shared `sysinfo::System`): session membership for containment, trees and CPU/RAM for diagnostics. |
-| `webview_guard.rs` | WebView2 crash recovery (Windows only). |
+| `webview_guard.rs` | WebView2 crash recovery (Windows only). `main_window` / `main_webview`: use these, never `get_webview_window("main")` (None while native browser panes exist). |
 | `logging.rs`, `redact.rs` | JSON-lines logs with daily rotation; secret redaction at every sink. |
 | `src-tauri/tests/live_profiles.rs` | Optional live checks against real Claude profiles (`--ignored`). |
 | `src-tauri/capabilities/default.json` | IPC permissions, **scoped to webview `main`**. `macos.json` adds the Dock badge permission on macOS only (`"platforms": ["macOS"]`). |
@@ -73,7 +79,8 @@ anything.
 | `lib/accounts.ts`, `lib/roles.ts`, `lib/browserPanes.ts`, `lib/pressure.ts`, `lib/brand.ts` | Pure helpers. |
 | `store/appStore.ts` | zustand: `persisted` (saved, debounced 400 ms) + `runtime` (live `SessionInfo` by id). |
 | `store/uiStore.ts` | Dialogs, palette, toasts, shared diagnostics poll. |
-| `store/attention.ts` | Attention state machine per session (working / waiting / done / error / idle, unread). |
+| `store/attention.ts` | Attention state machine per session (working / waiting / done / error / idle, unread). Claude hook states (`hook` events) take precedence; heuristics then only fill gaps. |
+| `lib/spend.ts`, `store/spend.ts`, `components/spend/*` | Spend guard: daily budget per workspace over the cost meter (ledger of per-day deltas per conversation, local midnight), warn toast, 100 % action (warn / pause Autopilot / + OS notification), banner with raise budget / resume. Never stops agents. |
 | `store/activity.ts`, `store/rates.ts`, `store/mission.ts` | Mission Control: activity ring (500), output rates (polled only while open), mission UI state. |
 | `store/ports.ts` | Ports, polled only while a view shows them. |
 | `actions/sessions.ts` | **The only place that turns intent into `session_*` calls**: start/stop/restart/close, restore, `LAUNCH_GAP_MS`. |
@@ -83,13 +90,18 @@ anything.
 | `terminal/registry.ts` | **Single owner of xterm.js instances**, outside React: attach generations, parking, WebGL budget, context-loss recovery. |
 | `terminal/webglBudget.ts` | `MAX_WEBGL` per platform (`maxWebglFor`: Windows 12, macOS 12, Linux 8) and the stable allocation algorithm. |
 | `terminal/terminalKeys.ts` | Terminal copy / paste keys and link modifier per platform (Ctrl on Windows / Linux, ⌘ on macOS; ⌃C always reaches the program on a Mac). |
+| `lib/phoneAlerts.ts`, `lib/qrcode.ts`, `components/settings/PhoneAlerts.tsx` | Phone alerts: event policy + generic text, proposal / mission-done watchers (`installPhoneAlerts`), offline QR encoder, the Settings section and the Diagnostics line. |
 | `lib/platform.ts` | `OS` / `isMac` / `isLinux` / `isWindows` from `navigator`, `shellLabel()`, `webviewLabel()`. Platform-dependent helpers take an explicit `os` so tests are host-independent. |
 | `lib/nativeMenu.ts` | macOS only: runs the native menu's custom items (`native-menu` events) through the command registry; drops a menu command a key binding ran within 500 ms. |
 | `terminal/ackBatcher.ts`, `writeChunks.ts`, `pasteGuard.ts`, `zoom.ts`, `findState.ts`, `menuBridge.ts`, `theme.ts` | Terminal plumbing. |
 | `layout/GroupGrid.tsx`, `Pane.tsx`, `PaneHeader.tsx`, `BrowserPane.tsx`, `gridGeometry.ts`, `paneDrag.ts` | Grid, panes, headers, drag and drop. |
 | `browser/BrowserLayer.tsx`, `frameHosts.ts`, `nav.ts`, `OpenUrlDialog.tsx`, `PortsList.tsx` | Browser panes: one persistent iframe layer positioned over host boxes. |
+| `browser/engine.ts`, `nativeViews.ts`, `nativeSync.ts`, `BrowserSettings.tsx` | Native browser panes (Windows): engine choice + fallback, the sync manager (host box → bounds, hit-test occlusion → hide with a snapshot, drags, shortcuts, events), its pure decisions (unit-tested), the settings row. |
 | `components/*` | Shell, sidebar, dialogs, palette, Fleet, Broadcast, Comms, Inspector, Diagnostics, ChangesDrawer, settings, welcome, theme switcher, menus. |
 | `components/mission/*` | Mission Control (mission board from `mission.md`, lanes, sign-off with branch evidence, "brief team…" / "hand off…"), Formations UI, activity river, session log. |
+| `lib/brain.ts`, `store/brain.ts`, `actions/brainCapture.ts`, `components/brain/*` | Brain: note format helpers, the brief line, capture rules (board / review / lead decisions → inbox suggestions, scrubbed, deduplicated), panel state + per-project prefs (localStorage: capture, auto-approve, briefs), the panel, "add memory" dialog and the "remember…" selection chip over Mission Control. |
+| `components/testrun/*`, `store/testrun.ts` | Test runs: badges, log viewer, test command dialog, "ask the agent to fix" confirmation; run / lane actions and menus. |
+| `components/merge/*` | Merge assistant dialog (preview, test gate, strategy, exact commands, outcome, clean-up) and its pure model. |
 | `keybindings/combo.ts`, `index.ts` | `DEFAULT_BINDINGS` (+ `MAC_DEFAULT_OVERRIDES`), `forbiddenReason(combo, os)`, capture-phase listener. On macOS the stored `ctrl` token means ⌘ and `meta` means ⌃ (saved bindings keep working; display `⇧⌘P`). |
 | `theme/themes.ts`, `applyTheme.ts`, `saber.ts`, `effectPrefs.ts` | 12 themes (pure data), CSS variable application, saber colours, effect prefs. |
 | `styles/*.css` | `tokens.css` (derived tokens), `signature.css` (theme-specific accents), feature CSS. |
@@ -110,6 +122,7 @@ anything.
 | `appveyor.yml`, `scripts/ci/appveyor.{sh,ps1}` | The CI that runs while GitHub Actions is unavailable (AppVeyor free plan: one job at a time, 60 min each; images Visual Studio 2022, Ubuntu2204, macos-sonoma). Same steps as the workflow. |
 | `scripts/ci/self-test.sh` | Runs a built binary's `--gk-self-test`, then `--gk-self-test-gui` (Linux under Xvfb: required; macOS: optional; Windows: skipped; `GK_GUI_SELF_TEST` overrides). `dev` mode serves `dist/` with `vite preview` on the dev URL for debug builds. |
 | `<project>/.gridkeeper/mission.md` | Not in this repo: the shared task board Mission Control reads and writes in each project folder (`# Mission: <goal>`, `## Tasks`, `- [ ] text @owner`; `[~]` doing, `[x]` done, `[!]` blocked). Created with a self-ignoring `.gitignore`. |
+| `<project>/.gridkeeper/brain/` | Not in this repo: the team's long-term memory. `notes/<slug>.md` (confirmed), `inbox/<slug>.md` (suggested, waiting for the user), generated `INDEX.md`. Front matter `title / kind / tags / source / created / updated / confidence / supersedes` + a few lines (format: `skills/agent-mission/SKILL.md`). Git-ignored with the rest of `.gridkeeper/` unless "share via git" adds the exception block (notes + INDEX.md committable, inbox stays local). |
 | `docs/assets/` | Hero banner, social preview, showcase media, `logo/` (brand guide + tools), `readme/` (animated crawl + saber dividers + `tools/gen-readme-art.mjs`). |
 | `docs/research-notes/` | Raw verified findings (CLI flags, terminal stack, market/agents). |
 
@@ -129,7 +142,10 @@ anything.
 12. Agents come from adapters (`AgentAdapter` trait) plus a data-only catalog; env plan: base TERM vars → strip parent-agent vars → adapter config → user args → user env.
 13. Accounts are isolated home directories selected with each CLI's documented variable; status comes from the CLI's own status command; credentials are never read.
 14. Attention is detected in Rust from BEL/OSC signals and output activity (`pty/attention.rs`) and reduced in `store/attention.ts`; notifications, Comms, Fleet and Mission Control consume it.
+15. Built-in tools are read-only or sandboxed: Changes drawer (`git status`/`diff` only), ports (TCP table), browser panes (Windows: a child webview per pane without IPC, hidden with a snapshot placeholder while DOM overlays cover it; elsewhere / legacy setting: sandboxed iframes in one persistent layer; pop-outs as separate webviews without IPC).
+14. Attention is detected in Rust from BEL/OSC signals and output activity (`pty/attention.rs`), plus exact Claude Code hook states for Claude panes when the meter and "exact status" are on (`meter/hooks.rs`), and reduced in `store/attention.ts` (hooks first, heuristics fill gaps); notifications, Comms, Fleet, Mission Control and Autopilot (never types into a permission / question prompt) consume it.
 15. Built-in tools are read-only or sandboxed: Changes drawer (`git status`/`diff` only), ports (TCP table), browser panes (sandboxed iframes in one persistent layer, pop-outs as separate webviews without IPC).
+15. Built-in tools are read-only or sandboxed: Changes drawer (`git status`/`diff` only), ports (TCP table), browser panes (sandboxed iframes in one persistent layer, pop-outs as separate webviews without IPC). The one exception is the merge assistant (`merge.rs`, ADR-020): previewed, confirmed, guarded, rolled back on failure; test runs (`testrun.rs`) run the user's test command in a container.
 16. `GRIDKEEPER_SANDBOX=<name>` (`[a-z0-9-]{1,32}`) runs an isolated instance: data in `%APPDATA%\app.gridkeeper.desktop\sandboxes\<name>`, its own WebView2 profile, no single-instance lock, title `Gridkeeper [sandbox: <name>]`, `ipc.appInfo().sandbox`. That is how tests run next to the live app (section 6).
 17. Team coordination is a plain file: `<projectDir>/.gridkeeper/mission.md`, which every agent CLI can edit. Rust reads/writes it atomically (conflict check on modified time) and watches it with filesystem notifications (`mission-changed`); Mission Control renders it as a board and sign-off shows each builder's branch evidence (`git_branch_summary`).
 
@@ -153,10 +169,15 @@ anything.
   selector (render loops, see commit `80b455c`).
 - **No polling while idle.** Every timer is tied to an open view and a visible window.
 - **WebGL budget is 12** (Chromium silently kills the oldest context beyond 16 per renderer; the spare slots are headroom for other WebGL users in the page and for transitions, ADR-006). Per platform in `maxWebglFor`: macOS 12, Linux 8 (WebKitGTK; both unmeasured).
-- **Capability scoped to webview `main`** (`"webviews": ["main"]`, not `"windows"`), so pop-out browser windows and
-  future child webviews never get IPC.
+- **Capability scoped to webview `main`** (`"webviews": ["main"]`, not `"windows"`), so pop-out browser windows
+  (`browser-*`) and native browser views (`bv-*`, child webviews of the main window) never get IPC.
 - **Browser iframes are sandboxed** (`FRAME_SANDBOX`: no top navigation, no popups) and `frameMode` refuses the
   app's own origins *before* framing; that's what makes `allow-same-origin` safe. `file:` URLs go to pop-outs.
+- **Native browser views never reach an app origin**: `browser_view::view_navigation_allowed` refuses Tauri's
+  protocol hosts and the dev URL for every top-level navigation (Tauri treats those as local, ACL-free origins);
+  new windows are always denied; each view uses the main window's `additionalBrowserArgs`.
+- **Never `get_webview_window("main")`** on Windows code paths: it returns None while browser views exist (Tauri
+  `unstable`); use `webview_guard::main_window` / `main_webview`.
 - **Job Objects** (`KILL_ON_JOB_CLOSE`, no breakaway) contain every session tree; app exit runs `shutdown_all(1500 ms)`
   and a crash still kills the trees. **macOS / Linux:** the POSIX session is the container; app exit, SIGTERM / SIGINT
   / SIGHUP and a main-thread panic stop the sessions, but a hard crash of the host can orphan agents (section 10).
@@ -167,6 +188,9 @@ anything.
 - **Keybindings never take terminal-critical keys** (`forbiddenReason()` in `combo.ts`).
 - **Persistence is never destructive**: newer-version files make the store read-only; damaged files are preserved as
   `workspaces.corrupt-<timestamp>.json`.
+- **git writes only through `merge.rs`** (ADR-022): preview first, exact commands shown, one confirmation, guards
+  re-checked, pinned SHAs, rollback on failure; never `--force`, checkout, stash, reset of a branch, history rewrite or
+  automatic branch deletion. Unlink junctions before any `git worktree remove` (it follows them on Windows).
 - **Same-agent launch gaps** (Claude 350 ms, Codex 600 ms) and the 12 s no-output watchdog stay unless the Codex
   startup hang is proven fixed.
 
@@ -334,8 +358,12 @@ from an agent at all when the memory guard would refuse.
 - Shift+Enter in Claude Code on Windows is unreliable (kitty keyboard protocol allowlist, Claude Code #92771).
 - System ConPTY swallows some sequences (OSC 7501 / DA1 pass-through needs a newer sideloaded ConPTY; see ROADMAP).
 - More than 12 visible terminals → DOM renderer for the rest.
-- Browser panes: iframe limits (no in-page history, static `<title>` only, `target=_blank` does nothing, app shortcuts
-  don't fire while focus is in the page); sites that refuse framing open in pop-outs.
+- Browser panes, native engine (Windows default, ADR-021): not live-verified yet (checklist in
+  [research-notes/native-browser-panes.md](research-notes/native-browser-panes.md)); covered panes show a still
+  snapshot while a menu / dialog / toast is open; views are not hidden while the window is minimised.
+- Browser panes, frame engine (macOS / Linux, or the legacy setting): iframe limits (no in-page history, static
+  `<title>` only, `target=_blank` does nothing, app shortcuts don't fire while focus is in the page); sites that
+  refuse framing open in pop-outs.
 - Port detection: TCP listeners inside the session tree only.
 - Job assignment race (process spawned before `AssignProcessToJobObject`): theoretical, never observed.
 - `conhost.exe` is not attributed in in-app diagnostics (`sample.ps1` reports it).
@@ -452,3 +480,57 @@ restores, ⌘Q stops the agents, the Dock badge, notifications, retina sharpness
 and WebGL with many terminals, the login-shell PATH with real dotfiles (nvm / fnm / asdf, Claude Code in
 `~/.local/bin`), IME input, App Nap while hidden, full screen; on Linux: NVIDIA (X11 and Wayland), the AppImage on
 Ubuntu 24.04, the `.deb` desktop entry and dock icon on GNOME / KDE, notifications.
+
+## 11. Agent browser
+
+Agents drive one shared browser (a tab each) through MCP tools; the user watches every tab in the *Agent browser*
+view and can take over. Research and the option comparison (Playwright MCP, chrome-devtools-mcp, built-in):
+[research-notes/agent-browser.md](research-notes/agent-browser.md).
+
+| Path | What lives there |
+|---|---|
+| `src-tauri/src/agent_browser/mod.rs` | Overview, constants (`gk-browser` server name, `--gk-mcp-browser`, `GK_AGENT_BROWSER_TOKEN`). |
+| `agent_browser/mcp.rs` | Helper mode (dispatched from `main.rs` before Tauri): dual-era MCP over stdio (`initialize` and `server/discover`), each `tools/call` forwarded to the host on its own thread and connection. |
+| `agent_browser/ipc.rs` | Helper ⇄ host transport: per-user named pipe (DACL user + SYSTEM, `FILE_FLAG_FIRST_PIPE_INSTANCE`, `PIPE_REJECT_REMOTE_CLIENTS`) / Unix socket in a 0700 folder; one JSON line each way; peer pid. |
+| `agent_browser/launch.rs` | Injection: Claude `--mcp-config=<data>\agent-browser\mcp-<session>.json` (skipped when `managed-mcp.json` exists), Codex `-c mcp_servers.gk-browser.*` (TOML literal strings, `tool_timeout_sec = 600`). Called from the two adapters. |
+| `agent_browser/chrome.rs` | Find Edge / Chrome / Chromium; launch headless with `--remote-debugging-pipe` (Windows: inherited pipe handles via `--remote-debugging-io-pipes` + CRT fds 3/4, suspended start, own Job Object; Unix: fds 3/4, `setsid`, session container). |
+| `agent_browser/cdp.rs` | CDP client: NUL-delimited JSON, flat sessions, blocking calls with timeouts, `call_until` (gives up when a JS dialog opens). |
+| `agent_browser/hub.rs` | State: browser lifecycle, a browser context + page per session, auth (token + session process tree), take-over, confirmations, screencast watch, janitor (`plan_janitor`). |
+| `agent_browser/events.rs`, `actions.rs`, `page.rs` + `page.js` | CDP events (console / network rings, dialogs, popups, downloads, crashes, frames); tool implementations; the in-page helper evaluated in an isolated world (snapshot with refs, hit-test, focus, select). |
+| `agent_browser/config.rs`, `policy.rs`, `model.rs` | `<data>\agent-browser\config.json` (opt-ins, allowlist, idle minutes); URL / allowlist policy; IPC types (mirrored at the end of `src/lib/types.ts`). |
+| `commands/agent_browser.rs` | `agent_browser_*` commands; events `agent-browser-state`, `agent-browser-activity`. |
+| `src/components/agentBrowser/*` | View (grid of live tabs, focus with take-over, action log, allowlist), confirmation prompts, store, frame / input helpers. |
+
+**Invariants:**
+- One browser per Gridkeeper instance, never a DevTools port. Started on the first tool call; stopped after `idleMinutes`
+  (default 10) with no tool call and no viewer, 60 s after the last tab closed, from the view, and on app exit. Windows:
+  its own kill-on-close Job Object (a crash of the host kills it). macOS / Linux: its own POSIX session, killed on exit /
+  by the exit guards; a hard crash can orphan it like agents.
+- A tool call reaches only its own session's page. Requests carry the session id and a per-launch token (rotated on every
+  start, sent through the MCP config's `env`); the host also checks that the connecting pid is in that session's tree.
+- The opt-in lives in `config.json`, not in `workspaces.json` / `SessionMeta` (the shared IPC contract stays untouched);
+  sessions that no longer exist are pruned at startup. It applies at launch, so the UI says "restart to apply".
+- Confirmation (the tool call waits up to 2 minutes, then counts as no): form submission (submit button, Enter in a form,
+  `submit: true`) or `browser_evaluate` when the page or form target is outside loopback / the allowlist / this machine's
+  private addresses on a session's dev-server port; every upload; every download (it lands in
+  `<data>\agent-browser\downloads\<session>\<guid>` and is deleted unless allowed). Navigation is http(s) / about:blank only.
+- Each agent gets its own browser context (separate cookies and storage), discarded with the tab. Popups are closed and
+  reported. Password values never appear in snapshots or logs; queries are dropped from logged URLs.
+- Screencast only while the view shows a tab and the window is visible; acks at most every 100 ms.
+
+**Memory (estimates, not measured on this machine yet):** headless Edge with one about:blank tab ≈ 150-250 MB (browser,
+GPU / utility and one renderer); each further agent tab ≈ 30-100 MB depending on the app; the helper per agent ≈ 5-10 MB
+(the Gridkeeper binary without a window). Compare: one Playwright MCP / chrome-devtools-mcp per agent = a Node process
+(~50-80 MB) plus, unless attached to a shared browser, a whole browser per agent.
+
+**Live checks still to do (integrator):** a Claude Code pane and a Codex pane with the box ticked list the `gk-browser`
+tools and keep the user's own MCP servers; `browser_navigate http://localhost:<dev port>` → snapshot → click → console;
+take over / hand back while a call waits; a form on an external site prompts; a download prompts; closing the pane closes
+the tab within ~75 s and the browser ~60 s later; app exit leaves no `msedge.exe` with `agent-browser\profile` in its
+command line; Edge on a managed PC (policy `RemoteDebuggingAllowed`) shows the error in the view; the `--mcp-config=`
+form is accepted by the installed Claude Code; Codex accepts the `-c` overrides through the npm shim. `cargo test --lib
+agent_browser::tests::live_ -- --ignored` runs the browser path headless without the app.
+
+**Follow-ups:** manual setup for other agent CLIs needs a token they can read (today only launched Claude / Codex
+sessions authenticate); iframes are not in snapshots; no `browser_tabs` (one tab per agent by design); the take-over
+view has no clipboard bridge (use the "type text" box).

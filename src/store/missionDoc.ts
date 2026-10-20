@@ -7,6 +7,7 @@
 import { useEffect } from "react";
 import { create } from "zustand";
 import { notify } from "../actions/notify";
+import { t } from "../i18n";
 import { errorMessage, ipc, onMissionChanged } from "../lib/ipc";
 import { parseMission, setTaskState, type MissionDoc, type TaskState } from "../lib/missionDoc";
 import type { MissionFile } from "../lib/types";
@@ -22,7 +23,10 @@ export interface MissionEntry {
 
 export const EMPTY_MISSION: MissionEntry = { file: null, doc: null, loading: false, error: null };
 
-export const CONFLICT_MESSAGE = "The mission file changed — reloaded, try again";
+/** Toast after a refused write (the file changed meanwhile), in the UI language. */
+export function conflictMessage(): string {
+  return t("mcNode.toast.conflict");
+}
 
 export const useMissionDocs = create<{ byDir: Record<string, MissionEntry> }>()(() => ({ byDir: {} }));
 
@@ -79,6 +83,7 @@ let unlisten: Promise<(() => void) | null> | null = null;
 function ensureListener() {
   if (unlisten) return;
   unlisten = onMissionChanged((ev) => {
+    if (ev.file === "brain") return; // brain notes (store/brain.ts), not the board
     const key = dirKey(ev.projectDir);
     for (const dir of holds.keys()) if (dirKey(dir) === key) void reloadMission(dir);
   }).catch(() => null);
@@ -90,15 +95,22 @@ function dropListener() {
   void p?.then((off) => off?.());
 }
 
+// watch / unwatch are separate async invokes: chain them per folder so an unwatch never overtakes its watch.
+const watchOps = new Map<string, Promise<unknown>>();
+function watchOp(dir: string, call: (d: string) => Promise<unknown>) {
+  const p = (watchOps.get(dir) ?? Promise.resolve()).then(() => call(dir)).catch(() => {});
+  watchOps.set(dir, p);
+  void p.then(() => watchOps.get(dir) === p && watchOps.delete(dir));
+}
+
 /** Watch + read `dir` until the returned release function is called. */
 export function acquireMission(dir: string): () => void {
   const n = (holds.get(dir) ?? 0) + 1;
   holds.set(dir, n);
   if (n === 1) {
     ensureListener();
-    ipc.missionWatch(dir).catch(() => {
-      /* no watcher: the board still shows the last read and updates after our own writes */
-    });
+    // no watcher on failure: the board still shows the last read and updates after our own writes
+    watchOp(dir, ipc.missionWatch);
     void reloadMission(dir);
   }
   let released = false;
@@ -111,7 +123,7 @@ export function acquireMission(dir: string): () => void {
       return;
     }
     holds.delete(dir);
-    ipc.missionUnwatch(dir).catch(() => {});
+    watchOp(dir, ipc.missionUnwatch);
     if (holds.size === 0) dropListener();
   };
 }
@@ -134,7 +146,7 @@ export type WriteResult = { ok: true; file: MissionFile } | { ok: false; conflic
  * Write the mission file. `expected` = the modification time the text was based on (null = the file
  * must not exist yet); by default the last-read file's. On a conflict: re-read + toast.
  */
-export async function writeMission(dir: string, text: string, expected?: number | null, conflictMessage = CONFLICT_MESSAGE): Promise<WriteResult> {
+export async function writeMission(dir: string, text: string, expected?: number | null, conflictText?: string): Promise<WriteResult> {
   const cur = useMissionDocs.getState().byDir[dir]?.file;
   const base = expected !== undefined ? expected : cur?.exists ? cur.modifiedMs : null;
   try {
@@ -144,15 +156,18 @@ export async function writeMission(dir: string, text: string, expected?: number 
   } catch (e) {
     if (isConflict(e)) {
       await reloadMission(dir);
-      notify("warn", conflictMessage);
+      notify("warn", conflictText ?? conflictMessage());
       return { ok: false, conflict: true };
     }
-    notify("error", `Could not save the mission file: ${errorMessage(e)}`);
+    notify("error", t("mcNode.toast.saveFailed", { error: errorMessage(e) }));
     return { ok: false, conflict: false };
   }
 }
 
-export const UNDO_CONFLICT_MESSAGE = "Can't undo: the mission file changed since — reloaded";
+/** Toast when Undo finds the file changed since the edit, in the UI language. */
+export function undoConflictMessage(): string {
+  return t("mcNode.toast.undoConflict");
+}
 
 // Board edits run one at a time per folder, each on the file the previous one left (rapid Alt+↓ presses,
 // a drop while a write is in flight).
@@ -188,7 +203,7 @@ export function editMission(dir: string, edit: (text: string) => string | null, 
     const next = stale ? null : edit(file.text);
     if (next === null) {
       await reloadMission(dir);
-      notify("warn", CONFLICT_MESSAGE);
+      notify("warn", conflictMessage());
       return false;
     }
     if (next === file.text) return true;
@@ -196,7 +211,7 @@ export function editMission(dir: string, edit: (text: string) => string | null, 
     if (r.ok && opts.undo) {
       const before = file.text;
       const after = r.file.modifiedMs;
-      actionToast({ kind: "info", message: opts.undo, action: { label: "Undo", run: () => void undoMission(dir, before, after) } });
+      actionToast({ kind: "info", message: opts.undo, action: { label: t("mcNode.toast.undo"), run: () => void undoMission(dir, before, after) } });
     }
     return r.ok;
   });
@@ -204,7 +219,7 @@ export function editMission(dir: string, edit: (text: string) => string | null, 
 
 /** Restore `before` if the file is still exactly what our edit wrote (modification time `after`). */
 export function undoMission(dir: string, before: string, after: number | null): Promise<boolean> {
-  return serial(dir, async () => (await writeMission(dir, before, after, UNDO_CONFLICT_MESSAGE)).ok);
+  return serial(dir, async () => (await writeMission(dir, before, after, undoConflictMessage())).ok);
 }
 
 /** Change one task's box (by line) in the last-read file. A stale line re-reads instead of guessing. */

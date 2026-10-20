@@ -5,6 +5,7 @@
 
 import { runCommand } from "../actions/commands";
 import { useMemo } from "react";
+import { useT } from "../i18n";
 import { newSession } from "../actions/sessions";
 import { openBrowserPane, promptOpenUrl } from "../actions/browser";
 import { launchOptions, type LaunchOption } from "../lib/accounts";
@@ -59,7 +60,8 @@ export interface QuickLaunchButtonProps {
   label?: string;
 }
 
-export function QuickLaunchButton({ groupId, variant = "primary", label = "New session" }: QuickLaunchButtonProps) {
+export function QuickLaunchButton({ groupId, variant = "primary", label }: QuickLaunchButtonProps) {
+  const t = useT();
   const options = useLaunchOptions();
   const menu = useContextMenu();
   const scNew = useShortcut("session.new");
@@ -74,11 +76,11 @@ export function QuickLaunchButton({ groupId, variant = "primary", label = "New s
       }),
     ),
     "separator",
-    { label: "Browser", onSelect: () => void openBrowserPane({ groupId: target(groupId).group?.id }) },
-    { label: "Open URL…", hint: scUrl || undefined, onSelect: () => promptOpenUrl(target(groupId).group?.id) },
+    { label: t("quickLaunch.browser"), onSelect: () => void openBrowserPane({ groupId: target(groupId).group?.id }) },
+    { label: t("quickLaunch.openUrl"), hint: scUrl || undefined, onSelect: () => promptOpenUrl(target(groupId).group?.id) },
     "separator",
-    { label: "More options…", hint: scNew ?? undefined, onSelect: () => openFullDialog(groupId) },
-    { label: "Launch formation…", onSelect: () => runCommand("formation.launch") },
+    { label: t("quickLaunch.moreOptions"), hint: scNew ?? undefined, onSelect: () => openFullDialog(groupId) },
+    { label: t("quickLaunch.launchFormation"), onSelect: () => runCommand("formation.launch") },
   ];
   const open = (e: { currentTarget: HTMLElement; stopPropagation: () => void }) => {
     e.stopPropagation();
@@ -89,18 +91,18 @@ export function QuickLaunchButton({ groupId, variant = "primary", label = "New s
   return (
     <>
       {variant === "icon" ? (
-        <button type="button" className="pane-icon-btn" title="Add a session to this group" aria-label="Add session" onClick={open}>
+        <button type="button" className="pane-icon-btn" title={t("quickLaunch.addSessionTitle")} aria-label={t("quickLaunch.addSession")} onClick={open}>
           <IconPlus size={12} />
         </button>
       ) : (
         <button
           type="button"
           className={variant === "primary" ? "btn btn-sm btn-primary quick-launch" : "btn btn-sm btn-ghost quick-launch quick-launch--ghost"}
-          title={withShortcut("New session", scNew)}
+          title={withShortcut(t("quickLaunch.newSession"), scNew)}
           onClick={open}
         >
           <IconPlus size={13} />
-          {label}
+          {label ?? t("quickLaunch.newSession")}
         </button>
       )}
       {menu.element}
@@ -110,6 +112,7 @@ export function QuickLaunchButton({ groupId, variant = "primary", label = "New s
 
 /** Large agent buttons for an empty group. */
 export function QuickLaunchPanel() {
+  const t = useT();
   const options = useLaunchOptions();
   const hasFolder = useApp((s) => !!selectActiveWorkspace(s)?.projectDir);
   return (
@@ -127,17 +130,17 @@ export function QuickLaunchPanel() {
             )}
           </button>
         ))}
-        <button type="button" className="quick-card quick-card--browser" onClick={() => void openBrowserPane({})} title="A browser pane with your sessions' dev-server ports">
-          <span className="quick-card-title">Browser</span>
-          <span className="quick-card-hint">dev servers, docs, PRs</span>
+        <button type="button" className="quick-card quick-card--browser" onClick={() => void openBrowserPane({})} title={t("quickLaunch.browserTitle")}>
+          <span className="quick-card-title">{t("quickLaunch.browser")}</span>
+          <span className="quick-card-hint">{t("quickLaunch.browserHint")}</span>
         </button>
         <button type="button" className="quick-card quick-card--browser" onClick={() => promptOpenUrl()}>
-          <span className="quick-card-title">Open URL…</span>
+          <span className="quick-card-title">{t("quickLaunch.openUrl")}</span>
           <span className="quick-card-hint">localhost:5173, https://…</span>
         </button>
       </div>
       <button type="button" className="link-btn quick-panel-more" onClick={() => openFullDialog()}>
-        {hasFolder ? "More options (worktree, arguments, several at once)…" : "Choose a folder and options…"}
+        {hasFolder ? t("quickLaunch.moreOptionsFull") : t("quickLaunch.chooseFolder")}
       </button>
     </div>
   );

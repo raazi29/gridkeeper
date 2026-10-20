@@ -42,11 +42,14 @@ base64 = "0.22"
 # polling backend is used). `macos_fsevent` is required on macOS: without it notify's fsevent module
 # has no `fsevent-sys` and the crate does not compile there.
 notify = { version = "8", default-features = false, features = ["macos_fsevent"] }
+# Agent browser: allowlist host parsing (already in the tree through tauri).
+url = "2"
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.61", features = [
   "Win32_Foundation",
   "Win32_Security",
+  "Win32_Security_Credentials",
   "Win32_System_JobObjects",
   "Win32_System_Threading",
   "Win32_System_Console",
@@ -56,10 +59,30 @@ windows-sys = { version = "0.61", features = [
   "Win32_UI_WindowsAndMessaging",
   "Win32_NetworkManagement_IpHelper",
   "Win32_Networking_WinSock",
+  # Agent browser: DevTools pipes to the browser, the helper named pipe and its DACL.
+  "Win32_System_Pipes",
+  "Win32_System_IO",
+  "Win32_Storage_FileSystem",
+  "Win32_Security_Authorization",
 ] }
-# Same versions tauri-runtime-wry uses: WebView2 crash recovery (webview_guard).
+# Same versions tauri-runtime-wry uses: WebView2 crash recovery (webview_guard), native browser
+# panes (browser_view).
 webview2-com = "0.39"
 windows-core = "0.62"
+# browser_view: IStream for snapshots, key state for app shortcuts. Same version and a subset of the
+# features wry already enables, so nothing extra is compiled.
+windows = { version = "0.62", features = [
+  "Win32_Foundation",
+  "Win32_System_Com",
+  "Win32_UI_Shell",
+  "Win32_UI_Input_KeyboardAndMouse",
+] }
+# Native browser panes (browser_view.rs): child webviews in the main window (`Window::add_child`).
+# Windows only: on Linux Tauri packs child webviews into a GtkBox (they cannot be positioned), and on
+# macOS the feature would change how the main webview is built without anyone having verified it.
+# Note: with `unstable` the main webview is itself built as an auto-resizing child, and
+# `get_webview_window("main")` returns None while browser views exist (use webview_guard::main_*).
+tauri = { version = "2", features = ["unstable"] }
 
 [target.'cfg(unix)'.dependencies]
 # Process groups / sessions (kill, killpg, getsid), signal handling, getpwuid_r. Already in the

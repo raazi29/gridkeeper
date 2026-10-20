@@ -4,6 +4,7 @@
 
 import { playSound } from "../audio/sounds";
 import { getNotif, updateNotif, useNotif } from "../actions/notifyPrefs";
+import { useT } from "../i18n";
 import { APP_NAME } from "../lib/brand";
 import { osNotificationName } from "../lib/platform";
 import type { UiDensity } from "../lib/types";
@@ -39,6 +40,7 @@ export function markWelcomed(): void {
 }
 
 export function WelcomeSheet({ onClose }: { onClose: () => void }) {
+  const t = useT();
   const themeId = getTheme(useApp((s) => s.persisted.settings.theme)).id;
   const saberColor = useApp((s) => s.persisted.settings.saberColor);
   const density = useApp((s) => s.persisted.settings.uiDensity);
@@ -54,20 +56,20 @@ export function WelcomeSheet({ onClose }: { onClose: () => void }) {
 
   return (
     <Modal
-      title={`Welcome to ${APP_NAME}`}
+      title={t("welcome.title", { app: APP_NAME })}
       bare
-      ariaLabel={`Welcome to ${APP_NAME}`}
+      ariaLabel={t("welcome.title", { app: APP_NAME })}
       onClose={done}
       width={760}
       className="welcome"
       footer={
         <>
           <Button variant="ghost" onClick={done}>
-            Skip
+            {t("welcome.skip")}
           </Button>
-          <span className="welcome-foot-note">Everything here lives in Settings too.</span>
+          <span className="welcome-foot-note">{t("welcome.footNote")}</span>
           <Button variant="primary" onClick={done} data-autofocus>
-            Start
+            {t("welcome.start")}
           </Button>
         </>
       }
@@ -78,24 +80,24 @@ export function WelcomeSheet({ onClose }: { onClose: () => void }) {
         </span>
         <div className="welcome-hero-text">
           <h1 className="welcome-title">{APP_NAME}</h1>
-          <p className="welcome-pitch">Every agent in one grid — Claude Code, Codex and shells side by side, and a keeper that tells you who needs you.</p>
+          <p className="welcome-pitch">{t("welcome.pitch")}</p>
         </div>
       </div>
 
       <section className="welcome-section">
         <div className="welcome-section-head">
-          <span className="micro-label">Pick your look</span>
-          <span className="welcome-hint">Applies instantly. Switch any time from the palette button or the theme chip in the status bar.</span>
+          <span className="micro-label">{t("welcome.pickLook")}</span>
+          <span className="welcome-hint">{t("welcome.pickLookHint")}</span>
         </div>
-        <div className="welcome-themes" role="radiogroup" aria-label="Theme">
-          {THEMES.map((t) => (
+        <div className="welcome-themes" role="radiogroup" aria-label={t("settings.appearance.theme")}>
+          {THEMES.map((th) => (
             <ThemeCard
-              key={t.id}
+              key={th.id}
               compact
-              theme={withSaber(t, saberColor)}
-              selected={t.id === themeId}
-              tabIndex={t.id === themeId ? 0 : -1}
-              onSelect={() => useApp.getState().updateSettings({ theme: t.id })}
+              theme={withSaber(th, saberColor)}
+              selected={th.id === themeId}
+              tabIndex={th.id === themeId ? 0 : -1}
+              onSelect={() => useApp.getState().updateSettings({ theme: th.id })}
             />
           ))}
         </div>
@@ -103,20 +105,25 @@ export function WelcomeSheet({ onClose }: { onClose: () => void }) {
 
       <section className="welcome-section welcome-prefs">
         <div className="welcome-pref">
-          <span className="micro-label">Density</span>
+          <span className="micro-label">{t("settings.appearance.density")}</span>
           <Segmented<UiDensity>
-            ariaLabel="Density"
+            ariaLabel={t("settings.appearance.density")}
             size="sm"
             value={density}
             onChange={(uiDensity) => useApp.getState().updateSettings({ uiDensity })}
             options={[
-              { value: "compact", label: "Compact" },
-              { value: "comfortable", label: "Comfortable" },
+              { value: "compact", label: t("settings.appearance.densityCompact") },
+              { value: "comfortable", label: t("settings.appearance.densityComfortable") },
             ]}
           />
         </div>
         <div className="welcome-pref welcome-pref-toggles">
-          <Toggle checked={n.enabled} onChange={(enabled) => updateNotif({ enabled })} label="Notify me when an agent needs me" hint={`${osNotificationName()} notification in the background, a toast with Jump in front.`} />
+          <Toggle
+            checked={n.enabled}
+            onChange={(enabled) => updateNotif({ enabled })}
+            label={t("welcome.notify")}
+            hint={t("welcome.notifyHint", { system: osNotificationName() })}
+          />
           <Toggle
             checked={n.sound}
             disabled={!n.enabled}
@@ -124,20 +131,20 @@ export function WelcomeSheet({ onClose }: { onClose: () => void }) {
               updateNotif({ sound, soundSet: getNotif().soundSet === "none" ? "comm" : getNotif().soundSet });
               if (sound) playSound(getNotif().soundSet, "needsInput", getNotif().volume);
             }}
-            label="Play sounds"
-            hint="Quiet synthesized comm beeps. Pick a set and volume in Settings › Notifications."
+            label={t("welcome.sounds")}
+            hint={t("welcome.soundsHint")}
           />
         </div>
       </section>
 
-      <section className="welcome-tips" aria-label="Tips">
+      <section className="welcome-tips" aria-label={t("welcome.tips")}>
         <div className="welcome-tip">
           <span className="welcome-tip-icon" aria-hidden="true">
             <IconSearch size={15} />
           </span>
           <span className="welcome-tip-body">
-            <b>Command palette</b>
-            <span>Every action, session and theme.</span>
+            <b>{t("palette.title")}</b>
+            <span>{t("welcome.tipPalette")}</span>
           </span>
           {scPalette && <kbd className="kbd">{scPalette}</kbd>}
         </div>
@@ -146,8 +153,8 @@ export function WelcomeSheet({ onClose }: { onClose: () => void }) {
             <IconPlus size={15} />
           </span>
           <span className="welcome-tip-body">
-            <b>+ New</b>
-            <span>Start Claude, Codex or a shell in this workspace.</span>
+            <b>{t("welcome.tipNewTitle")}</b>
+            <span>{t("welcome.tipNew")}</span>
           </span>
           {scNew && <kbd className="kbd">{scNew}</kbd>}
         </div>
@@ -156,14 +163,14 @@ export function WelcomeSheet({ onClose }: { onClose: () => void }) {
             <IconFleet size={15} />
           </span>
           <span className="welcome-tip-body">
-            <b>Fleet</b>
-            <span>Every session at a glance; jump to whoever is waiting.</span>
+            <b>{t("welcome.tipFleetTitle")}</b>
+            <span>{t("welcome.tipFleet")}</span>
           </span>
           {scFleet && <kbd className="kbd">{scFleet}</kbd>}
         </div>
       </section>
       <p className="welcome-note">
-        <IconBell size={12} /> The bell in the status bar keeps every alert. Right-click it for Do not disturb; mute a noisy pane from its ⋯ menu.
+        <IconBell size={12} /> {t("welcome.note")}
       </p>
     </Modal>
   );

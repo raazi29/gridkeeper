@@ -2,20 +2,21 @@
 // Numbers come from Claude Code's status line JSON via src-tauri/src/meter; cost is Claude Code's own
 // estimate at list price.
 
+import { t, type MessageKey } from "../i18n";
 import type { AgentKind, SessionMeter } from "./types";
 
 /** Context use at or above this is shown in the warning colour. */
 export const CONTEXT_WARN_PCT = 80;
 
-export const ESTIMATE_NOTE =
-  "Estimated by Claude Code at list price; on a subscription this is API-equivalent value, not a bill.";
-export const COMPACT_HINT = "Context nearly full — consider /compact";
-export const CODEX_NA = "Codex doesn't report usage to other programs; enable its token footer in the pane (/statusline in Codex).";
-export const GEMINI_NA = "Gemini CLI: not metered (it reports no usage to other programs).";
-export const OFF_NOTES: Record<string, string> = {
-  customSettings: "meter off: custom --settings",
-  managed: "meter unavailable: managed settings own the status line",
-  unavailable: "meter unavailable for this pane",
+// Texts are functions (not constants) so they follow the UI language.
+export const estimateNote = (): string => t("meter.estimateNote");
+export const compactHint = (): string => t("meter.compactHint");
+export const codexNa = (): string => t("meter.codexNa");
+export const geminiNa = (): string => t("meter.geminiNa");
+const OFF_NOTES: Record<string, MessageKey> = {
+  customSettings: "meter.offCustomSettings",
+  managed: "meter.offManaged",
+  unavailable: "meter.offUnavailable",
 };
 
 const isNum = (n: number | null | undefined): n is number => typeof n === "number" && Number.isFinite(n);
@@ -85,40 +86,47 @@ export function meterLabel(m: SessionMeter): string {
   const parts: string[] = [];
   if (cost !== null) parts.push(formatCost(cost));
   if (isNum(m.contextPct)) parts.push(formatPct(m.contextPct));
-  return parts.join(" · ") || "meter";
+  return parts.join(" · ") || t("meter.labelFallback");
 }
 
 /** Mission Control card line: `est. $0.42 · ctx 37%`. */
 export function cardLine(m: SessionMeter): string {
   const cost = paneCost(m);
   const parts: string[] = [];
-  if (cost !== null) parts.push(`est. ${formatCost(cost)}`);
-  if (isNum(m.contextPct)) parts.push(`ctx ${formatPct(m.contextPct)}`);
-  return parts.join(" · ") || "est. —";
+  if (cost !== null) parts.push(t("meter.cardCost", { cost: formatCost(cost) }));
+  if (isNum(m.contextPct)) parts.push(t("meter.cardContext", { pct: formatPct(m.contextPct) }));
+  return parts.join(" · ") || t("meter.cardCost", { cost: "—" });
 }
 
 export function meterTooltip(m: SessionMeter): string {
   const lines: string[] = [];
   const cost = paneCost(m);
   if (cost !== null) {
-    const conv = isNum(m.costUsd) && Math.abs(m.costUsd - cost) > 0.005 ? ` (${formatCost(m.costUsd)} in the current conversation)` : "";
-    lines.push(`Estimated cost: ${formatCost(cost)} in this pane${conv}`);
+    const conversation = isNum(m.costUsd) && Math.abs(m.costUsd - cost) > 0.005 ? formatCost(m.costUsd) : null;
+    lines.push(conversation ? t("meter.tipCostConversation", { cost: formatCost(cost), conversation }) : t("meter.tipCost", { cost: formatCost(cost) }));
   }
   if (isNum(m.contextPct)) {
-    const size = isNum(m.contextSize) ? ` of ${formatTokens(m.contextSize)} tokens` : "";
-    const io = isNum(m.inputTokens) || isNum(m.outputTokens) ? ` (${formatTokens(m.inputTokens)} in · ${formatTokens(m.outputTokens)} out)` : "";
-    lines.push(`Context: ${formatPct(m.contextPct)}${size}${io}`);
+    const pct = formatPct(m.contextPct);
+    const size = isNum(m.contextSize) ? formatTokens(m.contextSize) : null;
+    const io = isNum(m.inputTokens) || isNum(m.outputTokens) ? { input: formatTokens(m.inputTokens), output: formatTokens(m.outputTokens) } : null;
+    if (size && io) lines.push(t("meter.tipContextSizeTokens", { pct, size, ...io }));
+    else if (size) lines.push(t("meter.tipContextSize", { pct, size }));
+    else if (io) lines.push(t("meter.tipContextTokens", { pct, ...io }));
+    else lines.push(t("meter.tipContext", { pct }));
   }
-  if (m.model) lines.push(`Model: ${m.model}`);
-  if (isNum(m.apiDurationMs)) lines.push(`API time: ${formatDuration(m.apiDurationMs)}`);
+  if (m.model) lines.push(t("meter.tipModel", { model: m.model }));
+  if (isNum(m.apiDurationMs)) lines.push(t("meter.tipApiTime", { duration: formatDuration(m.apiDurationMs) }));
   if (isNum(m.fiveHourPct) || isNum(m.sevenDayPct)) {
-    const w = [isNum(m.fiveHourPct) ? `5-hour ${formatPct(m.fiveHourPct)}` : "", isNum(m.sevenDayPct) ? `7-day ${formatPct(m.sevenDayPct)}` : ""];
-    lines.push(`Plan limits used: ${w.filter(Boolean).join(" · ")}`);
+    const w = [
+      isNum(m.fiveHourPct) ? t("meter.fiveHour", { pct: formatPct(m.fiveHourPct) }) : "",
+      isNum(m.sevenDayPct) ? t("meter.sevenDay", { pct: formatPct(m.sevenDayPct) }) : "",
+    ];
+    lines.push(t("meter.tipPlanLimits", { limits: w.filter(Boolean).join(" · ") }));
   }
-  if (contextLevel(m.contextPct) === "warn") lines.push(COMPACT_HINT);
-  if (m.chained) lines.push("Your own status line still runs in the pane.");
-  if (m.note) lines.push(m.note);
-  lines.push(ESTIMATE_NOTE);
+  if (contextLevel(m.contextPct) === "warn") lines.push(compactHint());
+  if (m.chained) lines.push(t("meter.tipChained"));
+  if (m.note) lines.push(m.note); // from the Rust host (English)
+  lines.push(estimateNote());
   return lines.join("\n");
 }
 
@@ -129,12 +137,12 @@ export type ChipModel =
 /** What a pane shows for its meter (null = nothing). `enabled` = the Settings toggle. */
 export function chipModel(o: { agent: AgentKind; preset?: string | null; enabled: boolean; meter?: SessionMeter | null }): ChipModel | null {
   if (!o.enabled) return null;
-  if (o.agent === "codex") return { kind: "na", label: "n/a", tooltip: CODEX_NA };
-  if (o.agent === "generic" && o.preset === "gemini") return { kind: "na", label: "n/a", tooltip: GEMINI_NA };
+  if (o.agent === "codex") return { kind: "na", label: t("meter.na"), tooltip: codexNa() };
+  if (o.agent === "generic" && o.preset === "gemini") return { kind: "na", label: t("meter.na"), tooltip: geminiNa() };
   if (o.agent !== "claude" || !o.meter) return null;
   const m = o.meter;
   if (m.status === "customSettings" || m.status === "managed" || m.status === "unavailable") {
-    return { kind: "off", label: "meter off", tooltip: m.note ?? OFF_NOTES[m.status] };
+    return { kind: "off", label: t("meter.off"), tooltip: m.note ?? t(OFF_NOTES[m.status]) };
   }
   if (hasData(m)) return { kind: "data", label: meterLabel(m), tooltip: meterTooltip(m), level: contextLevel(m.contextPct) };
   return null;

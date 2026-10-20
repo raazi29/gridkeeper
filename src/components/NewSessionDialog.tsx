@@ -5,6 +5,7 @@ import { useShallow } from "zustand/react/shallow";
 import { checkAccount, signIn } from "../actions/accounts";
 import { notify } from "../actions/notify";
 import { newSession } from "../actions/sessions";
+import { useT } from "../i18n";
 import { accountsFor, accountStatus, defaultAccountId, isSignedIn, liveOnAccount, maskEmail } from "../lib/accounts";
 import { errorMessage, ipc } from "../lib/ipc";
 import { executablePlaceholder, folderPlaceholder, isMac } from "../lib/platform";
@@ -21,6 +22,7 @@ import { MemoryPressureNotice } from "./ResourceWarnings";
 import { pickExecutable, pickFolder } from "./util/pick";
 import { AGENT_LABEL } from "./util/session";
 import { defaultWorktreePath, isValidBranchName, splitArgs } from "./util/text";
+import { isBrowserCapable, startWithBrowser } from "./agentBrowser/store";
 
 type WtMode = "none" | "existing" | "new";
 type PathState = { status: "idle" | "checking" | "ok" | "missing" | "unknown"; normalized?: string };
@@ -28,6 +30,7 @@ type PathState = { status: "idle" | "checking" | "ok" | "missing" | "unknown"; n
 const AGENTS: AgentKind[] = ["powershell", "claude", "codex", "generic"];
 
 export function NewSessionDialog({ groupId, preset, onClose }: { groupId?: string; preset?: LayoutPreset; onClose: () => void }) {
+  const t = useT();
   const last = useUi((s) => s.lastSession);
   const agents = useApp((s) => s.agents);
   const agentPaths = useApp((s) => s.persisted.settings.agentPaths);
@@ -53,6 +56,7 @@ export function NewSessionDialog({ groupId, preset, onClose }: { groupId?: strin
   const [wtPathEdited, setWtPathEdited] = useState(false);
   const [name, setName] = useState("");
   const [role, setRole] = useState<string | null>(null);
+  const [giveBrowser, setGiveBrowser] = useState(false);
   const [argsText, setArgsText] = useState("");
   const [command, setCommand] = useState("");
   /** Catalog tool id when agent = generic ("" = custom command). */
@@ -114,18 +118,18 @@ export function NewSessionDialog({ groupId, preset, onClose }: { groupId?: strin
     const map: Record<AgentKind, { ok: boolean; unknown: boolean; text: string }> = {} as never;
     for (const k of AGENTS) {
       if (k === "generic") {
-        map[k] = { ok: true, unknown: false, text: "Run any executable" };
+        map[k] = { ok: true, unknown: false, text: t("newSession.availGeneric") };
         continue;
       }
       const configured = agentPaths[k as keyof typeof agentPaths];
       const a = agents.find((x) => x.kind === k);
       if (a?.path) map[k] = { ok: true, unknown: false, text: `${a.path}${a.version ? ` — ${a.version}` : ""}` };
-      else if (configured) map[k] = { ok: true, unknown: false, text: `${configured} (from Settings)` };
-      else if (!a) map[k] = { ok: true, unknown: true, text: "Not detected yet — run Detect in Settings if start fails" };
-      else map[k] = { ok: false, unknown: false, text: `Not found — set a path in Settings${a.error ? ` (${a.error})` : ""}` };
+      else if (configured) map[k] = { ok: true, unknown: false, text: t("newSession.availFromSettings", { path: configured }) };
+      else if (!a) map[k] = { ok: true, unknown: true, text: t("newSession.availNotDetected") };
+      else map[k] = { ok: false, unknown: false, text: a.error ? t("newSession.availNotFoundError", { error: a.error }) : t("newSession.availNotFound") };
     }
     return map;
-  }, [agents, agentPaths]);
+  }, [agents, agentPaths, t]);
 
   const accountList = useMemo(
     () => (agent === "claude" || agent === "codex" ? accountsFor(accounts, agent) : agent === "generic" && tool ? accountsFor(accounts, "generic", tool) : []),
@@ -146,8 +150,8 @@ export function NewSessionDialog({ groupId, preset, onClose }: { groupId?: strin
   const avail = availability[agent];
   const branchOk = wtMode !== "new" || isValidBranchName(branch);
   const cwdError =
-    pathState.status === "missing" ? "Folder does not exist" : submitted && !cwd.trim() ? "Choose a working directory" : null;
-  const commandError = agent === "generic" && !tool && submitted && !command.trim() ? "Enter the executable to run" : null;
+    pathState.status === "missing" ? t("newSession.cwdMissing") : submitted && !cwd.trim() ? t("newSession.cwdRequired") : null;
+  const commandError = agent === "generic" && !tool && submitted && !command.trim() ? t("newSession.commandRequired") : null;
   const canSubmit =
     !busy &&
     avail.ok &&
@@ -165,7 +169,7 @@ export function NewSessionDialog({ groupId, preset, onClose }: { groupId?: strin
     try {
       await checkAccount(profile.id);
     } catch (e) {
-      notify("error", `Account check failed: ${errorMessage(e)}`);
+      notify("error", t("newSession.accountCheckFailed", { error: errorMessage(e) }));
     } finally {
       setChecking(false);
     }
@@ -188,14 +192,17 @@ export function NewSessionDialog({ groupId, preset, onClose }: { groupId?: strin
       } else if (wtMode === "new" && git?.root) {
         const b = branch.trim();
         const p = wtPath.trim();
+        // The git command itself is shown verbatim (never translated).
         const cmd = newBranch ? `git worktree add -b ${b} "${p}"` : `git worktree add "${p}" ${b}`;
         const ok = await confirmDialog({
-          title: "Create a Git worktree?",
+          title: t("newSession.worktreeConfirmTitle"),
           message: newBranch
-            ? `Creates a new folder at the path below and checks out a NEW branch “${b}” there, starting from the current HEAD of ${git.branch ?? "the repository"}. Your current working tree, staged changes and branch are left untouched.`
-            : `Creates a new folder at the path below and checks out the EXISTING branch “${b}” there. Git refuses if that branch is already checked out in another worktree. Your current working tree is left untouched.`,
+            ? git.branch
+              ? t("newSession.worktreeConfirmNew", { branch: b, base: git.branch })
+              : t("newSession.worktreeConfirmNewNoBase", { branch: b })
+            : t("newSession.worktreeConfirmExisting", { branch: b }),
           detail: `cd "${git.root}"\n${cmd}`,
-          confirmLabel: "Create worktree",
+          confirmLabel: t("newSession.worktreeConfirm"),
         });
         if (!ok) {
           setBusy(false);
@@ -204,10 +211,10 @@ export function NewSessionDialog({ groupId, preset, onClose }: { groupId?: strin
         try {
           const info = await ipc.gitWorktreeAdd(git.root, p, b, newBranch);
           worktree = { path: info.path, branch: info.branch ?? b };
-          notify("info", `Worktree created at ${info.path}`);
+          notify("info", t("newSession.worktreeCreated", { path: info.path }));
           recordActivity({ sessionId: null, sessionName: "worktree", role: null, agent: null, kind: "worktree", level: "ok", message: `worktree created: ${info.branch ?? b}`, result: "created" });
         } catch (err) {
-          notify("error", `git worktree add failed: ${errorMessage(err)}`);
+          notify("error", t("newSession.worktreeFailed", { error: errorMessage(err) }));
           setBusy(false);
           return;
         }
@@ -217,7 +224,8 @@ export function NewSessionDialog({ groupId, preset, onClose }: { groupId?: strin
       if (preset) app.updateLayout(target, { preset, maximized: null });
       const n = Math.min(8, Math.max(1, count));
       for (let i = 0; i < n; i++) {
-        newSession({
+        const withBrowser = giveBrowser && isBrowserCapable(agent);
+        const id = newSession({
           groupId: target,
           agent,
           cwd: baseCwd,
@@ -228,7 +236,10 @@ export function NewSessionDialog({ groupId, preset, onClose }: { groupId?: strin
           args,
           worktree,
           role,
+          start: !withBrowser,
         });
+        // Opt in before the launch: the adapter reads the opt-in when it builds the command line.
+        if (withBrowser) void startWithBrowser(id);
       }
       useUi.getState().setLastSession({ agent, profileId: showAccounts && profileId ? profileId : last.profileId });
       // Make sure the target group is visible.
@@ -244,7 +255,7 @@ export function NewSessionDialog({ groupId, preset, onClose }: { groupId?: strin
     }
   };
 
-  const title = preset ? `New session — split ${preset === "columns" ? "into columns" : preset === "rows" ? "into rows" : ""}` : "New session";
+  const title = preset === "columns" ? t("newSession.titleSplitColumns") : preset === "rows" ? t("newSession.titleSplitRows") : t("newSession.title");
 
   return (
     <Modal
@@ -253,12 +264,10 @@ export function NewSessionDialog({ groupId, preset, onClose }: { groupId?: strin
       width={580}
       footer={
         <>
-          <span className="footer-note">
-            <kbd className="kbd">Enter</kbd> start · <kbd className="kbd">Esc</kbd> cancel
-          </span>
-          <Button onClick={onClose}>Cancel</Button>
+          <span className="footer-note">{t.rich("newSession.footerHint", { kbd: (c) => <kbd className="kbd">{c}</kbd> })}</span>
+          <Button onClick={onClose}>{t("common.cancel")}</Button>
           <Button variant="primary" onClick={() => void submit()} disabled={!canSubmit}>
-            {busy ? "Starting…" : count > 1 ? `Start ${count} sessions` : "Start session"}
+            {busy ? t("newSession.starting") : count > 1 ? t("newSession.startMany", { count }) : t("newSession.startOne")}
           </Button>
         </>
       }
@@ -269,17 +278,17 @@ export function NewSessionDialog({ groupId, preset, onClose }: { groupId?: strin
         onKeyDown={(e) => {
           // Enter in any text field submits (Ctrl+Enter, ⌘↩ on macOS, from anywhere).
           if (e.key !== "Enter" || e.shiftKey || e.altKey) return;
-          const t = e.target as HTMLElement;
-          if ((isMac ? e.metaKey : e.ctrlKey) || (t.tagName === "INPUT" && (t as HTMLInputElement).type !== "checkbox")) {
+          const el = e.target as HTMLElement;
+          if ((isMac ? e.metaKey : e.ctrlKey) || (el.tagName === "INPUT" && (el as HTMLInputElement).type !== "checkbox")) {
             e.preventDefault();
             void submit();
           }
         }}
       >
         <MemoryPressureNotice count={count} />
-        <Field label="Agent">
+        <Field label={t("newSession.agent")}>
           <Segmented
-            ariaLabel="Agent"
+            ariaLabel={t("newSession.agent")}
             value={agent}
             onChange={setAgent}
             options={AGENTS.map((k) => ({
@@ -295,45 +304,39 @@ export function NewSessionDialog({ groupId, preset, onClose }: { groupId?: strin
         </Field>
 
         {agent === "generic" && tools.length > 0 && (
-          <Field label="Tool" htmlFor="ns-tool" hint="Agent CLIs detected on this PC, or any command">
+          <Field label={t("newSession.tool")} htmlFor="ns-tool" hint={t("newSession.toolHint")}>
             <Select id="ns-tool" value={tool} onChange={(e) => setTool(e.target.value)}>
-              {tools.map((t) => (
-                <option key={t.preset!} value={t.preset!}>
-                  {t.label}
-                  {t.version ? ` — ${t.version}` : ""}
+              {tools.map((tl) => (
+                <option key={tl.preset!} value={tl.preset!}>
+                  {tl.label}
+                  {tl.version ? ` — ${tl.version}` : ""}
                 </option>
               ))}
-              <option value="">Custom command…</option>
+              <option value="">{t("newSession.customCommand")}</option>
             </Select>
           </Field>
         )}
 
         {showAccounts && (
           <Field
-            label="Account"
+            label={t("newSession.account")}
             warn={
               agent === "claude" && (sameProfileLive > 0 || count > 1) ? (
                 <span className="warn-inline">
                   <IconWarn size={12} />
-                  {sameProfileLive > 0
-                    ? `${sameProfileLive} live session${sameProfileLive === 1 ? " already uses" : "s already use"} this profile.`
-                    : `${count} sessions will share this profile.`}{" "}
-                  Concurrent token refreshes in one profile can force a re-login (Claude Code #91708). Separate profiles avoid it.
+                  {sameProfileLive > 0 ? t("newSession.claudeShareLive", { count: sameProfileLive }) : t("newSession.claudeShareMany", { count })}
                 </span>
               ) : agent === "codex" && (sameProfileLive > 0 || count > 1) ? (
                 <span className="warn-inline">
                   <IconWarn size={12} />
-                  {sameProfileLive > 0
-                    ? `${sameProfileLive} live Codex session${sameProfileLive === 1 ? " already uses" : "s already use"} this account.`
-                    : `${count} sessions will share this account.`}{" "}
-                  They share one CODEX_HOME login (token refreshes) and history; a separate account keeps them apart.
+                  {sameProfileLive > 0 ? t("newSession.codexShareLive", { count: sameProfileLive }) : t("newSession.codexShareMany", { count })}
                 </span>
               ) : undefined
             }
           >
             <div className="input-group">
-              <Select value={profileId ?? ""} onChange={(e) => setProfileId(e.target.value || null)} aria-label={`${accountInfo?.label ?? AGENT_LABEL[agent]} account`}>
-                {accountList.length === 0 && <option value="">Default (~/.claude)</option>}
+              <Select value={profileId ?? ""} onChange={(e) => setProfileId(e.target.value || null)} aria-label={t("newSession.accountAria", { agent: accountInfo?.label ?? AGENT_LABEL[agent] })}>
+                {accountList.length === 0 && <option value="">{t("newSession.defaultAccount")}</option>}
                 {accountList.map((p) => (
                   <option key={p.id} value={p.id}>
                     {p.name}
@@ -343,7 +346,7 @@ export function NewSessionDialog({ groupId, preset, onClose }: { groupId?: strin
               </Select>
               {hasStatus && (
                 <Button onClick={() => void checkProfile()} disabled={!profile || checking}>
-                  {checking ? "Checking…" : "Check"}
+                  {checking ? t("newSession.checking") : t("newSession.check")}
                 </Button>
               )}
             </div>
@@ -361,40 +364,40 @@ export function NewSessionDialog({ groupId, preset, onClose }: { groupId?: strin
                       onClose();
                     }}
                   >
-                    Sign in…
+                    {t("newSession.signIn")}
                   </button>
                 )}
                 <button type="button" className="link-btn push-right" onClick={() => useUi.getState().openDialog({ kind: "profiles" })}>
-                  Manage accounts…
+                  {t("newSession.manageAccounts")}
                 </button>
               </div>
             )}
             {!profile && (
               <button type="button" className="link-btn" onClick={() => useUi.getState().openDialog({ kind: "profiles" })}>
-                Add accounts…
+                {t("newSession.addAccounts")}
               </button>
             )}
           </Field>
         )}
 
         {agent === "generic" && !tool && (
-          <Field label="Command" htmlFor="ns-cmd" error={commandError} hint="Executable path or a command on PATH">
+          <Field label={t("newSession.command")} htmlFor="ns-cmd" error={commandError} hint={t("newSession.commandHint")}>
             <div className="input-group">
               <Input id="ns-cmd" mono value={command} onChange={(e) => setCommand(e.target.value)} placeholder={executablePlaceholder()} invalid={!!commandError} />
               <Button
                 icon={<IconFolder size={13} />}
                 onClick={async () => {
-                  const p = await pickExecutable("Choose executable");
+                  const p = await pickExecutable(t("newSession.chooseExecutable"));
                   if (p) setCommand(p);
                 }}
               >
-                Browse…
+                {t("common.browse")}
               </Button>
             </div>
           </Field>
         )}
 
-        <Field label="Directory" htmlFor="ns-cwd" error={cwdError} hint={pathState.status === "unknown" ? "Could not verify the folder" : undefined}>
+        <Field label={t("newSession.directory")} htmlFor="ns-cwd" error={cwdError} hint={pathState.status === "unknown" ? t("newSession.cwdUnverified") : undefined}>
           <div className="input-group">
             <Input
               id="ns-cwd"
@@ -412,43 +415,46 @@ export function NewSessionDialog({ groupId, preset, onClose }: { groupId?: strin
             <Button
               icon={<IconFolder size={13} />}
               onClick={async () => {
-                const d = await pickFolder("Working directory", cwd || ws?.projectDir);
+                const d = await pickFolder(t("newSession.workingDirectory"), cwd || ws?.projectDir);
                 if (d) {
                   setCwd(d);
                   void validateCwd(d);
                 }
               }}
             >
-              Browse…
+              {t("common.browse")}
             </Button>
           </div>
         </Field>
 
         {git?.isRepo && (
-          <Field label="Git worktree">
+          <Field label={t("newSession.gitWorktree")}>
             <Segmented
               size="sm"
-              ariaLabel="Worktree"
+              ariaLabel={t("newSession.worktreeAria")}
               value={wtMode}
               onChange={setWtMode}
               options={[
-                { value: "none", label: "Use folder as is" },
-                { value: "existing", label: "Existing worktree", disabled: git.worktrees.length === 0 },
-                { value: "new", label: "Create new worktree" },
+                { value: "none", label: t("newSession.worktreeNone") },
+                { value: "existing", label: t("newSession.worktreeExisting"), disabled: git.worktrees.length === 0 },
+                { value: "new", label: t("newSession.worktreeNew") },
               ]}
             />
             {wtMode === "none" && (
               <div className="field-msg">
-                <IconBranch size={11} /> <span className="mono">{git.branch ?? "detached"}</span>
-                {git.dirty ? " · uncommitted changes" : ""} — sessions share this working tree.
+                <IconBranch size={11} />{" "}
+                {t.rich(git.dirty ? "newSession.worktreeSharedDirty" : "newSession.worktreeShared", {
+                  branch: git.branch ?? t("newSession.detached"),
+                  b: (c) => <span className="mono">{c}</span>,
+                })}
               </div>
             )}
             {wtMode === "existing" && (
-              <Select value={wtExisting} onChange={(e) => setWtExisting(e.target.value)} aria-label="Existing worktree" className="mt-6">
-                <option value="">Choose a worktree…</option>
+              <Select value={wtExisting} onChange={(e) => setWtExisting(e.target.value)} aria-label={t("newSession.worktreeExisting")} className="mt-6">
+                <option value="">{t("newSession.chooseWorktree")}</option>
                 {git.worktrees.map((w) => (
                   <option key={w.path} value={w.path}>
-                    {(w.branch ?? "detached") + (w.isMain ? " (main)" : "")} — {w.path}
+                    {w.isMain ? t("newSession.worktreeMain", { branch: w.branch ?? t("newSession.detached") }) : (w.branch ?? t("newSession.detached"))} — {w.path}
                   </option>
                 ))}
               </Select>
@@ -456,10 +462,10 @@ export function NewSessionDialog({ groupId, preset, onClose }: { groupId?: strin
             {wtMode === "new" && (
               <div className="wt-new">
                 <div className="input-row">
-                  <Input mono value={branch} onChange={(e) => setBranch(e.target.value)} placeholder="branch name, e.g. feature/login" aria-label="Branch name" invalid={submitted && !branchOk} />
+                  <Input mono value={branch} onChange={(e) => setBranch(e.target.value)} placeholder={t("newSession.branchPlaceholder")} aria-label={t("newSession.branchName")} invalid={submitted && !branchOk} />
                   <label className="check">
                     <input type="checkbox" checked={newBranch} onChange={(e) => setNewBranch(e.target.checked)} />
-                    New branch
+                    {t("newSession.newBranch")}
                   </label>
                 </div>
                 <Input
@@ -469,45 +475,54 @@ export function NewSessionDialog({ groupId, preset, onClose }: { groupId?: strin
                     setWtPath(e.target.value);
                     setWtPathEdited(true);
                   }}
-                  placeholder="worktree folder"
-                  aria-label="Worktree path"
+                  placeholder={t("newSession.worktreeFolder")}
+                  aria-label={t("newSession.worktreePath")}
                 />
                 <div className="field-msg">
-                  {branch && !branchOk ? <span className="is-error-text">Invalid branch name</span> : "You will confirm the exact git command before anything is created."}
+                  {branch && !branchOk ? <span className="is-error-text">{t("newSession.invalidBranch")}</span> : t("newSession.confirmHint")}
                 </div>
               </div>
             )}
           </Field>
         )}
 
-        <Field label="Name" htmlFor="ns-name">
-          <Input id="ns-name" value={name} onChange={(e) => setName(e.target.value)} placeholder={`${AGENT_LABEL[agent]} (auto)`} />
+        <Field label={t("newSession.name")} htmlFor="ns-name">
+          <Input id="ns-name" value={name} onChange={(e) => setName(e.target.value)} placeholder={t("newSession.namePlaceholder", { agent: AGENT_LABEL[agent] })} />
         </Field>
 
-        <Field label="Role" htmlFor="ns-role" hint="Optional team role, shown in the pane header and Mission Control">
+        <Field label={t("newSession.role")} htmlFor="ns-role" hint={t("newSession.roleHint")}>
           <RolePicker id="ns-role" value={role} onChange={setRole} />
         </Field>
 
-        <Field label="Arguments" htmlFor="ns-args" hint={args.length ? <span className="mono">{args.map((a) => (/\s/.test(a) || a === "" ? JSON.stringify(a) : a)).join("  ")}</span> : "Optional, quotes respected"}>
+        {isBrowserCapable(agent) && (
+          <Field label={t("newSession.browser")} hint={t("newSession.browserHint")}>
+            <label className="check">
+              <input type="checkbox" checked={giveBrowser} onChange={(e) => setGiveBrowser(e.target.checked)} />
+              {t("newSession.giveBrowser")}
+            </label>
+          </Field>
+        )}
+
+        <Field label={t("newSession.arguments")} htmlFor="ns-args" hint={args.length ? <span className="mono">{args.map((a) => (/\s/.test(a) || a === "" ? JSON.stringify(a) : a)).join("  ")}</span> : t("newSession.argumentsHint")}>
           <Input id="ns-args" mono value={argsText} onChange={(e) => setArgsText(e.target.value)} placeholder={agent === "claude" ? "--model opus" : agent === "codex" ? "--model gpt-5" : ""} />
         </Field>
 
         <div className="field-pair">
-          <Field label="Count">
-            <div className="stepper" role="group" aria-label="Number of sessions">
-              <button type="button" className="stepper-btn" aria-label="Fewer" disabled={count <= 1} onClick={() => setCount((c) => Math.max(1, c - 1))}>
+          <Field label={t("newSession.count")}>
+            <div className="stepper" role="group" aria-label={t("newSession.countAria")}>
+              <button type="button" className="stepper-btn" aria-label={t("newSession.fewer")} disabled={count <= 1} onClick={() => setCount((c) => Math.max(1, c - 1))}>
                 −
               </button>
               <span className="stepper-val" aria-live="polite">
                 {count}
               </span>
-              <button type="button" className="stepper-btn" aria-label="More" disabled={count >= 8} onClick={() => setCount((c) => Math.min(8, c + 1))}>
+              <button type="button" className="stepper-btn" aria-label={t("newSession.more")} disabled={count >= 8} onClick={() => setCount((c) => Math.min(8, c + 1))}>
                 +
               </button>
             </div>
           </Field>
-          <Field label="Group">
-            <Select value={target} onChange={(e) => setTarget(e.target.value)} aria-label="Target group">
+          <Field label={t("newSession.group")}>
+            <Select value={target} onChange={(e) => setTarget(e.target.value)} aria-label={t("newSession.targetGroup")}>
               {groups.map((g) => {
                 const [id, gname] = g.split("\u0000");
                 return (

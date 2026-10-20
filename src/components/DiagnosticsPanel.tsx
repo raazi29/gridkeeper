@@ -1,5 +1,6 @@
 // Diagnostics modal: per-process resource table, renderer status, export. Polls only while open.
 
+import { useT } from "../i18n";
 import { APP_NAME } from "../lib/brand";
 import { isWindows, webviewHint, webviewLabel } from "../lib/platform";
 import { useState } from "react";
@@ -10,6 +11,7 @@ import { selectActiveGroup, useApp } from "../store/appStore";
 import { webglOverBudget } from "../lib/pressure";
 import { MAX_WEBGL } from "../terminal/webglBudget";
 import { GpuSection } from "./GpuSection";
+import { PhoneAlertsDiagnostics } from "./settings/PhoneAlerts";
 import { actionToast, useUi } from "../store/uiStore";
 import { useDiagnosticsPoll, useRendererStatus } from "./hooks";
 import { Button } from "./ui/Button";
@@ -20,6 +22,7 @@ import { formatCpu, formatMb, taskManagerCpu } from "./util/text";
 import { notify } from "../actions/notify";
 
 export function DiagnosticsPanel({ onClose }: { onClose: () => void }) {
+  const t = useT();
   useDiagnosticsPoll(true);
   const diag = useUi((s) => s.diag);
   const diagError = useUi((s) => s.diagError);
@@ -55,9 +58,9 @@ export function DiagnosticsPanel({ onClose }: { onClose: () => void }) {
         },
         userAgent: navigator.userAgent,
       });
-      actionToast({ kind: "info", message: "Diagnostics exported", detail: path, action: { label: "Open folder", run: () => void revealPath(path) } });
+      actionToast({ kind: "info", message: t("diagnostics.exported"), detail: path, action: { label: t("diagnostics.openFolder"), run: () => void revealPath(path) } });
     } catch (e) {
-      notify("error", `Export failed: ${errorMessage(e)}`);
+      notify("error", t("diagnostics.exportFailed", { error: errorMessage(e) }));
     } finally {
       setExporting(false);
     }
@@ -65,27 +68,27 @@ export function DiagnosticsPanel({ onClose }: { onClose: () => void }) {
 
   return (
     <Modal
-      title="Diagnostics"
+      title={t("diagnostics.title")}
       onClose={onClose}
       width={760}
       footer={
         <>
-          <span className="footer-note">Refreshes every 2 s while this window is open and visible.</span>
-          <Button onClick={onClose}>Close</Button>
+          <span className="footer-note">{t("diagnostics.footerNote")}</span>
+          <Button onClick={onClose}>{t("common.close")}</Button>
           <Button variant="primary" onClick={() => void doExport()} disabled={exporting}>
-            {exporting ? "Exporting…" : "Export diagnostics"}
+            {exporting ? t("diagnostics.exporting") : t("diagnostics.export")}
           </Button>
         </>
       }
     >
-      {diagError && !diag && <div className="callout is-error">Diagnostics unavailable: {diagError}</div>}
+      {diagError && !diag && <div className="callout is-error">{t("diagnostics.unavailable", { error: diagError })}</div>}
       <table className="table">
         <thead>
           <tr>
-            <th>Process</th>
-            <th>Agent</th>
+            <th>{t("diagnostics.colProcess")}</th>
+            <th>{t("diagnostics.colAgent")}</th>
             <th className="num">PID</th>
-            <th className="num">Procs</th>
+            <th className="num">{t("diagnostics.colProcs")}</th>
             <th className="num">CPU</th>
             <th className="num">RAM</th>
           </tr>
@@ -94,7 +97,7 @@ export function DiagnosticsPanel({ onClose }: { onClose: () => void }) {
           {diag ? (
             <>
               <tr className="row-strong">
-                <td>{APP_NAME} host</td>
+                <td>{t("diagnostics.host", { app: APP_NAME })}</td>
                 <td className="muted">Rust</td>
                 <td className="num muted">—</td>
                 <td className="num">{diag.host.processCount}</td>
@@ -103,14 +106,14 @@ export function DiagnosticsPanel({ onClose }: { onClose: () => void }) {
               </tr>
               <tr className="row-strong" title={isWindows ? undefined : webviewHint()}>
                 <td>{webviewLabel()}</td>
-                <td className="muted">{isWindows ? "UI renderer" : "UI renderer (best effort)"}</td>
+                <td className="muted">{isWindows ? t("diagnostics.uiRenderer") : t("diagnostics.uiRendererBestEffort")}</td>
                 <td className="num muted">—</td>
                 <td className="num">{diag.webview.processCount}</td>
                 <td className="num">{cpu(diag.webview)}</td>
                 <td className="num">{formatMb(diag.webview.memoryBytes)}</td>
               </tr>
               {diag.sessions.map(({ id, stats }) => {
-                const [name, agent] = (names[id] ?? "Unknown session\u0000").split("\u0000");
+                const [name, agent] = (names[id] ?? `${t("diagnostics.unknownSession")}\u0000`).split("\u0000");
                 return (
                   <tr key={id}>
                     <td>{name}</td>
@@ -123,8 +126,8 @@ export function DiagnosticsPanel({ onClose }: { onClose: () => void }) {
                 );
               })}
               <tr className="row-total">
-                <td>All sessions</td>
-                <td className="muted">{diag.runningSessions} running</td>
+                <td>{t("diagnostics.allSessions")}</td>
+                <td className="muted">{t("diagnostics.running", { count: diag.runningSessions })}</td>
                 <td className="num" />
                 <td className="num">{diag.sessionsTotal.processCount}</td>
                 <td className="num">{cpu(diag.sessionsTotal)}</td>
@@ -134,7 +137,7 @@ export function DiagnosticsPanel({ onClose }: { onClose: () => void }) {
           ) : (
             <tr>
               <td colSpan={6} className="muted">
-                {diagError ? "—" : "Collecting…"}
+                {diagError ? "—" : t("diagnostics.collecting")}
               </td>
             </tr>
           )}
@@ -143,17 +146,17 @@ export function DiagnosticsPanel({ onClose }: { onClose: () => void }) {
 
       <div className="diag-grid">
         <div className="diag-card">
-          <div className="section-label">System</div>
+          <div className="section-label">{t("diagnostics.system")}</div>
           {diag ? (
             <>
               <div className="kv">
-                <span className="kv-k">Memory</span>
+                <span className="kv-k">{t("diagnostics.memory")}</span>
                 <span className="kv-v">
                   {formatMb(diag.systemMemoryUsed)} / {formatMb(diag.systemMemoryTotal)}
                 </span>
               </div>
               <div className="kv">
-                <span className="kv-k">Logical cores</span>
+                <span className="kv-k">{t("diagnostics.logicalCores")}</span>
                 <span className="kv-v">{diag.logicalCores}</span>
               </div>
             </>
@@ -162,37 +165,36 @@ export function DiagnosticsPanel({ onClose }: { onClose: () => void }) {
           )}
         </div>
         <div className="diag-card">
-          <div className="section-label">Terminal renderer</div>
+          <div className="section-label">{t("diagnostics.terminalRenderer")}</div>
           <div className="kv">
             <span className="kv-k">GPU</span>
             <span className="kv-v mono" title={renderer.gpuRenderer ?? undefined}>
-              {renderer.gpuRenderer ?? (renderer.webglSupported ? "unknown" : "WebGL unavailable")}
+              {renderer.gpuRenderer ?? (renderer.webglSupported ? t("diagnostics.gpuUnknown") : t("gpu.webglUnavailable"))}
             </span>
           </div>
           <div className="kv">
-            <span className="kv-k">WebGL terminals</span>
+            <span className="kv-k">{t("diagnostics.webglTerminals")}</span>
             <span className="kv-v">{renderer.webglActive}</span>
           </div>
           <div className="kv">
-            <span className="kv-k">DOM terminals</span>
+            <span className="kv-k">{t("diagnostics.domTerminals")}</span>
             <span className="kv-v">{renderer.domActive}</span>
           </div>
           <div className="kv">
-            <span className="kv-k">Context losses</span>
+            <span className="kv-k">{t("diagnostics.contextLosses")}</span>
             <span className="kv-v">{renderer.contextLosses}</span>
           </div>
         </div>
       </div>
       <GpuSection diag={diag} renderer={renderer} />
+      <PhoneAlertsDiagnostics />
       {overBudget && (
         <div className="callout is-warn pressure-note" role="status">
-          {visibleInGroup} terminals are visible in this group. Only {MAX_WEBGL} use WebGL (the browser&apos;s GPU context budget); the rest are drawn by the slower DOM
-          renderer. Hide or move some panes for full GPU rendering.
+          {t("diagnostics.overBudget", { visible: visibleInGroup, max: MAX_WEBGL })}
         </div>
       )}
       <p className="explain">
-        {isWindows ? "CPU is shown like Task Manager: a share of all logical cores." : "CPU is shown as a share of all logical cores."} The GPU draws terminal text and the UI. Agent CPU — Node/Rust CLIs, git, builds, tests — runs on the CPU and is
-        unaffected by the renderer choice.
+        {isWindows ? t("diagnostics.explainWindows") : t("diagnostics.explainOther")}
       </p>
     </Modal>
   );

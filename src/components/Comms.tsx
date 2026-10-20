@@ -4,8 +4,9 @@
 import { useEffect, useMemo, useRef } from "react";
 import { jumpToSession } from "../actions/commands";
 import { toggleDnd, useDnd } from "../actions/notifyPrefs";
+import { intlLocale, t, useT, type MessageKey } from "../i18n";
 import { useApp } from "../store/appStore";
-import { useUi } from "../store/uiStore";
+import { isKeyCaptureSuspended, useUi } from "../store/uiStore";
 import { IconBellOff } from "./MutedGlyph";
 import { useContextMenu } from "./ui/Menu";
 import { openAppMenu } from "./ContextMenuHost";
@@ -18,6 +19,7 @@ import "../styles/attention.css";
 const HOLD_MS = 550;
 
 export function CommsButton() {
+  const t = useT();
   const unread = useAttention((s) => countUnread(s.sessions));
   const open = useAttentionUi((s) => s.commsOpen);
   const dnd = useDnd();
@@ -28,19 +30,19 @@ export function CommsButton() {
   const cancelHold = () => window.clearTimeout(hold.current.timer);
   const openMenu = (e: { clientX: number; clientY: number; preventDefault?: () => void }) =>
     menu.open(e, [
-      { label: dnd ? "Turn off Do not disturb" : "Do not disturb", hint: "hold the bell", onSelect: () => toggleDnd() },
-      { label: "Mark all read", onSelect: () => useAttention.getState().markAllRead() },
+      { label: dnd ? t("comms.dndTurnOff") : t("comms.dnd"), hint: t("comms.dndHoldHint"), onSelect: () => toggleDnd() },
+      { label: t("comms.markAllRead"), onSelect: () => useAttention.getState().markAllRead() },
       "separator",
-      { label: "Notification settings…", onSelect: () => useUi.getState().openDialog({ kind: "settings", section: "notifications" }) },
+      { label: t("comms.notificationSettings"), onSelect: () => useUi.getState().openDialog({ kind: "settings", section: "notifications" }) },
     ]);
-  const base = unread ? `Comms — ${unread} session${unread === 1 ? "" : "s"} need${unread === 1 ? "s" : ""} attention` : "Comms — recent alerts";
+  const base = unread ? t("comms.buttonUnread", { count: unread }) : t("comms.buttonQuiet");
   return (
     <>
       <button
         type="button"
         className={`sb-item sb-btn attn-sb-btn${unread ? " has-unread" : ""}${open ? " is-active" : ""}${dnd ? " is-dnd" : ""}`}
-        title={`${base}${dnd ? "\nDo not disturb is on" : ""}\nHold or right-click for Do not disturb`}
-        aria-label={dnd ? "Comms (do not disturb)" : "Comms"}
+        title={`${base}${dnd ? `\n${t("comms.dndIsOn")}` : ""}\n${t("comms.holdForDnd")}`}
+        aria-label={dnd ? t("comms.ariaDnd") : t("comms.title")}
         aria-expanded={open}
         data-comms-toggle=""
         onPointerDown={(e) => {
@@ -79,43 +81,46 @@ export function CommsButton() {
 }
 
 export function FleetButton() {
+  const t = useT();
   const sc = useShortcut("view.fleet");
   return (
-    <button type="button" className="sb-item sb-btn attn-sb-btn" title={withShortcut("Fleet overview", sc)} aria-label="Fleet overview" onClick={() => useAttentionUi.getState().open("fleet")}>
+    <button type="button" className="sb-item sb-btn attn-sb-btn" title={withShortcut(t("fleet.overview"), sc)} aria-label={t("fleet.overview")} onClick={() => useAttentionUi.getState().open("fleet")}>
       <IconFleet size={13} />
-      <span>Fleet</span>
+      <span>{t("fleet.title")}</span>
     </button>
   );
 }
 
 function ago(at: number, now: number): string {
   const s = Math.max(0, Math.round((now - at) / 1000));
-  if (s < 45) return "now";
+  if (s < 45) return t("comms.agoNow");
   const m = Math.round(s / 60);
-  if (m < 60) return `${m}m`;
+  if (m < 60) return t("comms.agoMinutes", { n: m });
   const h = Math.round(m / 60);
-  return h < 24 ? `${h}h` : `${Math.round(h / 24)}d`;
+  return h < 24 ? t("comms.agoHours", { n: h }) : t("comms.agoDays", { n: Math.round(h / 24) });
 }
 
 function DndChip() {
+  const t = useT();
   const dnd = useDnd();
   return (
     <button
       type="button"
       className={`chip attn-dnd-chip${dnd ? " is-on" : ""}`}
       aria-pressed={dnd}
-      title={dnd ? "Do not disturb is on: alerts collect here silently" : "Do not disturb: collect alerts here without toasts or sounds"}
+      title={dnd ? t("comms.dndChipOnTitle") : t("comms.dndChipOffTitle")}
       onClick={() => toggleDnd()}
     >
       {dnd ? <IconBellOff size={11} /> : <IconBell size={11} />}
-      {dnd ? "DND on" : "DND"}
+      {dnd ? t("comms.dndChipOn") : t("comms.dndChip")}
     </button>
   );
 }
 
-const KIND_LABEL: Record<FeedItem["kind"], string> = { waiting: "Needs you", done: "Done", error: "Error" };
+const KIND_LABEL: Record<FeedItem["kind"], MessageKey> = { waiting: "comms.kind.waiting", done: "comms.kind.done", error: "comms.kind.error" };
 
 export function CommsPanel() {
+  const t = useT();
   const feed = useAttention((s) => s.feed);
   const sessions = useApp((s) => s.persisted.sessions);
   const workspaces = useApp((s) => s.persisted.workspaces);
@@ -125,9 +130,9 @@ export function CommsPanel() {
   const where = useMemo(() => {
     const m = new Map<string, { name: string; ws: string }>();
     const names = new Map(sessions.map((x) => [x.id, x.name]));
-    for (const w of workspaces) for (const g of w.groups) for (const id of g.sessionIds) m.set(id, { name: names.get(id) ?? "Session", ws: w.name });
+    for (const w of workspaces) for (const g of w.groups) for (const id of g.sessionIds) m.set(id, { name: names.get(id) ?? t("comms.sessionFallback"), ws: w.name });
     return m;
-  }, [sessions, workspaces]);
+  }, [sessions, workspaces, t]);
 
   useEffect(() => {
     ref.current?.querySelector<HTMLElement>(".attn-feed-row, button")?.focus();
@@ -139,6 +144,7 @@ export function CommsPanel() {
     const onKey = (e: KeyboardEvent) => {
       if ((document.activeElement as HTMLElement | null)?.closest(".menu-root")) return; // a row's context menu handles its keys
       if (e.key === "Escape") {
+        if (!ref.current?.contains(document.activeElement) || isKeyCaptureSuspended()) return; // not ours: a dialog or other pane owns Escape
         e.preventDefault();
         e.stopPropagation();
         close();
@@ -160,21 +166,21 @@ export function CommsPanel() {
   const now = Date.now();
   const items = [...feed].reverse();
   return (
-    <div ref={ref} className="attn-comms" role="dialog" aria-label="Comms">
+    <div ref={ref} className="attn-comms" role="dialog" aria-label={t("comms.title")}>
       <div className="attn-comms-head">
-        <span className="attn-comms-title">Comms</span>
-        <span className="attn-comms-sub">{feed.length ? `${feed.length} recent` : ""}</span>
+        <span className="attn-comms-title">{t("comms.title")}</span>
+        <span className="attn-comms-sub">{feed.length ? t("comms.recentCount", { count: feed.length }) : ""}</span>
         <span className="attn-spacer" />
         <DndChip />
         <button type="button" className="chip" onClick={() => useAttention.getState().markAllRead()}>
-          Mark all read
+          {t("comms.markAllRead")}
         </button>
         <button type="button" className="chip" disabled={!feed.length} onClick={() => useAttention.getState().clearFeed()}>
-          Clear
+          {t("comms.clear")}
         </button>
       </div>
       <div className="attn-feed" role="list">
-        {items.length === 0 && <div className="attn-empty">All quiet. Alerts from every workspace show up here.</div>}
+        {items.length === 0 && <div className="attn-empty">{t("comms.empty")}</div>}
         {items.map((f) => {
           const w = where.get(f.id);
           return (
@@ -183,7 +189,7 @@ export function CommsPanel() {
               type="button"
               role="listitem"
               className={`attn-feed-row${f.muted ? " is-muted" : ""}`}
-              title={f.muted ? `Not notified: ${f.mutedReason ?? "muted"}` : undefined}
+              title={f.muted ? t("comms.notNotified", { reason: f.mutedReason ?? t("comms.mutedReasonFallback") }) : undefined}
               onClick={() => {
                 close();
                 jumpToSession(f.id);
@@ -193,21 +199,21 @@ export function CommsPanel() {
                 openAppMenu(e.clientX, e.clientY, buildSessionMenu(f.id, { surface: "comms", onNavigate: close }));
               }}
             >
-              <span className={`attn-lamp attn-lamp--${f.kind} attn-still`} aria-label={KIND_LABEL[f.kind]} />
+              <span className={`attn-lamp attn-lamp--${f.kind} attn-still`} aria-label={t(KIND_LABEL[f.kind])} />
               <span className="attn-feed-main">
                 <span className="attn-feed-who">
-                  <span className="attn-feed-name">{w?.name ?? "Session"}</span>
+                  <span className="attn-feed-name">{w?.name ?? t("comms.sessionFallback")}</span>
                   {w?.ws && <span className="attn-feed-ws">{w.ws}</span>}
                   {f.muted && (
                     <span className="attn-feed-muted">
                       <IconBellOff size={10} />
-                      {f.mutedReason ?? "Muted"}
+                      {f.mutedReason ?? t("comms.muted")}
                     </span>
                   )}
                 </span>
                 <span className="attn-feed-msg">{f.message}</span>
               </span>
-              <span className="attn-feed-time" title={new Date(f.at).toLocaleTimeString()}>
+              <span className="attn-feed-time" title={new Date(f.at).toLocaleTimeString(intlLocale())}>
                 {ago(f.at, now)}
               </span>
             </button>

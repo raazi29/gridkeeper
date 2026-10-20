@@ -1,0 +1,119 @@
+/* Spend guard (components/spend/*). */
+
+.spend-today {
+  font-variant-numeric: tabular-nums;
+}
+.spend-today.is-warn,
+.spend-chip.is-warn {
+  color: var(--warn-fg);
+}
+.spend-today.is-over,
+.spend-chip.is-over {
+  color: var(--err-fg);
+}
+.spend-chip {
+  margin-inline-start: 8px;
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-weight: normal;
+  vertical-align: middle;
+  cursor: default;
+}
+.spend-chip.is-warn {
+  border-color: var(--warn-line);
+  background: var(--warn-soft);
+}
+.spend-chip.is-over {
+  border-color: var(--err-line);
+  background: var(--err-soft);
+}
+
+/* Persistent banner at 100 % of a budget (above everything interactive, below nothing modal-critical). */
+.spend-banners {
+  position: fixed;
+  top: 8px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: var(--z-toast);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: max-content;
+  max-width: calc(100vw - 24px);
+}
+.spend-banner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 8px 7px 12px;
+  border: 1px solid var(--err-line);
+  border-radius: var(--radius-m);
+  background: color-mix(in srgb, var(--err) 9%, var(--bg-2));
+  box-shadow: var(--elev-2);
+  color: var(--text-0);
+  font-size: var(--fs-s);
+}
+.spend-banner-text {
+  min-width: 0;
+}
+.spend-banner-form {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.spend-banner-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--text-1);
+}
+.spend-banner-input {
+  width: 84px;
+}
+.spend-banner-btn {
+  padding: 2px 8px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-s);
+  background: transparent;
+  color: var(--text-0);
+  font: inherit;
+  cursor: pointer;
+}
+.spend-banner-btn:hover,
+.spend-banner-btn:focus-visible {
+  border-color: var(--accent);
+}
+.spend-banner-btn.is-primary {
+  border-color: var(--accent-line);
+  color: var(--accent-fg);
+}
+
+/* Settings › Agents › Spend guard */
+.spend-settings .hint {
+  color: var(--text-2);
+}
+.spend-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  min-height: 28px;
+}
+.spend-row-name {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  width: 180px;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.spend-row-field {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--text-1);
+  white-space: nowrap;
+}

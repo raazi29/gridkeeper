@@ -1,7 +1,8 @@
 // Mission Control's SIGN-OFF dock: sessions that finished or need you, each as a card with the evidence
 // of what was done — branch, commits vs base, files / lines changed, uncommitted leftovers, last commit —
 // from read-only git (fetched when the card appears and when its session turns done / waiting; no timer).
-// Actions: jump (click), review diff (Changes drawer focused on the worktree), hand off… (dialog with an
+// Actions: jump (click), run tests (badge + log; components/testrun), merge… (merge assistant dialog;
+// components/merge), review diff (Changes drawer focused on the worktree), hand off… (dialog with an
 // editable line; nothing is typed into any agent until the user presses Send), context menu.
 
 import { isMac } from "../../lib/platform";
@@ -21,6 +22,7 @@ import {
   type SummaryEntry,
 } from "../../actions/handoff";
 import { notify } from "../../actions/notify";
+import { useT } from "../../i18n";
 import type { SessionId } from "../../lib/types";
 import { isLive, useApp } from "../../store/appStore";
 import { useAttention } from "../../store/attention";
@@ -32,6 +34,9 @@ import { Modal } from "../ui/Modal";
 import { LAMP_TEXT, sessionStatus } from "./derive";
 import { RoleTag, roleStyle } from "./RoleTag";
 import { summaryParts } from "./signoffModel";
+import { runTestsForSession } from "../../store/testrun";
+import { TestBadge } from "../testrun/TestBadge";
+import { openMergeDialog } from "../merge/mergeStore";
 import "../../styles/signoff.css";
 
 type MenuEvent = { clientX: number; clientY: number; preventDefault?: () => void; stopPropagation?: () => void };
@@ -43,12 +48,13 @@ interface SignoffProps {
 }
 
 export function SignoffNode({ ids, onJump, onMenu }: SignoffProps) {
+  const t = useT();
   return (
     <div data-node="signoff" className={`mc-node mc-signoff so-node${ids.length ? " is-solid" : ""}`}>
-      <span className="mc-node-label">sign-off · ready for review</span>
-      <span className="mc-node-label mc-node-label-right">{ids.length} waiting / done</span>
+      <span className="mc-node-label">{t("signoff.label")}</span>
+      <span className="mc-node-label mc-node-label-right">{t("signoff.count", { count: ids.length })}</span>
       {ids.length === 0 ? (
-        <div className="mc-empty">nothing waiting for review — sessions appear here when they finish or ask for you</div>
+        <div className="mc-empty">{t("signoff.empty")}</div>
       ) : (
         <div className="so-list">
           {ids.map((id) => (
@@ -62,6 +68,7 @@ export function SignoffNode({ ids, onJump, onMenu }: SignoffProps) {
 }
 
 function SignoffCard({ id, onJump, onMenu }: { id: SessionId; onJump: (id: SessionId) => void; onMenu: (e: MenuEvent, id: SessionId) => void }) {
+  const t = useT();
   const name = useApp((s) => s.persisted.sessions.find((x) => x.id === id)?.name);
   const role = useApp((s) => s.persisted.sessions.find((x) => x.id === id)?.role ?? null);
   const path = useApp((s) => evidencePath(s.persisted.sessions.find((x) => x.id === id)));
@@ -88,6 +95,7 @@ function SignoffCard({ id, onJump, onMenu }: { id: SessionId; onJump: (id: Sessi
   const st = sessionStatus(rt, a);
   const waiting = st.lamp === "waiting";
   const isRepo = !!entry?.summary?.isRepo;
+  const mergeable = isRepo && !!entry?.summary?.branch && entry.summary.branch !== entry.summary.base && entry.summary.ahead > 0;
 
   const reviewDiff = () => {
     if (!path) return;
@@ -106,11 +114,11 @@ function SignoffCard({ id, onJump, onMenu }: { id: SessionId; onJump: (id: Sessi
       }}
     >
       <div className="so-row">
-        <button type="button" className="so-jump" title={`${a?.lastMessage ?? LAMP_TEXT[st.lamp]} — jump to the pane`} onClick={() => onJump(id)}>
+        <button type="button" className="so-jump" title={t("signoff.jumpTitle", { status: a?.lastMessage ?? LAMP_TEXT[st.lamp] })} onClick={() => onJump(id)}>
           <span className="mc-chip-sq" />
           <span className="so-name">{name}</span>
-          <span className="mc-bracket">[ {waiting ? "needs you" : "done"} ]</span>
-          {waiting && <span className="mc-chip-go">answer →</span>}
+          <span className="mc-bracket">[ {waiting ? t("signoff.needsYou") : t("signoff.done")} ]</span>
+          {waiting && <span className="mc-chip-go">{t("signoff.answer")}</span>}
         </button>
         <RoleTag role={role} bare />
         {a?.lastMessage && (
@@ -119,15 +127,28 @@ function SignoffCard({ id, onJump, onMenu }: { id: SessionId; onJump: (id: Sessi
           </span>
         )}
         <span className="mc-spacer" />
+        <TestBadge path={path} />
         <span className="so-actions">
+          <button type="button" className="mc-btn" disabled={!path} title={t("signoff.runTestsTitle")} onClick={() => void runTestsForSession(id)}>
+            {t("signoff.runTests")}
+          </button>
+          <button
+            type="button"
+            className="mc-btn"
+            disabled={!mergeable}
+            title={mergeable ? t("signoff.mergeTitle") : t("signoff.mergeNone")}
+            onClick={() => openMergeDialog(id)}
+          >
+            {t("signoff.merge")}
+          </button>
           <button
             type="button"
             className="mc-btn"
             disabled={!isRepo}
-            title={isRepo ? "Close Mission Control and open the Changes drawer on this worktree (read-only)" : "Not a git repository"}
+            title={isRepo ? t("signoff.reviewTitle") : t("signoff.notRepo")}
             onClick={reviewDiff}
           >
-            review diff
+            {t("signoff.review")}
           </button>
           <button
             type="button"
@@ -135,10 +156,10 @@ function SignoffCard({ id, onJump, onMenu }: { id: SessionId; onJump: (id: Sessi
             disabled={targets === 0}
             aria-haspopup="menu"
             aria-expanded={menu.isOpen}
-            title={targets ? "Hand this work to another running session (you confirm the message before anything is sent)" : "No other running session in this workspace"}
+            title={targets ? t("signoff.handoffTitle") : t("signoff.handoffNone")}
             onClick={(e) => menu.openAt(e.currentTarget, handoffMenuItems(id))}
           >
-            hand off… ▾
+            {t("signoff.handoff")}
           </button>
         </span>
       </div>
@@ -150,16 +171,17 @@ function SignoffCard({ id, onJump, onMenu }: { id: SessionId; onJump: (id: Sessi
 
 /** The terminal-style evidence line under a card. Non-repositories show nothing. */
 function Evidence({ entry }: { entry: SummaryEntry | undefined }) {
+  const t = useT();
   if (!entry)
     return (
       <div className="so-evidence is-loading" aria-live="polite">
-        ⎇ reading git…
+        {t("signoff.readingGit")}
       </div>
     );
   if (entry.error)
     return (
       <div className="so-evidence is-error" title={entry.error}>
-        git: {entry.error}
+        {t("signoff.gitError", { error: entry.error })}
       </div>
     );
   const parts = summaryParts(entry.summary, Date.now());
@@ -185,6 +207,7 @@ function HandoffDialogHost() {
 }
 
 function HandoffDialog({ req }: { req: HandoffRequest }) {
+  const t = useT();
   const [text, setText] = useState(req.text);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -206,7 +229,11 @@ function HandoffDialog({ req }: { req: HandoffRequest }) {
     };
   }, []);
 
-  const blocked = !targetLive ? `${req.targetName} is not running.` : targetWaiting ? `${req.targetName} is waiting for an answer. Sending would press Enter on its prompt; answer it in its pane first.` : null;
+  const blocked = !targetLive
+    ? t("signoff.targetNotRunning", { name: req.targetName })
+    : targetWaiting
+      ? t("signoff.targetWaiting", { name: req.targetName })
+      : null;
 
   const send = async () => {
     if (busy || blocked || !text.trim()) return;
@@ -215,23 +242,23 @@ function HandoffDialog({ req }: { req: HandoffRequest }) {
     const r = await sendHandoff(req.fromId, req.targetId, text);
     setBusy(false);
     if (r.ok) {
-      notify("info", `Handed off to ${req.targetName}`);
+      notify("info", t("signoff.handedOff", { name: req.targetName }));
       closeHandoff();
     } else setError(r.reason);
   };
 
   return (
     <Modal
-      title={`Hand off to ${req.targetName}`}
+      title={t("signoff.dialogTitle", { name: req.targetName })}
       onClose={closeHandoff}
       width={620}
       className="so-handoff"
       footer={
         <>
-          <span className="so-handoff-note">Typed into {req.targetName} and submitted with Enter.</span>
-          <Button onClick={closeHandoff}>Cancel</Button>
+          <span className="so-handoff-note">{t("signoff.note", { name: req.targetName })}</span>
+          <Button onClick={closeHandoff}>{t("common.cancel")}</Button>
           <Button variant="primary" disabled={busy || !!blocked || !text.trim()} onClick={() => void send()}>
-            {busy ? "Sending…" : "Send"}
+            {busy ? t("signoff.sending") : t("signoff.send")}
           </Button>
         </>
       }
@@ -249,7 +276,7 @@ function HandoffDialog({ req }: { req: HandoffRequest }) {
           rows={5}
           spellCheck={false}
           value={text}
-          aria-label="Hand-off message"
+          aria-label={t("signoff.textAria")}
           onChange={(e) => setText(e.target.value)}
           onKeyDown={(e) => {
             if (e.key === "Enter" && (isMac ? e.metaKey : e.ctrlKey) && !e.nativeEvent.isComposing) {
@@ -258,7 +285,7 @@ function HandoffDialog({ req }: { req: HandoffRequest }) {
             }
           }}
         />
-        <div className="so-handoff-hint">One line: line breaks are sent as spaces. Nothing is sent until you press Send (or {isMac ? "⌘↩" : "Ctrl+Enter"}).</div>
+        <div className="so-handoff-hint">{t("signoff.hint", { keys: isMac ? "⌘↩" : "Ctrl+Enter" })}</div>
         {blocked && <div className="callout so-callout-warn">{blocked}</div>}
         {error && <div className="callout is-error">{error}</div>}
       </div>

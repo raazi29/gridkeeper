@@ -1,7 +1,8 @@
 // Command palette: fuzzy search over commands, sessions (all workspaces) and workspaces.
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { COMMANDS, focusSession, runCommand, switchWorkspace } from "../actions/commands";
+import { COMMANDS, categoryLabel, focusSession, runCommand, switchWorkspace } from "../actions/commands";
+import { useT, type MessageKey, type Translator } from "../i18n";
 import { useApp } from "../store/appStore";
 import { useUi, type PaletteMode } from "../store/uiStore";
 import { useShortcutMap } from "./hooks";
@@ -32,18 +33,21 @@ export function CommandPalette() {
   return <PaletteInner mode={mode} />;
 }
 
-function buildItems(mode: PaletteMode, shortcuts: Record<string, string>): Item[] {
+function buildItems(mode: PaletteMode, shortcuts: Record<string, string>, t: Translator): Item[] {
   const s = useApp.getState();
   const items: Item[] = [];
   if (mode === "all") {
     for (const c of COMMANDS) {
       if (c.hidden) continue;
+      const title = c.title;
+      const category = categoryLabel(c.category);
       items.push({
         key: `c:${c.id}`,
         kind: "command",
-        title: c.title,
-        search: `${c.category} ${c.title}`,
-        meta: c.category,
+        title,
+        // The stable id also matches, so English command names keep working in any UI language.
+        search: `${category} ${title} ${c.id}`,
+        meta: category,
         shortcut: shortcuts[c.id] ? displayCombo(shortcuts[c.id]) : undefined,
         run: () => runCommand(c.id),
       });
@@ -59,7 +63,7 @@ function buildItems(mode: PaletteMode, shortcuts: Record<string, string>): Item[
           items.push({
             key: `s:${id}`,
             kind: "session",
-            title: mode === "all" ? `Go to session: ${m.name}` : m.name,
+            title: mode === "all" ? t("palette.goToSession", { name: m.name }) : m.name,
             search: `${m.name} ${w.name} ${g.name} ${AGENT_LABEL[m.agent]}`,
             meta: `${w.name} / ${g.name} · ${AGENT_LABEL[m.agent]}`,
             tone: st.tone,
@@ -74,9 +78,9 @@ function buildItems(mode: PaletteMode, shortcuts: Record<string, string>): Item[
       items.push({
         key: `w:${w.id}`,
         kind: "workspace",
-        title: mode === "all" ? `Switch to workspace: ${w.name}` : w.name,
+        title: mode === "all" ? t("palette.switchToWorkspace", { name: w.name }) : w.name,
         search: `${w.name} ${basename(w.projectDir)}`,
-        meta: `${w.projectDir ? basename(w.projectDir) + " · " : ""}${n} session${n === 1 ? "" : "s"}${w.id === active ? " · current" : ""}`,
+        meta: [w.projectDir ? basename(w.projectDir) : null, t("palette.sessionCount", { count: n }), w.id === active ? t("palette.current") : null].filter(Boolean).join(" · "),
         run: () => switchWorkspace(w.id),
       });
     }
@@ -84,19 +88,20 @@ function buildItems(mode: PaletteMode, shortcuts: Record<string, string>): Item[
   return items;
 }
 
-const PLACEHOLDER: Record<PaletteMode, string> = {
-  all: "Type a command, session or workspace…",
-  sessions: "Go to session…",
-  workspaces: "Switch workspace…",
+const PLACEHOLDER: Record<PaletteMode, MessageKey> = {
+  all: "palette.placeholderAll",
+  sessions: "palette.placeholderSessions",
+  workspaces: "palette.placeholderWorkspaces",
 };
 
 function PaletteInner({ mode }: { mode: PaletteMode }) {
+  const t = useT();
   const shortcuts = useShortcutMap();
   const [query, setQuery] = useState("");
   const [sel, setSel] = useState(0);
   const listRef = useRef<HTMLDivElement>(null);
   // Snapshot on open: the palette is short-lived; avoids subscribing to the runtime map.
-  const all = useMemo(() => buildItems(mode, shortcuts), [mode, shortcuts]);
+  const all = useMemo(() => buildItems(mode, shortcuts, t), [mode, shortcuts, t]);
   const results = useMemo(() => fuzzyFilter(all, query, (i) => i.search).slice(0, MAX), [all, query]);
   const close = () => useUi.getState().closePalette();
 
@@ -132,13 +137,13 @@ function PaletteInner({ mode }: { mode: PaletteMode }) {
   };
 
   return (
-    <Modal title="Command palette" bare placement="top" width={560} onClose={close} className="palette" ariaLabel="Command palette">
+    <Modal title={t("palette.title")} bare placement="top" width={560} onClose={close} className="palette" ariaLabel={t("palette.title")}>
       <div className="palette-input-row">
         <IconSearch size={14} />
         <input
           className="palette-input"
           value={query}
-          placeholder={PLACEHOLDER[mode]}
+          placeholder={t(PLACEHOLDER[mode])}
           onChange={(e) => setQuery(e.target.value)}
           onKeyDown={onKeyDown}
           spellCheck={false}
@@ -151,7 +156,7 @@ function PaletteInner({ mode }: { mode: PaletteMode }) {
         />
       </div>
       <div className="palette-list" id="palette-list" role="listbox" ref={listRef}>
-        {results.length === 0 && <div className="palette-empty">No matches</div>}
+        {results.length === 0 && <div className="palette-empty">{t("palette.noMatches")}</div>}
         {results.map((it, i) => (
           <div
             key={it.key}

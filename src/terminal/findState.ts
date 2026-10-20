@@ -1,5 +1,7 @@
 // Find bar logic (pure; unit-tested): key handling, query validation and the match feedback label.
 
+import { t } from "../i18n";
+
 export interface FindResults {
   /** Active match index, or -1 when the highlight limit was exceeded (SearchAddon semantics). */
   index: number;
@@ -31,7 +33,7 @@ export function queryError(query: string, regex: boolean): string | null {
     new RegExp(query);
     return null;
   } catch {
-    return "Invalid regex";
+    return t("find.invalidRegex");
   }
 }
 
@@ -41,10 +43,10 @@ export function findLabel(f: FindFeedback, limit = 1000): string {
   if (err) return err;
   if (f.results) {
     const { index, count } = f.results;
-    if (count === 0) return "No results";
-    if (index < 0) return count >= limit ? `${limit}+ matches` : `${count} matches`;
-    return `${index + 1} of ${count}${count >= limit ? "+" : ""}`;
+    if (count === 0) return t("find.noResults");
+    if (index < 0) return count >= limit ? t("find.matchesOverLimit", { limit }) : t("find.matches", { count });
+    return count >= limit ? t("find.positionOverLimit", { index: index + 1, count }) : t("find.position", { index: index + 1, count });
   }
-  if (f.found === false) return "No results";
+  if (f.found === false) return t("find.noResults");
   return "";
 }

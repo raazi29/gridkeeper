@@ -3,6 +3,7 @@
 
 import type { Account, AccountAgentInfo, AgentAvailability, AgentKind, ClaudeProfile, SessionInfo } from "./types";
 import { OS, shellLabel, type Os } from "./platform";
+import { t } from "../i18n";
 
 /** Which agent an account or launch belongs to: "claude", "codex", or a catalog preset id ("hermes"). */
 export function agentKey(agent: AgentKind, preset?: string | null): string {
@@ -45,16 +46,16 @@ export function isSignedIn(a: ClaudeProfile): boolean {
 
 export type StatusTone = "ok" | "warn" | "err" | "muted";
 
-/** Status chip: Signed in / Not signed in / Unknown (and a few precise variants). */
+/** Status chip: Signed in / Not signed in / Unknown (and a few precise variants), in the UI language. */
 export function accountStatus(a: ClaudeProfile | Account, hasStatusCommand = true): { text: string; tone: StatusTone } {
   const st = a.status;
-  if (!st.dirExists && a.configDir) return { text: "Folder missing", tone: "err" };
-  if (st.verified && st.loggedIn) return { text: "Signed in", tone: "ok" };
-  if (st.verified && st.loggedIn === false) return { text: "Not signed in", tone: "err" };
-  if (st.loggedIn === false) return { text: "Not signed in", tone: "err" };
-  if (!hasStatusCommand) return st.likelyAuthenticated ? { text: "Configured", tone: "ok" } : { text: "Not set up", tone: "warn" };
-  if (st.likelyAuthenticated) return { text: "Likely signed in", tone: "warn" };
-  return { text: "Unknown", tone: "muted" };
+  if (!st.dirExists && a.configDir) return { text: t("session.profile.folderMissing"), tone: "err" };
+  if (st.verified && st.loggedIn) return { text: t("accounts.status.signedIn"), tone: "ok" };
+  if (st.verified && st.loggedIn === false) return { text: t("session.profile.notSignedIn"), tone: "err" };
+  if (st.loggedIn === false) return { text: t("session.profile.notSignedIn"), tone: "err" };
+  if (!hasStatusCommand) return st.likelyAuthenticated ? { text: t("accounts.status.configured"), tone: "ok" } : { text: t("accounts.status.notSetUp"), tone: "warn" };
+  if (st.likelyAuthenticated) return { text: t("session.profile.likelySignedIn"), tone: "warn" };
+  return { text: t("accounts.status.unknown"), tone: "muted" };
 }
 
 export interface AccountGroup {

@@ -28,7 +28,7 @@
   text-overflow: ellipsis;
 }
 .menu-hint {
-  margin-left: 18px;
+  margin-inline-start: 18px;
   flex-shrink: 0;
 }
 .menu-check {
@@ -39,7 +39,7 @@
   text-align: center;
 }
 .menu-sub-arrow {
-  margin-left: 10px;
+  margin-inline-start: 10px;
   color: var(--text-2);
   font-size: var(--fs-s);
   line-height: 1;

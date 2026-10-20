@@ -11,7 +11,7 @@
 //!   reports `full`, and the frontend stops recording. Reads are capped the same way.
 //! - Exports: [`pick_save_path`] runs the native save dialog from Rust and registers the chosen path
 //!   under a one-time token; [`save_export`] writes only to a registered path (extension .mp4 / .webm /
-//!   .gif matching the export kind, absolute, at most [`MAX_EXPORT_BYTES`]). A webview can therefore never
+//!   .gif, or .json for a team template, matching the export kind, absolute, at most [`MAX_EXPORT_BYTES`]). A webview can therefore never
 //!   name an arbitrary destination: the bytes go where the user pointed the dialog, or nowhere.
 
 use std::collections::HashMap;
@@ -32,7 +32,8 @@ pub const MAX_RECORDING_BYTES: u64 = 5 * 1024 * 1024;
 pub const MAX_LINE_BYTES: usize = 16 * 1024;
 pub const MAX_NAME_LEN: usize = 128;
 pub const MAX_EXPORT_BYTES: usize = 200 * 1024 * 1024;
-pub const EXPORT_KINDS: &[&str] = &["mp4", "webm", "gif"];
+/// Export formats; "json" is a team template (`<name>.gridkeeper-team.json`, src/actions/teamTemplates.ts).
+pub const EXPORT_KINDS: &[&str] = &["mp4", "webm", "gif", "json"];
 /// A save-dialog token expires if no export arrives in time (a 60 s video plus encoding fits easily).
 pub const TOKEN_TTL: Duration = Duration::from_secs(30 * 60);
 const MAX_TOKENS: usize = 16;
@@ -272,7 +273,7 @@ pub fn default_file_name(raw: &str, kind: &str) -> String {
     let stem = stem.strip_suffix(&format!(".{kind}")).unwrap_or(stem);
     let mut s: String = stem
         .chars()
-        .map(|c| if c.is_ascii_alphanumeric() || c == '-' || c == '_' { c } else { '-' })
+        .map(|c| if c.is_ascii_alphanumeric() || c == '-' || c == '_' || c == '.' { c } else { '-' })
         .take(80)
         .collect();
     s = s.trim_matches(['-', '.']).to_string();
@@ -517,6 +518,8 @@ mod tests {
         assert_eq!(default_file_name("add-oauth-replay", "mp4"), "add-oauth-replay.mp4");
         assert_eq!(default_file_name("..\\..\\evil name.gif", "gif"), "evil-name.gif");
         assert_eq!(default_file_name("", "webm"), "mission-replay.webm");
+        assert_eq!(default_file_name("feature-squad.gridkeeper-team", "json"), "feature-squad.gridkeeper-team.json");
+        assert_eq!(validate_export_path(&base.join("t.gridkeeper-team.json"), "json").unwrap(), base.join("t.gridkeeper-team.json"));
     }
 
     #[test]

@@ -1,7 +1,9 @@
 // Pure Mission Control derivations (unit-tested): lanes, lead nodes, sign-off list, counts, card status.
 // Everything comes from real state — process state, exit codes, attention — nothing is estimated.
 
+import { t } from "../../i18n";
 import type { SessionId, SessionInfo } from "../../lib/types";
+import type { ActivityEvent } from "../../store/activity";
 import { needsAttention, type SessionAttn } from "../../store/attention";
 import { fleetLamp, type FleetLamp } from "../util/fleet";
 
@@ -29,14 +31,29 @@ export function sessionStatus(rt: SessionInfo | undefined, a: SessionAttn | unde
   };
 }
 
-export const LAMP_TEXT: Record<FleetLamp, string> = {
-  working: "working",
-  waiting: "waiting for you",
-  done: "done",
-  error: "error",
-  idle: "idle",
-  exited: "exited",
-  stopped: "not started",
+/** Card / list state words in the UI language (getters: translated when read). */
+export const LAMP_TEXT: Readonly<Record<FleetLamp, string>> = {
+  get working() {
+    return t("mcView.lamp.working");
+  },
+  get waiting() {
+    return t("mcView.lamp.waiting");
+  },
+  get done() {
+    return t("mcView.lamp.done");
+  },
+  get error() {
+    return t("mcView.lamp.error");
+  },
+  get idle() {
+    return t("mcView.lamp.idle");
+  },
+  get exited() {
+    return t("mcView.lamp.exited");
+  },
+  get stopped() {
+    return t("mcView.lamp.stopped");
+  },
 };
 
 export type LaneState = "active" | "needs" | "review" | "idle" | "empty";
@@ -124,7 +141,7 @@ export function laneOf(g: { id: string; name: string }, ids: SessionId[], status
 /** "3/4 done" progress, only when the lane has sessions. Fraction is real (done / total). */
 export function laneProgress(l: Pick<LaneModel, "done" | "total">): { label: string; fraction: number } | null {
   if (l.total <= 0) return null;
-  return { label: `${l.done}/${l.total} done`, fraction: l.done / l.total };
+  return { label: t("mcView.lane.progress", { done: l.done, total: l.total }), fraction: l.done / l.total };
 }
 
 /** Phase marker for the lead node's workflow line: ✓ all done, ● working, ! needs you, ○ otherwise. */
@@ -160,12 +177,38 @@ export function reorderTarget(from: number, anchor: number, side: DropSide): num
 /** "Lane N" for a new group: the first N (from count + 1) that no group uses yet. */
 export function nextLaneName(names: readonly string[]): string {
   const used = new Set(names.map((n) => n.trim().toLowerCase()));
+  const nameFor = (n: number) => t("mcView.lane.newName", { n });
   let n = names.length + 1;
-  while (used.has(`lane ${n}`)) n++;
-  return `Lane ${n}`;
+  while (used.has(nameFor(n).trim().toLowerCase())) n++;
+  return nameFor(n);
 }
 
 /** Which side of a box the pointer is on (horizontal halves). */
 export function sideOf(clientX: number, rect: { left: number; width: number }): DropSide {
   return clientX < rect.left + rect.width / 2 ? "before" : "after";
+}
+
+// ---- connector pulses (effects) ----------------------------------------------------------------
+
+export type PulseTone = "gold" | "amber";
+export interface Pulse {
+  id: number;
+  /** LinkSpec key: "mission" (board ↔ lead), "in:<groupId>" (lead → lane), "out:<groupId>" (lane → sign-off). */
+  key: string;
+  tone: PulseTone;
+}
+
+/**
+ * Connector a real event travels along (pure). `home` says where a session sits: "lead", its lane's group id,
+ * or null (not on screen). Needs-you is amber toward sign-off; start / stop runs lead → lane; done runs
+ * lane → sign-off; anything about a lead runs along the board ↔ lead link. "working" toggles are too chatty.
+ */
+export function pulseFor(e: Pick<ActivityEvent, "sessionId" | "kind" | "level">, home: (id: SessionId) => string | null): Omit<Pulse, "id"> | null {
+  const g = e.sessionId ? home(e.sessionId) : null;
+  if (!g) return null;
+  const done = e.kind === "attention" && e.level === "ok";
+  if (e.level === "needs") return { key: g === "lead" ? "mission" : `out:${g}`, tone: "amber" };
+  if (e.kind !== "lifecycle" && !done) return null;
+  if (g === "lead") return { key: "mission", tone: "gold" };
+  return { key: done ? `out:${g}` : `in:${g}`, tone: "gold" };
 }

@@ -67,7 +67,10 @@ export interface NativeMenuCommand {
   /** Command id from src/actions/commands.ts, e.g. "view.settings". */
   command: string;
 }
-export type AttentionKind = "bell" | "notify" | "status" | "idle" | "active";
+export type AttentionKind = "bell" | "notify" | "status" | "idle" | "active" | "hook";
+
+/** `status` of a `hook` attention event (Claude Code hooks, opt-in; see src-tauri/src/meter/hooks.rs). */
+export type HookState = "ready" | "working" | "tool" | "permission" | "input" | "idle-prompt" | "stopped" | "ended";
 
 export interface SessionAttention {
   id: SessionId;
@@ -75,12 +78,14 @@ export interface SessionAttention {
   /** Notification title (control chars stripped, <= 200 chars). */
   title?: string;
   body?: string;
-  /** status: OSC 7501 state (idle|working|done|blocked|error|clear|…); idle: "done" when the run counts as finished. */
+  /** status: OSC 7501 state (idle|working|done|blocked|error|clear|…); idle: "done" when the run counts as finished; hook: a HookState. */
   status?: string;
-  /** OSC 7501 blocked kind: permission | question | auth. */
+  /** OSC 7501 blocked kind: permission | question | auth. hook: a short token (stop failure type, "interrupt", session start / end reason). */
   reason?: string;
-  /** idle: duration of the active run that just ended. */
+  /** idle: duration of the active run that just ended. hook "stopped": how long the turn took. */
   activeMs?: number;
+  /** hook: the tool name (never its input). */
+  tool?: string;
 }
 
 /** First byte of every binary message on a session output channel. */
@@ -230,6 +235,48 @@ export interface FrameProbe {
   error: string | null;
 }
 
+// ---- Native browser panes (src-tauri/src/browser_view.rs; Windows) ----------------------------------
+
+/** A pane's host box in CSS px of the main webview + devicePixelRatio. */
+export interface BrowserViewRect {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  scale: number;
+}
+/** shown: placed and visible; occluded: hidden for an overlay / drag; parked: pane off screen (low memory). */
+export type BrowserViewVisibility = "shown" | "occluded" | "parked";
+export type BrowserViewAction = { kind: "url"; url: string } | { kind: "back" } | { kind: "forward" } | { kind: "reload" } | { kind: "stop" };
+export const EVT_BROWSER_VIEW_STATE = "browser-view-state";
+export const EVT_BROWSER_VIEW_FOCUS = "browser-view-focus";
+export const EVT_BROWSER_VIEW_SHORTCUT = "browser-view-shortcut";
+export const EVT_BROWSER_VIEW_NEW_WINDOW = "browser-view-new-window";
+export const EVT_BROWSER_VIEW_DOWNLOAD = "browser-view-download";
+export interface BrowserViewState {
+  paneId: SessionId;
+  url: string;
+  title: string;
+  canGoBack: boolean;
+  canGoForward: boolean;
+  loading: boolean;
+}
+export interface BrowserViewShortcut {
+  paneId: SessionId;
+  combo: string;
+  repeat: boolean;
+}
+export interface BrowserViewNewWindow {
+  paneId: SessionId;
+  url: string;
+}
+export interface BrowserViewDownload {
+  paneId: SessionId;
+  url: string;
+  path: string | null;
+  state: "started" | "done" | "failed";
+}
+
 export interface PathInfo {
   exists: boolean;
   isDir: boolean;
@@ -326,6 +373,8 @@ export interface Settings {
   notifications: NotificationSettings;
   /** Confirm before pasting >64 KiB or >20 lines into a program without bracketed paste. */
   pasteWarning: boolean;
+  /** Test runs: concurrency cap and default time limit (Rust always sends it; optional for older fixtures). */
+  testRuns?: TestRunSettings;
   /** Blade colour for the Saber Duel theme (src/theme/saber.ts preset id). */
   saberColor: string;
   /** Star-streak transition on workspace switch: "auto" = only with the Hyperspace theme. */
@@ -342,7 +391,29 @@ export interface Settings {
   costMeter: boolean;
   /** The one-time "turn on the cost meter" hint was dismissed. */
   costMeterHintDismissed: boolean;
+  /** Browser panes: "native" = a real WebView2 per pane (Windows), "frame" = sandboxed iframe (legacy; the only engine elsewhere). */
+  browserEngine: BrowserEngineSetting;
+  /** Native browser panes: where target=_blank / window.open links go. */
+  browserNewWindow: BrowserNewWindow;
+  /** Exact status for Claude panes from Claude Code hooks (same --settings file as the meter: applies while costMeter is on). */
+  claudeHooks?: boolean;
+  /** Daily spend guard per workspace id (src/lib/spend.ts). */
+  spendGuards?: Record<string, SpendGuard>;
 }
+
+/** What happens when a workspace reaches its daily budget. Agents are never stopped automatically. */
+export type SpendAction = "warn" | "pause" | "pauseNotify";
+
+/** Daily budget of one workspace in USD of Claude Code's own estimate (API-equivalent on subscriptions). */
+export interface SpendGuard {
+  budgetUsd: number;
+  /** Toast at this share of the budget (percent, 1-99). */
+  warnPct: number;
+  action: SpendAction;
+}
+
+export type BrowserEngineSetting = "native" | "frame";
+export type BrowserNewWindow = "pane" | "same";
 
 export type HyperspaceMode = "auto" | "on" | "off";
 export type SaberEffectsMode = "auto" | "off" | "subtle" | "full";
@@ -403,6 +474,8 @@ export interface Group {
   name: string;
   layout: Layout;
   sessionIds: SessionId[];
+  /** Test command for this lane's worktrees (overrides the workspace's). Absent / null = none. */
+  testCommand?: string | null;
 }
 
 export interface Workspace {
@@ -412,6 +485,8 @@ export interface Workspace {
   groups: Group[];
   activeGroupId: string | null;
   createdAt: string | null;
+  /** Test command for the workspace's folders; absent / null = auto-detect per folder. */
+  testCommand?: string | null;
 }
 
 export interface WorktreeRef {
@@ -505,6 +580,10 @@ export const DEFAULT_SETTINGS: Settings = {
   rightClickAction: "menu",
   costMeter: false,
   costMeterHintDismissed: false,
+  browserEngine: "native",
+  browserNewWindow: "pane",
+  claudeHooks: true,
+  spendGuards: {},
 };
 
 // ---- Mission (shared task board file) ------------------------------------------------------------
@@ -523,11 +602,12 @@ export interface MissionFile {
 export interface MissionChanged {
   projectDir: string;
   /** What changed: `.gridkeeper/mission.md`, or a file arriving in the lead control outbox
-   *  (`.gridkeeper/outbox/`). Missing from older hosts: treat as both. `team.md` never emits. */
+   *  (`.gridkeeper/outbox/`), or a note in `.gridkeeper/brain/notes|inbox/`. Missing from older hosts: treat as
+   *  all. `team.md` and `brain/INDEX.md` never emit. */
   file?: MissionChangeKind;
 }
 
-export type MissionChangeKind = "mission" | "outbox";
+export type MissionChangeKind = "mission" | "outbox" | "brain";
 
 /** One instruction file directly in `<projectDir>/.gridkeeper/outbox/` (mission_outbox_list). */
 export interface OutboxItem {
@@ -809,3 +889,390 @@ export interface SessionMeter {
   /** When data was last written (ms since the epoch); null = no data yet. */
   updatedMs: number | null;
 }
+
+// ---- Phone alerts (src-tauri/src/phone.rs) ----
+
+export type PhoneEventKind = "needsInput" | "error" | "done" | "proposal" | "missionDone";
+
+/** `<data_dir>/phone-alerts.json`. Off by default. */
+export interface PhoneConfig {
+  enabled: boolean;
+  /** ntfy server base URL (https://ntfy.sh unless self-hosted). */
+  server: string;
+  /** Acts like a password on a public server. Empty until generated. */
+  topic: string;
+  events: Record<PhoneEventKind, boolean>;
+  /** 1 (min) … 5 (max): alerts below it are not sent. */
+  minPriority: number;
+  quietHours: QuietHours;
+  includeNames: boolean;
+  includeTaskNames: boolean;
+  onlyWhenAway: boolean;
+}
+
+/** One generic alert; Rust re-sanitizes it and applies the rate limits. */
+export interface PhoneAlert {
+  /** Rate-limit key ("s:<session id>", "p:<folder>", "m:<folder>"); never sent anywhere. */
+  key: string;
+  kind: PhoneEventKind;
+  title: string;
+  message: string;
+  /** 1 … 5. */
+  priority: number;
+  tags: string[];
+}
+
+export interface PhoneStatus {
+  sent: number;
+  failures: number;
+  /** Held back by the rate limits since the app started. */
+  suppressed: number;
+  lastSentMs: number | null;
+  lastError: string | null;
+  lastErrorMs: number | null;
+  failing: boolean;
+  pausedUntilMs: number | null;
+}
+
+export interface PhoneAlertsView {
+  config: PhoneConfig;
+  /** The access token itself never reaches the UI. */
+  hasToken: boolean;
+  /** Where the token is kept on this OS. */
+  tokenStorage: "credentialManager" | "file";
+  status: PhoneStatus;
+}
+
+export interface PhoneSendResult {
+  outcome: "sent" | "skipped" | "rateLimited" | "paused" | "failed";
+  detail: string | null;
+  /** A failure after a success (or the first one): tell the user once. */
+  firstFailure: boolean;
+}
+// ---- Brain (long-term project memory; src-tauri/src/brain.rs) -----------------------------------
+
+/** One memory file (`.gridkeeper/brain/notes/<slug>.md`, or a suggestion in `brain/inbox/`), as brain_list lists it. */
+export interface BrainNoteMeta {
+  /** File stem ("token-storage" for token-storage.md). */
+  slug: string;
+  /** From brain/inbox/: a suggestion waiting for the user. */
+  inbox: boolean;
+  title: string;
+  /** "decision" | "convention" | "gotcha" | "howto" | "fact" | "context" (unknown kinds read as "fact"). */
+  kind: string;
+  tags: string[];
+  source: string | null;
+  /** YYYY-MM-DD as written (null when missing). */
+  created: string | null;
+  /** `updated:`, else `created:`. */
+  updated: string | null;
+  /** "confirmed" | "suggested". */
+  confidence: string;
+  /** Slug of the note this one replaces. */
+  supersedes: string | null;
+  /** Slug of the confirmed note that replaces this one (computed). */
+  supersededBy: string | null;
+  /** Body's first ~160 characters on one line. */
+  excerpt: string;
+  modifiedMs: number;
+  /** File size; above 16 KiB brain_read refuses the note. */
+  bytes: number;
+}
+
+export interface BrainIndex {
+  /** Absolute path of <projectDir>/.gridkeeper/brain (whether or not it exists). */
+  dir: string;
+  exists: boolean;
+  /** .gridkeeper/.gitignore carries the "share the brain through git" block. */
+  shared: boolean;
+  /** brain/notes/, newest `updated` first. */
+  notes: BrainNoteMeta[];
+  /** brain/inbox/, newest file first. */
+  inbox: BrainNoteMeta[];
+  /** .md files whose names are not valid slugs ("notes/My Note.md"); not read. */
+  ignored: string[];
+  truncated: boolean;
+}
+
+export interface BrainNoteFile {
+  slug: string;
+  inbox: boolean;
+  path: string;
+  exists: boolean;
+  /** Contents (at most 16 KiB; "" when missing). */
+  text: string;
+  /** Pass back to brain_write for the conflict check; null when missing. */
+  modifiedMs: number | null;
+}
+
+export interface BrainHit {
+  slug: string;
+  inbox: boolean;
+  title: string;
+  kind: string;
+  tags: string[];
+  score: number;
+  /** The body line that matched (or the excerpt). */
+  snippet: string;
+  superseded: boolean;
+}
+
+export interface BrainShare {
+  shared: boolean;
+  gitignorePath: string;
+}
+
+// ---- Test runs (src-tauri/src/testrun.rs) -----------------------------------------------------------
+
+/** Emitted with payload `TestRunInfo` whenever a run is queued, starts or finishes. */
+export const EVT_TEST_RUN = "test-run";
+
+export interface TestRunSettings {
+  /** At most this many runs at once (the rest queue). 1..8, default 2. */
+  maxConcurrent: number;
+  /** Default time limit per run, minutes. 1..240, default 15. */
+  timeoutMin: number;
+}
+
+export const DEFAULT_TEST_RUN_SETTINGS: TestRunSettings = { maxConcurrent: 2, timeoutMin: 15 };
+
+export interface TestCandidate {
+  command: string;
+  /** Where it came from, e.g. `package.json "test": vitest run · pnpm-lock.yaml`. */
+  source: string;
+}
+
+export interface TestDetection {
+  dir: string;
+  command: string | null;
+  source: string | null;
+  candidates: TestCandidate[];
+}
+
+export interface TestRunSpec {
+  cwd: string;
+  command: string;
+  label: string;
+  sessionId: SessionId | null;
+  /** Seconds; null = the settings' default. */
+  timeoutSec: number | null;
+}
+
+export type TestRunStatus = "queued" | "running" | "passed" | "failed" | "error" | "cancelled" | "timedOut";
+
+export interface TestCounts {
+  /** "vitest", "jest", "cargo", "pytest", "go", "mocha" (several joined with "+"). */
+  runner: string;
+  /** "tests", or "packages" for `go test` without -v. */
+  unit: string;
+  passed: number;
+  failed: number;
+  skipped: number;
+}
+
+export interface TestRunInfo {
+  id: string;
+  cwd: string;
+  command: string;
+  label: string;
+  sessionId: SessionId | null;
+  status: TestRunStatus;
+  queuedMs: number;
+  startedMs: number | null;
+  endedMs: number | null;
+  durationMs: number | null;
+  exitCode: number | null;
+  counts: TestCounts | null;
+  /** Failing test names found in the output (best effort, at most 10). */
+  failures: string[];
+  /** Last non-empty output lines (at most 20). */
+  lastLines: string[];
+  error: string | null;
+  outputBytes: number;
+  timeoutSec: number;
+  repoRoot: string | null;
+  /** HEAD when the run started (null when not a repository or HEAD moved during the run). */
+  headSha: string | null;
+  /** Uncommitted / untracked files at start (and end); null = not a repository. */
+  uncommitted: number | null;
+}
+
+export interface TestRunLog {
+  id: string;
+  status: TestRunStatus;
+  text: string;
+  droppedBytes: number;
+}
+
+// ---- Merge assistant (src-tauri/src/merge.rs, ADR-020) -----------------------------------------------
+
+export type MergeStrategy = "fastForward" | "mergeCommit" | "squash";
+
+export interface MergeCommitInfo {
+  sha: string;
+  subject: string;
+  author: string;
+  timeMs: number;
+}
+
+export interface MergeConflict {
+  path: string;
+  /** git's conflict type: "content", "modify/delete", "add/add", ... ("conflict" when unknown). */
+  kind: string;
+}
+
+export interface MergePreview {
+  path: string;
+  branch: string | null;
+  branchSha: string | null;
+  base: string | null;
+  baseSha: string | null;
+  mainPath: string | null;
+  mainBranch: string | null;
+  ahead: number;
+  behind: number;
+  filesChanged: number;
+  insertions: number;
+  deletions: number;
+  files: BranchFile[];
+  filesTruncated: boolean;
+  commits: MergeCommitInfo[];
+  commitsTruncated: boolean;
+  lastSubject: string | null;
+  canFastForward: boolean;
+  /** true clean, false conflicts, null = the check could not run. */
+  clean: boolean | null;
+  conflicts: MergeConflict[];
+  /** "fast-forward" | "merge-tree" | "temporary worktree". */
+  checkMethod: string;
+  gitVersion: string | null;
+  worktreeUncommitted: number;
+  /** Reasons the merge is refused (empty = allowed). */
+  blockers: string[];
+  warnings: string[];
+}
+
+export interface MergeRequest {
+  path: string;
+  mainPath: string;
+  base: string;
+  branch: string;
+  baseSha: string;
+  branchSha: string;
+  strategy: MergeStrategy;
+  message: string;
+  requireTests: boolean;
+}
+
+export interface MergePlan {
+  mainPath: string;
+  commands: string[];
+  onFailure: string[];
+}
+
+export interface GitStepLog {
+  command: string;
+  ok: boolean;
+  output: string;
+}
+
+export interface MergeOutcome {
+  ok: boolean;
+  strategy: MergeStrategy;
+  newSha: string | null;
+  conflicts: MergeConflict[];
+  rolledBack: boolean;
+  error: string | null;
+  steps: GitStepLog[];
+}
+
+export interface WorktreeCleanupPlan {
+  path: string;
+  branch: string;
+  mainPath: string;
+  /** Junctions / symlinks inside the worktree; unlinked first, their targets are never touched. */
+  links: string[];
+  commands: string[];
+  branchMerged: boolean;
+  blockers: string[];
+}
+
+export interface WorktreeCleanupOutcome {
+  linksRemoved: number;
+  worktreeRemoved: boolean;
+  branchDeleted: boolean;
+  error: string | null;
+  steps: GitStepLog[];
+}
+
+// ---- Agent browser (shared browser, a tab per agent; src-tauri/src/agent_browser/model.rs) --------
+
+export const EVT_AGENT_BROWSER_STATE = "agent-browser-state";
+export const EVT_AGENT_BROWSER_ACTIVITY = "agent-browser-activity";
+
+export interface AgentBrowserSession {
+  sessionId: SessionId;
+  /** "Give this agent a browser" (applies at the next launch). */
+  enabled: boolean;
+  /** The running process was launched with the browser tools. */
+  launched: boolean;
+  /** Why the last launch got no browser tools. */
+  launchNote: string | null;
+  /** The agent's MCP helper is connected. */
+  connected: boolean;
+  hasTab: boolean;
+  url: string | null;
+  title: string | null;
+  /** The user controls the tab; agent tool calls wait. */
+  takenOver: boolean;
+  /** The user stopped browsing for this agent. */
+  stopped: boolean;
+  busy: boolean;
+  /** An open JavaScript confirm / prompt dialog. */
+  dialog: string | null;
+  lastAction: string | null;
+  lastActionMs: number | null;
+}
+
+export type AgentBrowserPromptKind = "formSubmit" | "script" | "upload" | "download";
+
+export interface AgentBrowserPrompt {
+  id: number;
+  sessionId: SessionId;
+  kind: AgentBrowserPromptKind;
+  origin: string | null;
+  detail: string;
+  createdMs: number;
+  expiresMs: number;
+  /** "Always allow <host>" is offered. */
+  rememberHost: string | null;
+}
+
+export interface AgentBrowserState {
+  running: boolean;
+  browser: string | null;
+  pid: number | null;
+  executable: string | null;
+  error: string | null;
+  idleMinutes: number;
+  allowlist: string[];
+  sessions: AgentBrowserSession[];
+  prompts: AgentBrowserPrompt[];
+}
+
+export type AgentBrowserOutcome = "ok" | "error" | "blocked" | "denied" | "info";
+
+export interface AgentBrowserActivity {
+  sessionId: SessionId;
+  atMs: number;
+  tool: string;
+  summary: string;
+  url: string | null;
+  outcome: AgentBrowserOutcome;
+}
+
+/** Input for a taken-over tab; coordinates in CSS pixels of the page viewport. */
+export type AgentBrowserInput =
+  | { type: "mouse"; action: "down" | "up" | "move" | "wheel"; x: number; y: number; button?: "left" | "middle" | "right" | "none"; clickCount?: number; deltaX?: number; deltaY?: number; modifiers: number }
+  | { type: "key"; action: "down" | "up"; key: string; code: string; keyCode: number; text?: string; modifiers: number }
+  | { type: "text"; text: string };
