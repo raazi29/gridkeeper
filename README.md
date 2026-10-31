@@ -333,10 +333,6 @@ dependency (WSL-only on Windows).
 
 ## Install
 
-> [!NOTE]
-> The macOS `.dmg` (and with it the Homebrew cask) is being added to the v0.2.0 release. Until then, build from
-> source on macOS (see *Build from source* below). Windows and Linux installers are available now.
-
 | | One-liner |
 |---|---|
 | **Windows** (Scoop) | `scoop bucket add gridkeeper https://github.com/raazi29/gridkeeper; scoop install gridkeeper/gridkeeper` |
