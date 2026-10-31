@@ -135,7 +135,7 @@ export function maybeAutoRetry(info: SessionInfo) {
 export async function startSession(
   id: SessionId,
   resume: ResumeMode = { mode: "none" },
-  opts: { keepRetryBudget?: boolean } = {},
+  opts: { keepRetryBudget?: boolean; bypassMemoryHold?: boolean } = {},
 ): Promise<boolean> {
   const meta0 = useApp.getState().persisted.sessions.find((m) => m.id === id);
   // Browser panes have no process.
@@ -144,8 +144,14 @@ export async function startSession(
   userStopped.delete(id); // a stop only suppresses the retry of the run it ended
   lastResume.set(id, resume);
   if (!opts.keepRetryBudget) retried.delete(id);
-  // Memory critically low: wait until it recovers or "Launch anyway" (store/memguard.ts, ADR-024).
-  await launchGate(id, meta0.name);
+  // Memory critically low: wait until it recovers or "Launch anyway" (store/memguard.ts, ADR-024). Restarts
+  // skip it: their process was just stopped, holding them would only turn a restart into a stop.
+  if (!opts.bypassMemoryHold) {
+    await launchGate(id, meta0.name);
+    // Released by a close, or a second start of the same pane won the race: no stagger slot needed.
+    if (!useApp.getState().persisted.sessions.some((m) => m.id === id)) return false;
+    if (isLive(useApp.getState().runtime[id])) return true;
+  }
   await launchSlot(meta0.agent);
   const st = useApp.getState();
   const meta = st.persisted.sessions.find((m) => m.id === id);
@@ -254,7 +260,8 @@ export async function restartSession(id: SessionId, resume: ResumeMode = { mode:
     }
   }
   clearTerminal(id);
-  return startSession(id, resume);
+  // A restart (single, or "Restart all" through groupActions) is never held by the low-memory guard.
+  return startSession(id, resume, { bypassMemoryHold: true });
 }
 
 /** Close a pane: stops the process (caller confirms if live), forgets the session. */

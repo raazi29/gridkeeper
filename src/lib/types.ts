@@ -1317,4 +1317,6 @@ export interface MemoryStatus {
   /** Gridkeeper itself without the sessions (null while "ok"). */
   appBytes: number | null;
   reserveHeld: boolean;
+  /** Increases with every status Rust builds (events and memory_status): only a higher one replaces the last. */
+  seq: number;
 }

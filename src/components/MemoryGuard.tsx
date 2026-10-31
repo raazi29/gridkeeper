@@ -1,12 +1,12 @@
 // Low-memory guard UI (store/memguard.ts, ADR-024): the banner shown once per entry into "low" / "critical",
 // the status-bar chip while memory is not ok, and the per-pane hint for a held launch.
 
-import { memo, useEffect } from "react";
+import { memo } from "react";
 import { useT } from "../i18n";
 import { isWindows } from "../lib/platform";
 import type { SessionId } from "../lib/types";
 import { useApp } from "../store/appStore";
-import { dismissMemoryBanner, holdOn, levelOf, refreshMemoryStatus, releaseHeld, showMemoryBanner, useMemGuard, warningsOn } from "../store/memguard";
+import { dismissMemoryBanner, holdOn, levelOf, releaseHeld, showMemoryBanner, useMemGuard, warningsOn } from "../store/memguard";
 import { IconClose, IconWarn } from "./icons";
 import { Button } from "./ui/Button";
 import { formatMb } from "./util/text";
@@ -17,9 +17,7 @@ export function formatGb(bytes: number): string {
   return `${(bytes / 1024 ** 3).toFixed(1)} GB`;
 }
 
-/** Re-read while the banner is open (fresh free figure and program list); no timer otherwise. */
-const BANNER_REFRESH_MS = 5000;
-
+/** The open banner's figures come from the store: Rust sends a full status every 5 s while memory is short. */
 export function MemoryBanner() {
   const t = useT();
   const enabled = useApp((s) => warningsOn(s.persisted.settings));
@@ -27,15 +25,7 @@ export function MemoryBanner() {
   const visible = useMemGuard((s) => s.banner.visible);
   const status = useMemGuard((s) => s.status);
   const held = useMemGuard((s) => s.held);
-  const open = enabled && visible !== null;
-
-  useEffect(() => {
-    if (!open) return;
-    const timer = window.setInterval(() => void refreshMemoryStatus(), BANNER_REFRESH_MS);
-    return () => window.clearInterval(timer);
-  }, [open]);
-
-  if (!open || !status) return null;
+  if (!enabled || visible === null || !status) return null;
   const critical = visible === "critical";
   const figures = { free: formatGb(status.freeBytes), limit: formatGb(status.limitBytes) };
   return (

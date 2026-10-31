@@ -1,7 +1,8 @@
 // Low-memory guard, frontend half (Rust: src-tauri/src/memguard.rs; ADR-024): the level Rust reports,
 // the banner (one per entry into a level, shown again only after memory recovered) and the launches held
-// while memory is critically low. Event driven: one reading at boot, then `memory-status` events (sent on
-// level changes only). The open banner re-reads every 5 s for fresh figures; nothing polls otherwise.
+// while memory is critically low. Event driven: one memory_status read at boot, then `memory-status` events,
+// which Rust sends on every level change and on every 5 s reading while memory is short. Nothing polls here.
+// Statuses carry an increasing `seq`; an older one (e.g. a slow initial read) never replaces a newer one.
 
 import { create } from "zustand";
 import { ipc, onMemoryStatus } from "../lib/ipc";
@@ -57,9 +58,15 @@ export function levelOf(s: MemoryStatus | null): MemoryLevel {
   return s?.supported ? s.level : "ok";
 }
 
+const settings = () => useApp.getState().persisted.settings;
+
+/** Apply a status from Rust (event or the initial read). Ignored unless newer than the current one. */
 export function applyMemoryStatus(s: MemoryStatus): void {
+  const cur = useMemGuard.getState().status;
+  if (cur && s.seq <= cur.seq) return;
   const level = levelOf(s);
-  useMemGuard.setState((st) => ({ status: s, banner: nextBanner(st.banner, level) }));
+  // With the warnings off the banner state stays idle, so turning them on starts from the current level.
+  useMemGuard.setState((st) => ({ status: s, banner: warningsOn(settings()) ? nextBanner(st.banner, level) : BANNER_IDLE }));
   if (level !== "critical") releaseHeld();
 }
 
@@ -67,27 +74,28 @@ export function dismissMemoryBanner(): void {
   useMemGuard.setState((st) => ({ banner: { ...st.banner, visible: null } }));
 }
 
-/** Reopen the banner (status-bar chip) while memory is not ok, with fresh figures. */
+/** Reopen the banner (status-bar chip) while memory is not ok. The figures are current: Rust sends every reading then. */
 export function showMemoryBanner(): void {
   const level = levelOf(useMemGuard.getState().status);
-  if (level === "ok") return;
-  useMemGuard.setState((st) => ({ banner: { announced: RANK[level] > RANK[st.banner.announced] ? level : st.banner.announced, visible: level } }));
-  void refreshMemoryStatus();
+  if (level !== "ok") useMemGuard.setState({ banner: nextBanner(BANNER_IDLE, level) });
 }
 
-export function refreshMemoryStatus(): Promise<void> {
-  return ipc.memoryStatus().then(applyMemoryStatus, () => {});
+/** Settings changed: warnings off clears the banner state; hold (or warnings) off releases held launches. */
+export function applyMemorySettings(s: Partial<Settings>): void {
+  if (!warningsOn(s) && useMemGuard.getState().banner !== BANNER_IDLE) useMemGuard.setState({ banner: BANNER_IDLE });
+  if (!holdOn(s)) releaseHeld();
 }
 
 /** Whether a launch requested now would be held. */
 export function shouldHoldLaunch(): boolean {
-  return levelOf(useMemGuard.getState().status) === "critical" && holdOn(useApp.getState().persisted.settings);
+  return levelOf(useMemGuard.getState().status) === "critical" && holdOn(settings());
 }
 
 /**
  * The launch gate (called by `startSession`, the one place every launch passes through: new panes, restore,
- * formations, restarts, the startup retry). Resolves at once unless memory is critically low and the hold is
- * on; then it resolves when memory recovers, the hold is turned off, or the user picks "Launch anyway".
+ * formations, the startup retry; restarts skip it). Resolves at once unless memory is critically low and the
+ * hold is on; then it resolves when memory recovers, the hold is turned off, the pane is closed, or the user
+ * picks "Launch anyway".
  */
 export function launchGate(id: SessionId, name: string): Promise<void> {
   if (!shouldHoldLaunch()) return Promise.resolve();
@@ -114,17 +122,17 @@ let started = false;
 
 /**
  * Install once, before any launch (App boot): subscribe, then read the current level so restored sessions
- * already see it. Waits at most 2 s for the reading. Turning the hold (or the warnings) off releases
- * whatever is waiting.
+ * already see it. Waits at most 2 s for the reading.
  */
 export async function startMemoryWatch(): Promise<void> {
   if (started) return;
   started = true;
   await onMemoryStatus(applyMemoryStatus).catch(() => {});
   useApp.subscribe((s, prev) => {
-    if (s.persisted.settings !== prev.persisted.settings && !holdOn(s.persisted.settings)) releaseHeld();
+    if (s.persisted.settings !== prev.persisted.settings) applyMemorySettings(s.persisted.settings);
   });
-  await Promise.race([refreshMemoryStatus(), new Promise((r) => setTimeout(r, 2000))]);
+  const initial = ipc.memoryStatus().then(applyMemoryStatus, () => {});
+  await Promise.race([initial, new Promise((r) => setTimeout(r, 2000))]);
 }
 
 /** Test helper: back to the initial state. */

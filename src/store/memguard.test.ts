@@ -8,15 +8,27 @@ vi.mock("../lib/ipc", () => ({
 }));
 
 const { useApp } = await import("./appStore");
-const { BANNER_IDLE, applyMemoryStatus, dismissMemoryBanner, launchGate, nextBanner, releaseHeld, resetMemGuardForTests, showMemoryBanner, useMemGuard } =
-  await import("./memguard");
+const {
+  BANNER_IDLE,
+  applyMemorySettings,
+  applyMemoryStatus,
+  dismissMemoryBanner,
+  launchGate,
+  nextBanner,
+  releaseHeld,
+  resetMemGuardForTests,
+  showMemoryBanner,
+  useMemGuard,
+} = await import("./memguard");
 
 const GB = 1024 ** 3;
+let seq = 0;
 
-function status(level: MemoryLevel, supported = true): MemoryStatus {
-  const free = level === "ok" ? 8 * GB : level === "low" ? 1.5 * GB : 0.5 * GB;
+/** A status as Rust would send it next (increasing seq unless given). */
+function status(level: MemoryLevel, opts: { supported?: boolean; seq?: number; free?: number } = {}): MemoryStatus {
+  const free = opts.free ?? (level === "ok" ? 8 * GB : level === "low" ? 1.5 * GB : 0.5 * GB);
   return {
-    supported,
+    supported: opts.supported ?? true,
     level,
     limitBytes: 40 * GB,
     freeBytes: free,
@@ -26,6 +38,7 @@ function status(level: MemoryLevel, supported = true): MemoryStatus {
     agentsBytes: null,
     appBytes: null,
     reserveHeld: level !== "critical",
+    seq: opts.seq ?? ++seq,
   };
 }
 
@@ -69,15 +82,51 @@ describe("memory guard store", () => {
     expect(useMemGuard.getState().banner.visible).toBeNull();
     // The status-bar chip reopens it on request.
     showMemoryBanner();
-    expect(useMemGuard.getState().banner.visible).toBe("low");
+    expect(useMemGuard.getState().banner).toEqual({ announced: "low", visible: "low" });
   });
 
-  it("treats an unsupported platform as ok", () => {
-    applyMemoryStatus(status("critical", false));
+  it("keeps the newest status: an older one (a slow initial read) is ignored", () => {
+    const initial = status("low", { free: 1.9 * GB }); // the read started first...
+    applyMemoryStatus(status("critical", { free: 0.4 * GB })); // ...an event arrived meanwhile
+    applyMemoryStatus(initial);
+    expect(useMemGuard.getState().status?.level).toBe("critical");
+    expect(useMemGuard.getState().status?.freeBytes).toBe(0.4 * GB);
+    // Same seq again: also ignored; a newer one replaces it.
+    const same = useMemGuard.getState().status!.seq;
+    applyMemoryStatus(status("ok", { seq: same }));
+    expect(useMemGuard.getState().status?.level).toBe("critical");
+    applyMemoryStatus(status("low", { free: 1.2 * GB }));
+    expect(useMemGuard.getState().status?.freeBytes).toBe(1.2 * GB);
+  });
+
+  it("keeps the banner idle while warnings are off, and starts fresh when they come back", () => {
+    useApp.getState().updateSettings({ lowMemoryWarnings: false });
+    applyMemoryStatus(status("critical"));
+    expect(useMemGuard.getState().banner).toEqual(BANNER_IDLE);
+    // On again while memory is only low: the next reading announces low (nothing stale, nothing suppressed).
+    useApp.getState().updateSettings({ lowMemoryWarnings: true });
+    applyMemoryStatus(status("low"));
+    expect(useMemGuard.getState().banner).toEqual({ announced: "low", visible: "low" });
+  });
+
+  it("turning warnings off clears an announced banner and releases held launches", async () => {
+    applyMemoryStatus(status("critical"));
+    let started = false;
+    void launchGate("s1", "A").then(() => (started = true));
+    useApp.getState().updateSettings({ lowMemoryWarnings: false });
+    applyMemorySettings(useApp.getState().persisted.settings);
+    await flush();
+    expect(useMemGuard.getState().banner).toEqual(BANNER_IDLE);
+    expect(started).toBe(true);
+  });
+
+  it("treats an unsupported platform as ok", async () => {
+    applyMemoryStatus(status("critical", { supported: false }));
     expect(useMemGuard.getState().banner.visible).toBeNull();
     let started = false;
     void launchGate("s1", "Claude Code 1").then(() => (started = true));
-    return flush().then(() => expect(started).toBe(true));
+    await flush();
+    expect(started).toBe(true);
   });
 
   it("lets launches through while ok or low", async () => {

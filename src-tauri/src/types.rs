@@ -1662,4 +1662,6 @@ pub struct MemoryStatus {
     pub app_bytes: Option<u64>,
     /// The emergency reserve is currently held (Windows).
     pub reserve_held: bool,
+    /// Increases with every status built (events and `memory_status`): the frontend keeps the highest.
+    pub seq: u64,
 }

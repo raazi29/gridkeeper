@@ -20,11 +20,32 @@ vi.mock("../lib/ipc", () => ({
       return info(spec.id, { state: "running" });
     }),
     sessionStop: vi.fn(async () => {}),
+    sessionRemove: vi.fn(async () => {}),
   },
 }));
 
-import { maybeAutoRetry, renameSession, restoreSessions, startSession, stopSession } from "./sessions";
+import { closeSession, maybeAutoRetry, renameSession, restartSession, restoreSessions, startSession, stopSession } from "./sessions";
 import { useApp } from "../store/appStore";
+import { applyMemoryStatus, resetMemGuardForTests, useMemGuard } from "../store/memguard";
+
+let memSeq = 0;
+/** Puts the low-memory guard at `level` (a newer status each call). */
+function memoryLevel(level: "ok" | "critical") {
+  const GB = 1024 ** 3;
+  applyMemoryStatus({
+    supported: true,
+    level,
+    limitBytes: 40 * GB,
+    freeBytes: level === "ok" ? 8 * GB : GB / 2,
+    lowBytes: 2 * GB,
+    criticalBytes: GB,
+    top: [],
+    agentsBytes: null,
+    appBytes: null,
+    reserveHeld: level === "ok",
+    seq: ++memSeq,
+  });
+}
 
 function info(id: string, state: SessionInfo["state"], extra: Partial<SessionInfo> = {}): SessionInfo {
   return { id, name: id, agent: "codex", pid: 1, state, cwd: "D:/p", profileId: null, commandDisplay: "", startedAt: null, endedAt: null, bytesOut: 0, ...extra };
@@ -68,6 +89,38 @@ function seed(metas: SessionMeta[], runtime: Record<string, SessionInfo> = {}) {
 beforeEach(() => {
   started.length = 0;
   notices.length = 0;
+  resetMemGuardForTests();
+});
+
+describe("low-memory launch hold", () => {
+  it("holds new launches while critical, but never a restart", async () => {
+    seed([meta("new", { agent: "powershell" }), meta("old", { agent: "powershell", cwd: "D:/o" })], {
+      old: info("old", { state: "exited", code: 0 }, { agent: "powershell" }),
+    });
+    memoryLevel("critical");
+    const held = startSession("new");
+    await restartSession("old", { mode: "none" });
+    expect(started.map((s) => s.id)).toEqual(["old"]);
+    expect(useMemGuard.getState().held.map((h) => h.id)).toEqual(["new"]);
+    memoryLevel("ok");
+    expect(await held).toBe(true);
+    expect(started.map((s) => s.id)).toEqual(["old", "new"]);
+  });
+
+  it("a held launch released by closing the pane starts nothing and takes no stagger slot", async () => {
+    // Claude launches are spaced 350 ms apart; a consumed slot would delay the next one.
+    seed([meta("gone", { agent: "claude" }), meta("next", { agent: "claude", cwd: "D:/n" })]);
+    memoryLevel("critical");
+    const held = startSession("gone");
+    await closeSession("gone");
+    expect(await held).toBe(false);
+    expect(useMemGuard.getState().held).toEqual([]);
+    memoryLevel("ok");
+    const t0 = Date.now();
+    await startSession("next");
+    expect(Date.now() - t0).toBeLessThan(300);
+    expect(started.map((s) => s.id)).toEqual(["next"]);
+  });
 });
 
 describe("startSession: Codex panes sharing a folder", () => {

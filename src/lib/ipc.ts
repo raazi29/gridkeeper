@@ -233,8 +233,8 @@ export const ipc = {
     invoke<string>("replay_save_file", bytes, { headers: { "x-replay-token": token } }),
   // Meter: Claude Code cost & context per pane (status line JSON; live updates via onSessionMeter).
   meterSnapshot: () => invoke<SessionMeter[]>("meter_snapshot"),
-  // Low-memory guard: fresh reading with the guard's level (changes arrive via onMemoryStatus). The program
-  // list is only filled while the level is not "ok".
+  // Low-memory guard: fresh reading with the guard's level, for the initial read only (every update then
+  // arrives via onMemoryStatus). The program list is only filled while the level is not "ok".
   memoryStatus: () => invoke<MemoryStatus>("memory_status"),
   // Brain: long-term project memory in <projectDir>/.gridkeeper/brain/ (notes/, inbox/, generated INDEX.md).
   // Agents' direct edits arrive as EVT_MISSION_CHANGED with file "brain" while a mission watch is held.

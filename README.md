@@ -610,7 +610,7 @@ before anything is created.
 - **Inspector** (`Ctrl+Shift+I`): details and actions for the focused session, its listening ports, plus its restore options. For a browser pane: address, server status, embedding verdict and pop-out.
 - **Diagnostics** (``Ctrl+Shift+` ``): a per-process resource table (host / WebView2 / sessions), the GPU renderer string, WebGL/DOM counts and context losses. **Export** writes a redacted JSON bundle.
 - **Status bar:** the breadcrumb, running count, app vs agent CPU/RAM (polled every 2 s while the window is visible; can be turned off) and renderer status.
-- **Low-memory warnings** (Windows, Linux): when free commit (RAM + page file) drops below 2 GB, or 5 % of the limit on large machines, a banner lists the programs using the most memory and how much is Gridkeeper's agents; below 1 GB (2.5 %) it turns critical and new launches wait until memory recovers or you press *Launch anyway*. One reading every 5 s; Gridkeeper also keeps a 64 MB reserve that it gives back at that point so it can stay up. Both switches are in Settings › Interface.
+- **Low-memory warnings** (Windows, Linux): when free commit (RAM + page file, counting what a growable page file can still add) drops below 2 GB, or 5 % of the limit on large machines, a banner lists the programs using the most memory and how much is Gridkeeper's agents; below 1 GB (2.5 %) it turns critical and new launches (not restarts) wait until memory recovers or you press *Launch anyway*. One reading every 5 s; Gridkeeper also keeps a 64 MB reserve that it gives back at that point so it can stay up. Both switches are in Settings › Interface.
 - **Command palette** (`Ctrl+Shift+P`): fuzzy search over all commands, all sessions and all workspaces.
 
 </details>
