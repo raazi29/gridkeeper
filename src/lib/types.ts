@@ -399,6 +399,10 @@ export interface Settings {
   claudeHooks?: boolean;
   /** Daily spend guard per workspace id (src/lib/spend.ts). */
   spendGuards?: Record<string, SpendGuard>;
+  /** Low-memory guard: banner + status-bar chip when free commit runs low (default on). */
+  lowMemoryWarnings?: boolean;
+  /** While memory is critically low, new launches wait until it recovers or "Launch anyway" (default on; needs lowMemoryWarnings). */
+  lowMemoryHold?: boolean;
 }
 
 /** What happens when a workspace reaches its daily budget. Agents are never stopped automatically. */
@@ -584,6 +588,8 @@ export const DEFAULT_SETTINGS: Settings = {
   browserNewWindow: "pane",
   claudeHooks: true,
   spendGuards: {},
+  lowMemoryWarnings: true,
+  lowMemoryHold: true,
 };
 
 // ---- Mission (shared task board file) ------------------------------------------------------------
@@ -1276,3 +1282,39 @@ export type AgentBrowserInput =
   | { type: "mouse"; action: "down" | "up" | "move" | "wheel"; x: number; y: number; button?: "left" | "middle" | "right" | "none"; clickCount?: number; deltaX?: number; deltaY?: number; modifiers: number }
   | { type: "key"; action: "down" | "up"; key: string; code: string; keyCode: number; text?: string; modifiers: number }
   | { type: "text"; text: string };
+
+// ---- Low-memory guard (src-tauri/src/memguard.rs) --------------------------------------------------
+
+/** Emitted with a MemoryStatus when the memory level changes (not on every reading). */
+export const EVT_MEMORY_STATUS = "memory-status";
+
+/** Free commit (Windows) / available memory + swap (Linux) against the guard's thresholds. */
+export type MemoryLevel = "ok" | "low" | "critical";
+
+/** One program by executable name (all its processes together). */
+export interface MemoryConsumer {
+  name: string;
+  /** The member using the most memory. */
+  pid: number;
+  count: number;
+  /** Private bytes (Windows commit charge) or resident bytes (Linux). */
+  bytes: number;
+}
+
+export interface MemoryStatus {
+  /** False where the guard does not run (macOS). */
+  supported: boolean;
+  level: MemoryLevel;
+  /** Commit limit (RAM + page files) on Windows; RAM + swap on Linux. */
+  limitBytes: number;
+  freeBytes: number;
+  lowBytes: number;
+  criticalBytes: number;
+  /** Largest programs first; empty while the level is "ok". */
+  top: MemoryConsumer[];
+  /** Gridkeeper's sessions' process trees together (null while "ok"). */
+  agentsBytes: number | null;
+  /** Gridkeeper itself without the sessions (null while "ok"). */
+  appBytes: number | null;
+  reserveHeld: boolean;
+}

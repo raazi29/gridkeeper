@@ -14,6 +14,8 @@ import { currentPaneDrag, endPaneDrag } from "./paneDrag";
 import { BrowserPane } from "./BrowserPane";
 import { useSaberBlade, type BladeState } from "./saberBlade";
 import { useT } from "../i18n";
+import { HeldLaunchHint } from "../components/MemoryGuard";
+import { useMemGuard } from "../store/memguard";
 
 export interface PaneProps {
   sessionId: SessionId;
@@ -70,6 +72,8 @@ const TerminalPane = memo(function TerminalPane({ sessionId, groupId, index, cou
   const rt = useRuntimeView(sessionId);
   const { dropTarget, onDragOver, onDragLeave, onDrop } = usePaneDrop(sessionId, groupId);
   const alive = rt.state === "starting" || rt.state === "running";
+  // Launch held by the low-memory guard: the footer explains it, so no Start overlay meanwhile.
+  const held = useMemGuard((s) => s.held.some((h) => h.id === sessionId));
   const blade = useSaberBlade(sessionId, focused, alive, visible && !hidden);
 
   // Hidden view: free the terminal entirely (Rust keeps the process + bounded buffer; Show replays it).
@@ -110,7 +114,7 @@ const TerminalPane = memo(function TerminalPane({ sessionId, groupId, index, cou
         </button>
       </div>
     );
-  } else if (rt.state === "idle") {
+  } else if (rt.state === "idle" && !held) {
     overlay = (
       <div className="pane-overlay pane-overlay--delayed">
         <div className="pane-overlay-actions">
@@ -187,6 +191,7 @@ const TerminalPane = memo(function TerminalPane({ sessionId, groupId, index, cou
         </div>
       )}
       {!hidden && <SilentHint sessionId={sessionId} />}
+      {!hidden && <HeldLaunchHint sessionId={sessionId} />}
       {dropTarget && <div className="pane-drop-indicator" />}
     </div>
   );

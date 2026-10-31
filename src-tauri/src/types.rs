@@ -653,6 +653,13 @@ pub struct Settings {
     /// Daily spend guard per workspace id (frontend: src/lib/spend.ts). Missing = no guard.
     #[serde(default)]
     pub spend_guards: BTreeMap<String, SpendGuard>,
+    /// Low-memory guard (`memguard`): banner + status-bar chip when free commit runs low.
+    #[serde(default = "default_true")]
+    pub low_memory_warnings: bool,
+    /// While memory is critically low, new launches wait (frontend queue) until memory recovers or the
+    /// user chooses "Launch anyway". Only applies while `low_memory_warnings` is on.
+    #[serde(default = "default_true")]
+    pub low_memory_hold: bool,
 }
 
 fn default_browser_engine() -> String {
@@ -813,6 +820,8 @@ impl Default for Settings {
             browser_new_window: default_browser_new_window(),
             claude_hooks: true,
             spend_guards: BTreeMap::new(),
+            low_memory_warnings: true,
+            low_memory_hold: true,
         }
     }
 }
@@ -1600,4 +1609,57 @@ pub struct WorktreeCleanupOutcome {
     pub branch_deleted: bool,
     pub error: Option<String>,
     pub steps: Vec<GitStepLog>,
+}
+
+// ---------------------------------------------------------------------------
+// Low-memory guard (see `memguard`)
+// ---------------------------------------------------------------------------
+
+/// Emitted with payload `MemoryStatus` when the memory level changes (never on every reading).
+pub const EVT_MEMORY_STATUS: &str = "memory-status";
+
+/// Free commit (Windows) / available memory + free swap (Linux) against the guard's thresholds.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum MemoryLevel {
+    #[default]
+    Ok,
+    Low,
+    Critical,
+}
+
+/// One program by executable name (all its processes together).
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MemoryConsumer {
+    pub name: String,
+    /// The member using the most memory.
+    pub pid: u32,
+    /// Number of processes with this name.
+    pub count: u32,
+    /// Private bytes (Windows commit charge) or resident bytes (Linux), summed over the processes.
+    pub bytes: u64,
+}
+
+/// `memory_status` / `memory-status` payload.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MemoryStatus {
+    /// False where the guard does not run (macOS); every other field is then zero / empty.
+    pub supported: bool,
+    pub level: MemoryLevel,
+    /// Commit limit (RAM + page files) on Windows; RAM + swap on Linux.
+    pub limit_bytes: u64,
+    pub free_bytes: u64,
+    /// The level becomes `low` below this much free, `critical` below `critical_bytes`.
+    pub low_bytes: u64,
+    pub critical_bytes: u64,
+    /// Top programs by memory, largest first; only filled while the level is not `ok`.
+    pub top: Vec<MemoryConsumer>,
+    /// Gridkeeper's sessions' process trees together (only while the level is not `ok`).
+    pub agents_bytes: Option<u64>,
+    /// Gridkeeper itself: the host and its other descendants (WebView, terminal hosts), sessions excluded.
+    pub app_bytes: Option<u64>,
+    /// The emergency reserve is currently held (Windows).
+    pub reserve_held: bool,
 }

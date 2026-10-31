@@ -64,6 +64,10 @@ windows-sys = { version = "0.61", features = [
   "Win32_System_IO",
   "Win32_Storage_FileSystem",
   "Win32_Security_Authorization",
+  # Low-memory guard (memguard.rs): GlobalMemoryStatusEx (commit limit / free commit), the
+  # VirtualAlloc emergency reserve.
+  "Win32_System_SystemInformation",
+  "Win32_System_Memory",
 ] }
 # Same versions tauri-runtime-wry uses: WebView2 crash recovery (webview_guard), native browser
 # panes (browser_view).

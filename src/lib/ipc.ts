@@ -66,6 +66,9 @@ import { EVT_TEST_RUN } from "./types";
 // Agent browser
 import type { AgentBrowserActivity, AgentBrowserInput, AgentBrowserState } from "./types";
 import { EVT_AGENT_BROWSER_ACTIVITY, EVT_AGENT_BROWSER_STATE } from "./types";
+// Low-memory guard
+import type { MemoryStatus } from "./types";
+import { EVT_MEMORY_STATUS } from "./types";
 
 export interface AppInfo {
   version: string;
@@ -230,6 +233,9 @@ export const ipc = {
     invoke<string>("replay_save_file", bytes, { headers: { "x-replay-token": token } }),
   // Meter: Claude Code cost & context per pane (status line JSON; live updates via onSessionMeter).
   meterSnapshot: () => invoke<SessionMeter[]>("meter_snapshot"),
+  // Low-memory guard: fresh reading with the guard's level (changes arrive via onMemoryStatus). The program
+  // list is only filled while the level is not "ok".
+  memoryStatus: () => invoke<MemoryStatus>("memory_status"),
   // Brain: long-term project memory in <projectDir>/.gridkeeper/brain/ (notes/, inbox/, generated INDEX.md).
   // Agents' direct edits arrive as EVT_MISSION_CHANGED with file "brain" while a mission watch is held.
   /** Every note and suggestion; missing folder = exists false. Also refreshes a stale INDEX.md. */
@@ -343,4 +349,8 @@ export function onAgentBrowserState(cb: (s: AgentBrowserState) => void): Promise
 
 export function onAgentBrowserActivity(cb: (a: AgentBrowserActivity) => void): Promise<UnlistenFn> {
   return listen<AgentBrowserActivity>(EVT_AGENT_BROWSER_ACTIVITY, (e) => cb(e.payload));
+}
+
+export function onMemoryStatus(cb: (s: MemoryStatus) => void): Promise<UnlistenFn> {
+  return listen<MemoryStatus>(EVT_MEMORY_STATUS, (e) => cb(e.payload));
 }

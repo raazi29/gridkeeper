@@ -8,6 +8,7 @@ import { clearTerminal, getTerminalSize, writeLocalNotice } from "../terminal/re
 import { autoStartable, isBrowserMeta } from "../lib/browserPanes";
 import { dropNav, getNav } from "../browser/nav";
 import { notify } from "./notify";
+import { launchGate, releaseHeld } from "../store/memguard";
 import { shellLabel } from "../lib/platform";
 import { t } from "../i18n";
 
@@ -143,6 +144,8 @@ export async function startSession(
   userStopped.delete(id); // a stop only suppresses the retry of the run it ended
   lastResume.set(id, resume);
   if (!opts.keepRetryBudget) retried.delete(id);
+  // Memory critically low: wait until it recovers or "Launch anyway" (store/memguard.ts, ADR-024).
+  await launchGate(id, meta0.name);
   await launchSlot(meta0.agent);
   const st = useApp.getState();
   const meta = st.persisted.sessions.find((m) => m.id === id);
@@ -266,6 +269,8 @@ export async function closeSession(id: SessionId) {
   // The pane goes away at once; the process is stopped in the background (runtime events still arrive, so
   // waitForExit works without the meta) and the host entry is removed once it has exited.
   useApp.getState().removeSessionMeta(id);
+  // A launch held for memory ends here (the released startSession finds no meta and starts nothing).
+  releaseHeld([id]);
   if (isLive(useApp.getState().runtime[id])) {
     await stopSession(id, false);
     if (!(await waitForExit(id, 4000))) await stopSession(id, true);
