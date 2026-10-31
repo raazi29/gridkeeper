@@ -5,7 +5,7 @@ import { COMMANDS, THEME_COMMAND_PREFIX } from "../actions/commands";
 import { notify } from "../actions/notify";
 import { LOCALES, languageName, localeInfo, resolveLanguage, setLanguage, useI18n, useT, type LanguagePref, type MessageKey } from "../i18n";
 import { defaultBindings, displayCombo, eventToCombo, forbiddenReason } from "../keybindings/combo";
-import { OS, isWindows, shellLabel } from "../lib/platform";
+import { OS, isMac, isWindows, shellLabel } from "../lib/platform";
 import { errorMessage, ipc } from "../lib/ipc";
 import type { AgentPaths, LayoutPreset, RendererPref, RightClickAction, Settings, UiDensity } from "../lib/types";
 import { DEFAULT_SETTINGS } from "../lib/types";
@@ -402,6 +402,8 @@ function LanguageSetting() {
 function InterfaceSection() {
   const t = useT();
   const [diag, setDiag] = useSetting("statusBarDiagnostics");
+  const [memWarn, setMemWarn] = useSetting("lowMemoryWarnings");
+  const [memHold, setMemHold] = useSetting("lowMemoryHold");
   const [collapsed, setCollapsed] = useSetting("sidebarCollapsed");
   const [inspector, setInspector] = useSetting("inspectorOpen");
   const flightLog = useFlightLog((s) => s.data.enabled);
@@ -409,6 +411,19 @@ function InterfaceSection() {
     <div className="form">
       <LanguageSetting />
       <Toggle checked={diag} onChange={setDiag} label={t("settings.interface.statusBarDiagnostics")} hint={t("settings.interface.statusBarDiagnosticsHint")} />
+      {/* Low-memory guard (memguard.rs): Windows and Linux only; macOS has no fixed limit to warn about. */}
+      {!isMac && (
+        <>
+          <Toggle checked={memWarn !== false} onChange={setMemWarn} label={t("settings.interface.lowMemoryWarnings")} hint={t("settings.interface.lowMemoryWarningsHint")} />
+          <Toggle
+            checked={memWarn !== false && memHold !== false}
+            disabled={memWarn === false}
+            onChange={setMemHold}
+            label={t("settings.interface.lowMemoryHold")}
+            hint={t("settings.interface.lowMemoryHoldHint")}
+          />
+        </>
+      )}
       <Toggle checked={collapsed} onChange={setCollapsed} label={t("settings.interface.sidebarRail")} />
       <Toggle checked={inspector} onChange={setInspector} label={t("settings.interface.inspector")} />
       <BrowserSettings />

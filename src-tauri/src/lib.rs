@@ -18,6 +18,7 @@
 //! - `replay`      mission replay recordings (`.gridkeeper/replay/*.jsonl`) and export saves
 //! - `sandbox`     GRIDKEEPER_SANDBOX isolated instances (own data folder + WebView2 profile)
 //! - `diagnostics` host/webview/session resource attribution
+//! - `memguard`    low-memory guard: free commit levels (5 s reading), emergency reserve, `memory-status`
 //! - `ports`       LISTENING TCP ports per session process tree
 //! - `browser`     browser panes: URL validation, embeddability probe, pop-out windows
 //! - `browser_view` native browser panes: one child webview per pane (Windows)
@@ -43,6 +44,7 @@ pub mod git;
 pub mod gpu;
 pub mod logging;
 pub mod merge;
+pub mod memguard;
 pub mod meter;
 pub mod mission;
 pub mod persistence;
@@ -140,6 +142,8 @@ pub fn run() {
         .setup(move |app| {
             let ctx = state::AppCtx::init(app.handle())?;
             app.manage(ctx);
+            // Low-memory guard: one reading every 5 s, emergency reserve (after AppCtx: it reads session roots).
+            memguard::start(app.handle().clone());
             // Agent browser: helper endpoint + config (the browser itself starts on the first tool call).
             agent_browser::app::install(app.handle());
             // What init_process_env changed (logging exists from AppCtx::init on).
@@ -231,6 +235,7 @@ pub fn run() {
             commands::replay::replay_save_dialog,
             commands::replay::replay_save_file,
             commands::meter::meter_snapshot,
+            memguard::memory_status,
             phone::phone_alerts_get,
             phone::phone_alerts_set,
             phone::phone_alerts_new_topic,

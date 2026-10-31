@@ -6,6 +6,7 @@ import { ErrorBoundary } from "./components/ErrorBoundary";
 import { Shell } from "./components/Shell";
 import { errorMessage, ipc, onSessionState } from "./lib/ipc";
 import { flushPersistence, startPersistence, useApp } from "./store/appStore";
+import { startMemoryWatch } from "./store/memguard";
 import { preloadFont } from "./styles/fonts";
 import "./theme/applyTheme";
 import { t, useT } from "./i18n";
@@ -25,6 +26,8 @@ async function boot() {
       maybeAutoRetry(info);
     }
   });
+  // Low-memory guard: the current level must be known before restored sessions launch (awaited below).
+  const memoryWatch = startMemoryWatch();
   const info = await ipc.appInfo().catch(() => null);
   if (info?.bench) {
     // Benchmark mode: in-memory workspace only; never persisted.
@@ -56,6 +59,7 @@ async function boot() {
     .agentsDetect()
     .then((a) => useApp.getState().setAgents(a))
     .catch(() => {});
+  await memoryWatch;
   await restoreSessions();
   // Account auto-detection (all agents) once agents are detected and restored sessions are
   // launched: status checks skip accounts with a live session (Claude Code #91708).

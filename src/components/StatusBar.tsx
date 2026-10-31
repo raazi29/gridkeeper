@@ -8,6 +8,7 @@ import { useUi } from "../store/uiStore";
 import { CommsButton, FleetButton } from "./Comms";
 import { gpuLoadText, gpuTooltip } from "./GpuSection";
 import { AutopilotChip } from "./mission/LeadControl";
+import { MemoryLevelChip } from "./MemoryGuard";
 import { MemoryPressureChip } from "./ResourceWarnings";
 import { ThemeChip } from "./ThemeSwitcher";
 import { useDiagnosticsPoll, useRendererStatus, useShortcut } from "./hooks";
@@ -67,6 +68,7 @@ export function StatusBar() {
         <FleetButton />
         <CommsButton />
         <span className="sb-div" />
+        <MemoryLevelChip />
         {showDiag && <MemoryPressureChip onClick={open} />}
         {showDiag && <ResourceItems onClick={open} />}
         <RendererItem onClick={open} live={showDiag} />

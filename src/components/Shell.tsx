@@ -22,6 +22,7 @@ import { ExperienceLayer } from "./ExperienceLayer";
 import { GroupTabs } from "./GroupTabs";
 import { IconClose, IconWarn } from "./icons";
 import { Inspector } from "./Inspector";
+import { MemoryBanner } from "./MemoryGuard";
 import { MissionLayer } from "./mission/MissionLayer";
 import { SkillsLayer } from "./skills/SkillsPanel";
 import { Sidebar } from "./Sidebar";
@@ -81,6 +82,7 @@ export function Shell() {
         <Sidebar />
         <main className="main">
           <LoadErrorBanner />
+          <MemoryBanner />
           <WorkspaceHeader />
           <GroupTabs />
           <div className="work-row">

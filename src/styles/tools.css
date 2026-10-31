@@ -158,6 +158,45 @@
 .pressure-note {
   margin: 0 0 10px;
 }
+/* Low-memory guard (MemoryGuard.tsx): static, no motion. */
+.sb-err {
+  color: var(--err-fg);
+}
+.banner.is-warn {
+  background: var(--warn-soft);
+  border-bottom-color: var(--warn-line);
+  color: var(--warn-fg);
+}
+.mem-banner {
+  align-items: flex-start;
+  padding-top: 6px;
+  padding-bottom: 6px;
+}
+.mem-banner > svg {
+  flex: none;
+  margin-top: 2px;
+}
+.mem-banner-body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.mem-banner-title {
+  font-weight: 600;
+}
+.mem-banner-top {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+}
+.mem-banner-prog {
+  white-space: nowrap;
+}
+.mem-banner-meta {
+  color: var(--text-1);
+}
 .confirm-check {
   display: flex;
   align-items: center;
